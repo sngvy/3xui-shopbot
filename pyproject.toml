@@ -1,0 +1,48 @@
+[project]
+name = "3xui-shopbot"
+version = "2.2.1"
+description = "Бот Snowy Services для автоматической продажи VLESS-подписок"
+dependencies = [
+    "aiogram==3.21.0",
+    "flask==3.1.1",
+    "flask-wtf==1.2.1",
+    "py3xui==0.4.0",
+    "pyotp==2.9.0",
+    "python-dotenv==1.1.1",
+    "qrcode[pil]==8.2",
+    "yookassa==3.5.0",
+    "aiosend==2.1.2",
+    "aiohttp==3.9.5",
+    "aiohttp-sse-client==0.2.1",
+    "pytonconnect==0.3.2",
+    "paramiko==3.5.0",
+    "psutil==5.9.8",
+    "colorama==0.4.6",
+    "aiohttp-socks==0.8.4",
+    "icmplib==3.0.4",
+    "python-dateutil==2.9.0",
+    "pysocks==1.7.1"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pip-tools",
+    "pylint",
+    "black"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["shop_bot"]

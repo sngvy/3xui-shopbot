@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+	<head>
+		<meta charset="UTF-8" />
+		<!-- Без этого атрибута страница входа всегда светлая: токены темы
+		     объявлены как ":root, [data-bs-theme='light']{...}" — :root
+		     матчится всегда, а "[data-bs-theme='dark']" не сработает, если
+		     атрибута нет вовсе. Этот шаблон отдельный от base.html и раньше
+		     никак не читал сохранённую тему. -->
+		<script>
+			(function(){
+				try {
+					var saved = localStorage.getItem('ui_theme');
+					document.documentElement.setAttribute('data-bs-theme', (saved === 'light' || saved === 'dark') ? saved : 'dark');
+				} catch (e) {
+					document.documentElement.setAttribute('data-bs-theme', 'dark');
+				}
+			})();
+		</script>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Вход в Панель управления</title>
+		<meta name="csrf-token" content="{{ csrf_token() }}" />
+		<meta name="theme-color" content="#5B27F5" />
+		<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+		<!-- Material 3 Expressive -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300..800&display=swap" />
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-25..0&icon_names=visibility,visibility_off&display=block" />
+		<link rel="stylesheet" href="{{ url_for('static', filename='css/m3-expressive.css') }}" />
+		<style>
+			.login-page{
+				background:var(--m3-surface);
+				display:flex;align-items:center;justify-content:center;
+				min-height:100vh;min-height:100dvh;padding:24px;
+			}
+			.login-container{
+				position:relative;z-index:1;
+				width:100%;max-width:400px;
+				background:var(--m3-surface-container) !important;
+				border:none !important;
+				border-radius:var(--m3-r-xxl) !important;
+				padding:34px 30px !important;
+				box-shadow:0 24px 64px rgba(0,0,0,.18) !important;
+			}
+			.login-container h1{
+				font-size:1.9rem;font-weight:800;letter-spacing:-.04em;
+				text-align:left !important;margin:0 0 26px !important;
+				color:var(--m3-on-surface);
+			}
+			.login-container .form-group{margin-bottom:16px;}
+			.login-container label{
+				display:block;
+				font-size:.62rem;font-weight:500;letter-spacing:.1em;
+				text-transform:uppercase;color:var(--m3-on-surface-variant);
+				margin-bottom:7px;
+			}
+			.login-container input[type="text"],
+			.login-container input[type="password"]{
+				width:100%;
+				background:var(--m3-surface-container-high);
+				border:1px solid transparent;
+				border-radius:var(--m3-r-m);
+				color:var(--m3-on-surface);
+				font-family:inherit;font-size:.82rem;font-weight:300;
+				padding:13px 16px;outline:none;
+				transition:border-color var(--m3-dur-short) var(--m3-ease-emph);
+			}
+			.login-container input[type="text"]:focus,
+			.login-container input[type="password"]:focus{
+				border-color:var(--m3-primary);
+				box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent);
+			}
+			.password-wrapper{position:relative;}
+			.toggle-password{
+				position:absolute;right:8px;bottom:6px;
+				width:38px;height:38px;
+				display:grid;place-items:center;
+				background:transparent;border:none;cursor:pointer;
+				border-radius:var(--m3-r-full);
+				color:var(--m3-on-surface-variant);
+				transition:background var(--m3-dur-short) var(--m3-ease-emph);
+			}
+			.toggle-password:hover{background:var(--m3-surface-container-highest);}
+			.toggle-password svg{width:20px;height:20px;}
+			.login-container .button{
+				width:100%;
+				background:var(--m3-primary);color:var(--m3-on-primary);
+				border:none;cursor:pointer;
+				border-radius:var(--m3-r-full);
+				font-family:inherit;font-size:.82rem;font-weight:500;
+				padding:15px 24px;
+				transition:border-radius var(--m3-dur-med) var(--m3-ease-spring),
+				           transform var(--m3-dur-short) var(--m3-ease-emph),
+				           filter var(--m3-dur-short) var(--m3-ease-emph);
+			}
+			.login-container .button:hover{filter:brightness(1.08);}
+			.login-container .button:active{border-radius:var(--m3-r-m);transform:scale(.96);}
+			.login-container .form-group label[style]{
+				text-transform:none;letter-spacing:0;font-size:.74rem;font-weight:300;
+				color:var(--m3-on-surface);margin:0;
+			}
+			#remember_me{
+				width:1.15em;height:1.15em;accent-color:var(--m3-primary);cursor:pointer;
+			}
+			.flash{
+				border-radius:var(--m3-r-l);padding:13px 16px;margin-bottom:16px;
+				font-size:.74rem;font-weight:300;
+				background:var(--m3-surface-container-high);color:var(--m3-on-surface);
+			}
+			.flash-danger,.flash-error{background:var(--m3-error-container);color:var(--m3-on-error-container);}
+			.flash-success{background:var(--m3-online-container);color:var(--m3-on-tertiary-container);}
+			.flash-warning{background:var(--m3-amber-container);color:var(--m3-on-amber-container);}
+			#scene{position:fixed;inset:0;width:100%;height:100%;z-index:0;}
+		</style>
+	</head>
+	<body class="login-page">
+		<canvas id="scene" draggable="false"></canvas>
+		<div class="login-container">
+			<h1>Вход в панель</h1>
+
+			{% with messages = get_flashed_messages(with_categories=true) %} {% if
+			messages %} {% for category, message in messages %}
+			<div class="flash flash-{{ category }}">{{ message }}</div>
+			{% endfor %} {% endif %} {% endwith %}
+
+			<form method="post">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+				<div class="form-group">
+					<label for="username">Логин:</label>
+					<input type="text" id="username" name="username" required />
+				</div>
+				<div class="form-group password-wrapper">
+					<label for="password">Пароль:</label>
+					<input type="password" id="password" name="password" required />
+					<button type="button" id="toggle-login-pass" class="toggle-password" aria-label="Показать пароль" title="Показать пароль">
+						<span class="msym" id="pass-icon">visibility</span>
+					</button>
+				</div>
+				<div class="form-group" style="display:flex;align-items:center;gap:10px;justify-content:space-between;margin:10px 0 16px;">
+					<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+						<input type="checkbox" id="remember_me" />
+						<span>Запомнить меня</span>
+					</label>
+				</div>
+				<button type="submit" class="button button-primary" style="width: 100%">
+					Войти
+				</button>
+			</form>
+		</div>
+	<script>
+		(() => {
+			const canvas = document.getElementById('scene');
+			if (!canvas) return;
+			const ctx = canvas.getContext('2d');
+			let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+			let t = 0;
+
+			// Блокируем копирование/сохранение через UI только на странице логина
+			const prevent = (e) => e.preventDefault();
+			document.addEventListener('contextmenu', prevent, { passive: false });
+			canvas.addEventListener('dragstart', prevent, { passive: false });
+			canvas.addEventListener('mousedown', prevent, { passive: false });
+			document.addEventListener('copy', prevent, { passive: false });
+
+			function resize() {
+				// обновляем DPR динамически
+				DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+				const { innerWidth: w, innerHeight: h } = window;
+				canvas.width = Math.max(1, Math.floor(w * DPR));
+				canvas.height = Math.max(1, Math.floor(h * DPR));
+				// canvas.style.width/height НЕ задаём: за отображаемый размер
+				// уже отвечает CSS (#scene{width:100%;height:100%;position:fixed;
+				// inset:0}), который всегда точно соответствует вьюпорту.
+				// Раньше здесь дублировался пиксельный размер через
+				// window.innerWidth/innerHeight — если на момент вызова resize()
+				// это значение не совпадало с реальной шириной раскладки
+				// (например, из-за скроллбара), инлайн-стиль фиксировал канвас
+				// уже суженным и не давал CSS дотянуть его до края экрана.
+				ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			}
+
+			function draw() {
+				// используем реальные размеры буфера, чтобы исключить баги с clientWidth/Height
+				const W = Math.max(1, Math.floor(canvas.width / DPR));
+				const H = Math.max(1, Math.floor(canvas.height / DPR));
+				ctx.clearRect(0, 0, W, H);
+
+				const L = Math.hypot(W, H);
+				const nx = H / L, ny = W / L;
+
+				const lines = 120;
+				const baseBand = H * 0.45 * 1.5 * 1.2;
+				const bandPulse = 1 + 0.06 * Math.sin(t * 0.07);
+
+				for (let i = 0; i < lines; i++) {
+					const f = i / (lines - 1);
+					const bias = f - 0.5;
+					const sideFactor = 0.6 + 0.4 * f;
+					const cornerFactor = 1 - 0.5 * (1 - f);
+					const offset = bias * baseBand * bandPulse * sideFactor * cornerFactor;
+
+					const lw = Math.max(0.55, 1.2 - f * 0.5);
+					const alpha = Math.max(0.06, 0.32 * (0.95 - Math.abs(bias) * 0.75));
+					ctx.beginPath();
+					ctx.lineWidth = lw;
+					ctx.strokeStyle = `rgba(91, 39, 245, ${alpha})`;
+
+					const twistStrength = 0.12 * (1 + 0.3 * Math.sin(t * 0.2 + i * 0.15));
+
+					for (let s = -0.2, first = true; s <= 1.2; s += 0.01) {
+						const sd = s;
+						const x0 = sd * W;
+						const y0 = H - sd * H;
+
+						const disp = Math.sin(t * 0.1 + i * 0.05) * (baseBand * 0.04);
+						const twist = Math.sin(sd * Math.PI + t * 0.12 + i * 0.03) * twistStrength * baseBand;
+
+						const x = x0 + (nx * disp) + Math.cos(sd * Math.PI) * twist;
+						const y = y0 + offset + (ny * disp) + Math.sin(sd * Math.PI) * twist;
+
+						if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+					}
+					ctx.stroke();
+				}
+			}
+
+			function animate(){ t += 0.016; draw(); requestAnimationFrame(animate); }
+
+			window.addEventListener('resize', resize, { passive:true });
+			resize();
+			// тестовая одноразовая отрисовка, чтобы убедиться, что что-то видно
+			ctx.fillStyle = 'rgba(91,39,245,0.06)';
+			ctx.fillRect(0, 0, Math.max(1, Math.floor(canvas.width / DPR)), Math.max(1, Math.floor(canvas.height / DPR)));
+			animate();
+		})();
+
+		// Переключатель видимости пароля на странице логина
+		(function(){
+			const btn = document.getElementById('toggle-login-pass');
+			const input = document.getElementById('password');
+			if (!btn || !input) return;
+			btn.addEventListener('click', () => {
+				const icon = document.getElementById('pass-icon');
+				const show = input.type === 'password';
+				input.type = show ? 'text' : 'password';
+				btn.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
+				btn.title = show ? 'Скрыть пароль' : 'Показать пароль';
+				if (icon) icon.textContent = show ? 'visibility_off' : 'visibility';
+			});
+		})();
+
+		// Запомнить логин (username) локально
+		(function(){
+			const u = document.getElementById('username');
+			const r = document.getElementById('remember_me');
+			if (!u || !r) return;
+			try {
+				const saved = localStorage.getItem('login_username');
+				if (saved) { u.value = saved; r.checked = true; }
+			} catch(_){}
+			// При отправке формы — сохранить/очистить
+			u.form?.addEventListener('submit', () => {
+				try {
+					if (r.checked) localStorage.setItem('login_username', u.value || '');
+					else localStorage.removeItem('login_username');
+				} catch(_){ }
+			});
+		})();
+	</script>
+	</body>
+</html>

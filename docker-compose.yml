@@ -1,0 +1,12 @@
+services:
+  3xui-shopbot:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '1488:1488'
+      - '8888:8888'
+    volumes:
+      - .:/app/project
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    container_name: 3xui-shopbot
