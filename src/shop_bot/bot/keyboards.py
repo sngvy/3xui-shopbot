@@ -7,6 +7,7 @@ import os
 import re
 from datetime import datetime
 from typing import Callable
+from urllib.parse import quote
 
 from aiogram.types import (
     InlineKeyboardButton,
@@ -1138,6 +1139,19 @@ def create_key_info_keyboard(
             .decode()
             .rstrip("=")
         )
+        # FlClashX — Clash-совместимый клиент: ему нужна не /sub/, а /clash/
+        # ссылка, и сам url в query install-config?url= должен быть
+        # percent-encoded (иначе "://" внутри ломает разбор диплинка).
+        flclashx_link = (
+            base64.urlsafe_b64encode(
+                (
+                    "flclashx://install-config?url="
+                    + quote(connection_string.replace("/sub/", "/clash/"), safe="")
+                ).encode()
+            )
+            .decode()
+            .rstrip("=")
+        )
         incy_link = (
             base64.urlsafe_b64encode(f"incy://add/{connection_string}".encode())
             .decode()
@@ -1165,6 +1179,9 @@ def create_key_info_keyboard(
             style="danger",
         )
         builder.button(text="⚡ Добавить в Happ", url=f"{REDIR_URL}{happ_link}", style="primary")
+        builder.button(
+            text="🪽 Добавить в FlClashX", url=f"{REDIR_URL}{flclashx_link}", style="primary"
+        )
         builder.button(text="🛡️ Добавить в INCY", url=f"{REDIR_URL}{incy_link}", style="primary")
         builder.button(
             text="🚀 Добавить в v2RayTun",
@@ -1192,6 +1209,11 @@ def create_key_info_keyboard(
         builder.button(
             text="⚡ Добавить в Happ",
             callback_data=f"add_to_happ_{key_id}",
+            style="primary",
+        )
+        builder.button(
+            text="🪽 Добавить в FlClashX",
+            callback_data=f"add_to_flclashx_{key_id}",
             style="primary",
         )
         builder.button(
