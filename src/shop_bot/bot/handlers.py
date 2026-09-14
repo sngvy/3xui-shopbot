@@ -15,7 +15,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from functools import wraps
 from io import BytesIO
 from typing import Dict, Optional
-from urllib.parse import unquote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 import aiohttp
 import qrcode
@@ -2475,6 +2475,114 @@ def get_user_router() -> Router:
                 [
                     InlineKeyboardButton(
                         text="⚡ Открыть Happ", url=final_redirect_url, style="primary"
+                    )
+                ]
+            ]
+        )
+
+        # -------------------------------------------------------------------------
+        # 6. Отправка сообщения с пояснением и кнопкой
+        # -------------------------------------------------------------------------
+        try:
+            await callback.message.answer(
+                "\u200c", reply_markup=keyboard, disable_web_page_preview=True
+            )
+        except Exception as send_err:
+            logger.error(
+                f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
+            )
+            await callback.message.answer("❌ Не удалось отправить ссылку")
+
+        # -------------------------------------------------------------------------
+        # 7. Сообщение отправлено (без итогового сообщения)
+        # -------------------------------------------------------------------------
+        # Здесь можно добавить финальное сообщение, если потребуется в будущем
+        # await callback.message.answer("✅ Ссылка отправлена")
+
+    @user_router.callback_query(F.data.startswith("add_to_flclashx_"))
+    async def add_to_flclashx_handler(callback: types.CallbackQuery):
+        """
+        Обработчик callback-запроса для формирования кнопки с deep link для FlClashX.
+
+        Логика работы:
+        1. Проверяет принадлежность ключа текущему пользователю
+        2. Получает актуальную ссылку подписки с панели хоста
+        3. Формирует deep link flclashx://install-config?url={CLASH_SUB_URL}
+           (CLASH_SUB_URL — та же подписка, но /sub/ заменена на /clash/,
+           так как FlClashX — Clash-совместимый клиент, ему нужен именно
+           этот формат; сам url обязан быть percent-encoded, иначе "://"
+           внутри параметра ломает разбор диплинка самим FlClashX)
+        4. Отправляет одно сообщение с пояснением и inline-кнопкой
+
+        Формат отправляемого сообщения:
+        • Короткий пояснительный текст
+        • Кнопка с deep link
+
+        Args:
+            callback: CallbackQuery от aiogram (содержит data с key_id)
+
+        Особенности:
+        • Защита от доступа к чужим подпискам
+        • Обработка ошибок на каждом этапе с понятными сообщениями пользователю
+        """
+        # Подтверждаем получение запроса (убираем "часики" у кнопки)
+        await callback.answer("⏳ Получаю подписку...")
+
+        # -------------------------------------------------------------------------
+        # 1. Извлечение ID ключа из callback.data
+        # -------------------------------------------------------------------------
+        try:
+            # Ожидаемый формат: add_to_flclashx_123 → берём последнюю часть после _
+            key_id = int(callback.data.split("_")[-1])
+        except (ValueError, IndexError):
+            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            return
+
+        # -------------------------------------------------------------------------
+        # 2. Получение данных ключа из локальной БД + проверка владельца
+        # -------------------------------------------------------------------------
+        key_data = await asyncio.to_thread(get_key_by_id, key_id)
+        if not key_data or key_data.get("user_id") != callback.from_user.id:
+            await callback.message.answer("🚫 Это не ваша подписка")
+            return
+
+        # -------------------------------------------------------------------------
+        # 3. Получение актуальной ссылки подписки с панели
+        # -------------------------------------------------------------------------
+        try:
+            details = await xui_api.get_key_details_from_host(key_data)
+            if not details or not details.get("connection_string"):
+                await callback.message.answer(
+                    "❌ Не удалось получить актуальную подписку с сервера"
+                )
+                return
+            connection_string = details["connection_string"]
+        except Exception as e:
+            logger.error(
+                f"Ошибка при получении subscription link для ключа {key_id}: {e}",
+                exc_info=True,
+            )
+            await callback.message.answer("❌ Не удалось получить данные подписки")
+            return
+
+        # -------------------------------------------------------------------------
+        # 4. Формирование deep link для FlClashX
+        # -------------------------------------------------------------------------
+        clash_sub_url = connection_string.replace("/sub/", "/clash/")
+        flclashx_link = f"{base64.urlsafe_b64encode(('flclashx://install-config?url=' + quote(clash_sub_url, safe='')).encode()).decode().rstrip('=')}"
+
+        # Формируем итоговую ссылку через локальный редиректор
+        final_redirect_url = f"{REDIR_URL}{flclashx_link}"
+
+        # -------------------------------------------------------------------------
+        # 5. Подготовка inline-кнопки
+        # -------------------------------------------------------------------------
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🪽 Открыть FlClashX", url=final_redirect_url, style="primary"
                     )
                 ]
             ]
