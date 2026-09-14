@@ -764,13 +764,18 @@ def create_webhook_app(bot_controller_instance):
                         f"▪️🇷🇺 Российский интернет ➡️ напрямую\n"
                         f"▪️🌍 Зарубежный интернет ➡️ через прокси\n"
                         f"▪️⭐️ Рекомендуем для Happ и INCY\n\n"
+                        f"🪽 <b>Подписка для Clash:</b>\n{html.code(cs.replace('/sub/', '/clash/'))}\n"
+                        f"▪️🇷🇺 Российский интернет ➡️ напрямую\n"
+                        f"▪️🌍 Зарубежный интернет ➡️ через прокси\n"
+                        f"▪️⭐️ Рекомендуем для FlClashX и FlClash\n\n"
                         f"🔀 <b>Альтернативная подписка:</b>\n{html.code(cs.replace('/sub/', '/json/'))}\n"
                         f"▪️🌍 Весь интернет ➡️ через прокси\n"
                         f"▪️🥷 Надежно перенаправляем российский трафик на свои серверы\n"
-                        f"▪️⭐️ Рекомендуем для v2RayTun и других клиентов. Добавляется через копирование и вставку ссылки\n"
+                        f"▪️⭐️ Рекомендуем для v2RayTun и других устаревших клиентов\n"
                     )
                     raw_cs = result["connection_string"]
                     redirect_url_happ = f"{REDIR_URL}{base64.urlsafe_b64encode(f'happ://add/{raw_cs}'.encode()).decode().rstrip('=')}"
+                    redirect_url_flclashx = f"{REDIR_URL}{base64.urlsafe_b64encode(('flclashx://install-config?url=' + urllib.parse.quote(raw_cs.replace('/sub/', '/clash/'), safe='')).encode()).decode().rstrip('=')}"
                     redirect_url_incy = f"{REDIR_URL}{base64.urlsafe_b64encode(f'incy://add/{raw_cs}'.encode()).decode().rstrip('=')}"
                     redirect_url_v2raytun = f"{REDIR_URL}{base64.urlsafe_b64encode(f'v2raytun://import/{raw_cs}'.encode()).decode().rstrip('=')}"
                     redirect_url_v2rayng = f"{REDIR_URL}{base64.urlsafe_b64encode(f'v2rayng://install-config/?url={raw_cs}'.encode()).decode().rstrip('=')}"
@@ -787,6 +792,13 @@ def create_webhook_app(bot_controller_instance):
                                 InlineKeyboardButton(
                                     text="⚡ Добавить в Happ",
                                     url=redirect_url_happ,
+                                    style="primary",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    text="🪽 Добавить в FlClashX",
+                                    url=redirect_url_flclashx,
                                     style="primary",
                                 )
                             ],
@@ -895,13 +907,18 @@ def create_webhook_app(bot_controller_instance):
                         f"▪️🇷🇺 Российский интернет ➡️ напрямую\n"
                         f"▪️🌍 Зарубежный интернет ➡️ через прокси\n"
                         f"▪️⭐️ Рекомендуем для Happ и INCY\n\n"
+                        f"🪽 <b>Подписка для Clash:</b>\n{html.code(cs.replace('/sub/', '/clash/'))}\n"
+                        f"▪️🇷🇺 Российский интернет ➡️ напрямую\n"
+                        f"▪️🌍 Зарубежный интернет ➡️ через прокси\n"
+                        f"▪️⭐️ Рекомендуем для FlClashX и FlClash\n\n"
                         f"🔀 <b>Альтернативная подписка:</b>\n{html.code(cs.replace('/sub/', '/json/'))}\n"
                         f"▪️🌍 Весь интернет ➡️ через прокси\n"
                         f"▪️🥷 Надежно перенаправляем российский трафик на свои серверы\n"
-                        f"▪️⭐️ Рекомендуем для v2RayTun и других клиентов. Добавляется через копирование и вставку ссылки\n"
+                        f"▪️⭐️ Рекомендуем для v2RayTun и других устаревших клиентов\n"
                     )
                     raw_cs = result["connection_string"]
                     redirect_url_happ = f"{REDIR_URL}{base64.urlsafe_b64encode(f'happ://add/{raw_cs}'.encode()).decode().rstrip('=')}"
+                    redirect_url_flclashx = f"{REDIR_URL}{base64.urlsafe_b64encode(('flclashx://install-config?url=' + urllib.parse.quote(raw_cs.replace('/sub/', '/clash/'), safe='')).encode()).decode().rstrip('=')}"
                     redirect_url_incy = f"{REDIR_URL}{base64.urlsafe_b64encode(f'incy://add/{raw_cs}'.encode()).decode().rstrip('=')}"
                     redirect_url_v2raytun = f"{REDIR_URL}{base64.urlsafe_b64encode(f'v2raytun://import/{raw_cs}'.encode()).decode().rstrip('=')}"
                     redirect_url_v2rayng = f"{REDIR_URL}{base64.urlsafe_b64encode(f'v2rayng://install-config/?url={raw_cs}'.encode()).decode().rstrip('=')}"
@@ -918,6 +935,13 @@ def create_webhook_app(bot_controller_instance):
                                 InlineKeyboardButton(
                                     text="⚡ Добавить в Happ",
                                     url=redirect_url_happ,
+                                    style="primary",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    text="🪽 Добавить в FlClashX",
+                                    url=redirect_url_flclashx,
                                     style="primary",
                                 )
                             ],
@@ -1074,13 +1098,18 @@ def create_webhook_app(bot_controller_instance):
                             f"▪️🇷🇺 Российский интернет ➡️ напрямую\n"
                             f"▪️🌍 Зарубежный интернет ➡️ через прокси\n"
                             f"▪️⭐️ Рекомендуем для Happ и INCY\n\n"
+                            f"🪽 <b>Подписка для Clash:</b>\n{html.code(cs.replace('/sub/', '/clash/'))}\n"
+                            f"▪️🇷🇺 Российский интернет ➡️ напрямую\n"
+                            f"▪️🌍 Зарубежный интернет ➡️ через прокси\n"
+                            f"▪️⭐️ Рекомендуем для FlClashX и FlClash\n\n"
                             f"🔀 <b>Альтернативная подписка:</b>\n{html.code(cs.replace('/sub/', '/json/'))}\n"
                             f"▪️🌍 Весь интернет ➡️ через прокси\n"
                             f"▪️🥷 Надежно перенаправляем российский трафик на свои серверы\n"
-                            f"▪️⭐️ Рекомендуем для v2RayTun и других клиентов. Добавляется через копирование и вставку ссылки\n"
+                            f"▪️⭐️ Рекомендуем для v2RayTun и других устаревших клиентов\n"
                         )
                         raw_cs = result["connection_string"]
                         redirect_url_happ = f"{REDIR_URL}{base64.urlsafe_b64encode(f'happ://add/{raw_cs}'.encode()).decode().rstrip('=')}"
+                        redirect_url_flclashx = f"{REDIR_URL}{base64.urlsafe_b64encode(('flclashx://install-config?url=' + urllib.parse.quote(raw_cs.replace('/sub/', '/clash/'), safe='')).encode()).decode().rstrip('=')}"
                         redirect_url_incy = f"{REDIR_URL}{base64.urlsafe_b64encode(f'incy://add/{raw_cs}'.encode()).decode().rstrip('=')}"
                         redirect_url_v2raytun = f"{REDIR_URL}{base64.urlsafe_b64encode(f'v2raytun://import/{raw_cs}'.encode()).decode().rstrip('=')}"
                         redirect_url_v2rayng = f"{REDIR_URL}{base64.urlsafe_b64encode(f'v2rayng://install-config/?url={raw_cs}'.encode()).decode().rstrip('=')}"
@@ -1097,6 +1126,13 @@ def create_webhook_app(bot_controller_instance):
                                     InlineKeyboardButton(
                                         text="⚡ Добавить в Happ",
                                         url=redirect_url_happ,
+                                        style="primary",
+                                    )
+                                ],
+                                [
+                                    InlineKeyboardButton(
+                                        text="🪽 Добавить в FlClashX",
+                                        url=redirect_url_flclashx,
                                         style="primary",
                                     )
                                 ],
