@@ -3045,6 +3045,10 @@ def get_users_by_segment(segment: str) -> list[dict]:
     - 'paid_no_active'  — платили хотя бы раз (total_spent > 0), но сейчас нет
                            ни одной подписки с ещё не истёкшим сроком действия
     - 'never_purchased' — ни разу не покупали подписку (total_spent <= 0)
+    - 'expiring_1_day'  — есть хотя бы одна ещё активная подписка, истекающая
+                           в течение ближайших 24 часов (тот же порог, что и
+                           у обычных напоминаний об истечении — см.
+                           NOTIFY_BEFORE_HOURS в scheduler.py)
     """
     try:
         with get_db_connection() as conn:
@@ -3063,6 +3067,17 @@ def get_users_by_segment(segment: str) -> list[dict]:
             elif segment == "never_purchased":
                 cursor.execute(
                     "SELECT * FROM users WHERE COALESCE(total_spent, 0) <= 0 ORDER BY registration_date DESC"
+                )
+            elif segment == "expiring_1_day":
+                cursor.execute(
+                    "SELECT * FROM users u "
+                    "WHERE EXISTS ("
+                    "    SELECT 1 FROM vpn_keys k "
+                    "    WHERE k.user_id = u.telegram_id "
+                    "    AND k.expiry_date > datetime('now','localtime') "
+                    "    AND k.expiry_date <= datetime('now','localtime','+24 hours')"
+                    ") "
+                    "ORDER BY u.registration_date DESC"
                 )
             else:
                 cursor.execute("SELECT * FROM users ORDER BY registration_date DESC")
