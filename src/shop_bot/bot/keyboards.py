@@ -600,6 +600,7 @@ def create_broadcast_segment_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="👥 Все пользователи", callback_data="broadcast_segment_all")
     builder.button(text="💤 Платили раньше", callback_data="broadcast_segment_paid_no_active")
     builder.button(text="🛒 Ни разу не покупали", callback_data="broadcast_segment_never_purchased")
+    builder.button(text="⏳ День до продления", callback_data="broadcast_segment_expiring_1_day")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
     builder.adjust(1)
     return builder.as_markup()
