@@ -3859,6 +3859,19 @@ def get_admin_router() -> Router:
         )
         await _broadcast_ask_message(callback.message, state)
 
+    @admin_router.callback_query(
+        Broadcast.waiting_for_segment, F.data == "broadcast_segment_expiring_1_day"
+    )
+    async def broadcast_segment_expiring_1_day_handler(
+        callback: types.CallbackQuery, state: FSMContext
+    ):
+        await callback.answer()
+        await state.update_data(
+            segment="expiring_1_day",
+            segment_label="подписка истекает в течение суток",
+        )
+        await _broadcast_ask_message(callback.message, state)
+
     async def _broadcast_ask_message(message: types.Message, state: FSMContext):
         await message.edit_text(
             "Пришлите сообщение, которое вы хотите разослать.\n"
