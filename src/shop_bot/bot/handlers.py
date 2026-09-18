@@ -1876,6 +1876,7 @@ def get_user_router() -> Router:
             logger.debug(f"toggle_auto_renew_handler: не удалось обновить клавиатуру: {e}")
 
 
+    @user_router.callback_query(F.data.startswith("regen_key_confirm_"))
     @registration_required
     async def regen_key_confirm_handler(callback: types.CallbackQuery):
         await callback.answer("⏳ Пересоздаю подписку...", show_alert=False)
