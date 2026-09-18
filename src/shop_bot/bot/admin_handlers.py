@@ -4088,7 +4088,7 @@ def get_admin_router() -> Router:
             # так и не дойдёт (например, юзер уже заблокировал бота)
             personal_code = None
             if promo_discount:
-                personal_code = f"BACK{user_id}{secrets.token_hex(2).upper()}"
+                personal_code = f"PROMO{user_id}{secrets.token_hex(2).upper()}"
                 try:
                     created = await asyncio.to_thread(
                         create_promo_code,
