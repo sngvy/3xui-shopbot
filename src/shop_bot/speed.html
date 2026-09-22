@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300..800&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-25..0&icon_names=ac_unit,arrow_downward,arrow_upward,bolt,check,content_copy,expand_more,graphic_eq,more_horiz,network_check,public,refresh,rocket_launch,schedule,shield,speed,timer&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-25..0&icon_names=ac_unit,arrow_downward,arrow_upward,auto_awesome,bolt,check,close,content_copy,expand_more,forum,graphic_eq,more_horiz,network_check,photo_camera,public,refresh,rocket_launch,schedule,send,shield,smart_display,speed,timer&display=block">
 <style>
 /* ==========================================================================
    Snowy Services — Material 3 Expressive design tokens
@@ -347,6 +347,36 @@ body.loading .shell,body.loading .foot{visibility:hidden;}
         <div class="tile-key">Отдача</div>
         <div class="tile-val" id="val-up">—<span class="unit">Мбит/с</span></div>
       </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Доступность сервисов</h2>
+  <p class="body" style="margin-top:-6px;margin-bottom:10px;font-size:.72rem;">Проверяем, отвечает ли сервис через ваше текущее соединение. Это не измерение скорости — только факт доступности.</p>
+  <div class="list" id="resource-list">
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">send</span></div>
+      <div class="li-text"><div class="li-title">Telegram</div></div>
+      <div class="li-val" id="res-telegram">—</div>
+    </div>
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">forum</span></div>
+      <div class="li-text"><div class="li-title">Discord</div></div>
+      <div class="li-val" id="res-discord">—</div>
+    </div>
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">photo_camera</span></div>
+      <div class="li-text"><div class="li-title">Instagram</div></div>
+      <div class="li-val" id="res-instagram">—</div>
+    </div>
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">smart_display</span></div>
+      <div class="li-text"><div class="li-title">YouTube</div></div>
+      <div class="li-val" id="res-youtube">—</div>
+    </div>
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">auto_awesome</span></div>
+      <div class="li-text"><div class="li-title">Gemini</div></div>
+      <div class="li-val" id="res-gemini">—</div>
     </div>
   </div>
 
@@ -789,6 +819,62 @@ function runUploadTest(url){
 }
 
 var running = false;
+/* ------------------------------------------------- Resource reachability ---
+   Не измеряет скорость — только "отвечает ли домен через текущий канал".
+   Настоящий кросс-доменный fetch с чтением ответа упёрся бы в CORS, поэтому
+   используется mode:'no-cors': ответ остаётся непрозрачным (тело/статус не
+   прочитать), но сам факт разрешения промиса означает, что TCP+TLS до этого
+   домена прошли и сервер что-то ответил — этого достаточно, чтобы отличить
+   "доступен" от "заблокирован/недоступен" (отказ соединения или таймаут).  */
+var RESOURCE_CHECKS = [
+  { id: 'telegram',  url: 'https://telegram.org/favicon.ico' },
+  { id: 'discord',   url: 'https://discord.com/favicon.ico' },
+  { id: 'instagram', url: 'https://www.instagram.com/favicon.ico' },
+  { id: 'youtube',   url: 'https://www.youtube.com/generate_204' },
+  { id: 'gemini',    url: 'https://gemini.google.com/favicon.ico' }
+];
+var RESOURCE_TIMEOUT_MS = 5000;
+
+function checkResource(url, timeoutMs){
+  return new Promise(function(resolve){
+    var start = performance.now();
+    var controller = ('AbortController' in window) ? new AbortController() : null;
+    var timer = controller ? setTimeout(function(){ controller.abort(); }, timeoutMs) : null;
+    fetch(url, {
+      mode: 'no-cors',
+      cache: 'no-store',
+      signal: controller ? controller.signal : undefined
+    }).then(function(){
+      if(timer) clearTimeout(timer);
+      resolve({ ok: true, ms: performance.now() - start });
+    }).catch(function(){
+      if(timer) clearTimeout(timer);
+      resolve({ ok: false, ms: null });
+    });
+  });
+}
+
+function runResourceChecks(){
+  var promises = RESOURCE_CHECKS.map(function(r){
+    var el = document.getElementById('res-' + r.id);
+    if(el){
+      el.innerHTML = '<span class="msym" style="font-size:15px;vertical-align:-3px;">more_horiz</span>';
+      el.style.color = '';
+    }
+    return checkResource(r.url, RESOURCE_TIMEOUT_MS).then(function(result){
+      if(!el) return;
+      if(result.ok){
+        el.innerHTML = fmt(result.ms, 0) + ' <span class="unit">мс</span>';
+        el.style.color = 'var(--tertiary)';
+      }else{
+        el.innerHTML = '<span class="msym" style="font-size:15px;vertical-align:-3px;">close</span> недоступен';
+        el.style.color = 'var(--error)';
+      }
+    });
+  });
+  return Promise.all(promises);
+}
+
 async function startTest(){
   if(running) return;
   running = true;
@@ -797,6 +883,10 @@ async function startTest(){
   setRunning(true);
 
   [els.tilePing, els.tileJitter, els.tileDown, els.tileUp].forEach(function(t){ t.classList.remove('active'); });
+
+  // Не await — проверка доступности идёт своим ходом параллельно с
+  // основным тестом скорости, не удлиняя его.
+  runResourceChecks();
 
   try{
     setStage('schedule', 'Ищем ближайший сервер');
