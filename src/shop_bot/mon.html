@@ -523,30 +523,14 @@ body.loading .foot{visibility:hidden;}
   <p class="body lead">Зелёный узел отвечает и работает штатно. Проверка идёт прямо сейчас, прямо из вашего браузера.</p>
 
   <div class="summary">
-    <div class="summary-num" id="summary-num">0/12</div>
+    <div class="summary-num" id="summary-num">0/0</div>
     <div>
       <div class="summary-txt" id="summary-txt">Проверяем узлы…</div>
       <div class="summary-sub">Мы на страже вашей безопасности</div>
     </div>
   </div>
 
-  <div class="nodes">
-    <div class="node" id="de1"><span class="node-name"><span class="led"></span>DE 1</span><span class="latency">…</span></div>
-    <div class="node" id="de2"><span class="node-name"><span class="led"></span>DE 2</span><span class="latency">…</span></div>
-    <div class="node" id="dedns"><span class="node-name"><span class="led"></span>DE DNS</span><span class="latency">…</span></div>
-    <div class="node" id="us1"><span class="node-name"><span class="led"></span>US 1</span><span class="latency">…</span></div>
-    <div class="node" id="fi1"><span class="node-name"><span class="led"></span>FI 1</span><span class="latency">…</span></div>
-    <div class="node" id="nl1"><span class="node-name"><span class="led"></span>NL 1</span><span class="latency">…</span></div>
-    <div class="node" id="nl2"><span class="node-name"><span class="led"></span>NL 2</span><span class="latency">…</span></div>
-    <div class="node" id="ch1"><span class="node-name"><span class="led"></span>CH 1</span><span class="latency">…</span></div>
-    <div class="node" id="tr1"><span class="node-name"><span class="led"></span>TR 1</span><span class="latency">…</span></div>
-    <div class="node" id="ru1"><span class="node-name"><span class="led"></span>RU 1</span><span class="latency">…</span></div>
-    <div class="node" id="ru2"><span class="node-name"><span class="led"></span>RU 2</span><span class="latency">…</span></div>
-    <div class="node" id="ru3"><span class="node-name"><span class="led"></span>RU 3</span><span class="latency">…</span></div>
-    <div class="node" id="ru4"><span class="node-name"><span class="led"></span>RU 4</span><span class="latency">…</span></div>
-    <div class="node" id="ru5"><span class="node-name"><span class="led"></span>RU 5</span><span class="latency">…</span></div>
-    <div class="node" id="ru6"><span class="node-name"><span class="led"></span>RU 6</span><span class="latency">…</span></div>
-  </div>
+  <div class="nodes" id="nodes"></div>
 
   <a href="tg://resolve?domain=snowyservices_support_bot" class="btn btn-full cta">
     <span class="msym">send</span>Сообщить о проблеме
@@ -556,11 +540,7 @@ body.loading .foot{visibility:hidden;}
 <div class="foot">Snowy Services</div>
 
 <script>
-/* Material 3 Expressive loading indicator ---------------------------------
-   Seven shapes — soft burst, 9-sided cookie, pentagon, pill, 4-sided cookie,
-   oval, 7-sided cookie — generated at runtime with identical point counts so
-   the browser can interpolate one into the next. Equal-area normalisation
-   keeps the optical weight constant through the whole morph.            */
+/* Material 3 Expressive loading indicator --------------------------------- */
 function m3LoaderPaths(){
   var N=72, TAU=Math.PI*2;
   function map(f){var a=[],i;for(i=0;i<N;i++){a.push(f(i/N*TAU));}return a;}
@@ -638,12 +618,46 @@ function hidePageLoader(){
 
 var MAX_RETRIES = 5;
 
-var nodeStates = {de1:false,de2:false,dedns:false,us1:false,fi1:false,nl1:false,nl2:false,
-                  ch1:false,tr1:false,ru1:false,ru2:false,ru3:false,ru4:false,ru5:false,ru6:false};
-var retryCounters = {de1:0,de2:0,dedns:0,us1:0,fi1:0,nl1:0,nl2:0,
-                     ch1:0,tr1:0,ru1:0,ru2:0,ru3:0,ru4:0,ru5:0,ru6:0};
+/* Единственный источник правды по узлам. Чтобы добавить узел — добавь строку
+   сюда: плитка, счётчик и проверка появятся автоматически. Порядок строк =
+   порядок плиток на странице. */
+var NODES = [
+  { id: "de1",   name: "DE 1",   url: "nuxt-vless.duckdns.org" },
+  { id: "de2",   name: "DE 2",   url: "nuxt-balancer.duckdns.org" },
+  { id: "dedns", name: "DE DNS", url: "nuxt-doh.duckdns.org" },
+  { id: "us1",   name: "US 1",   url: "snwy-usa.duckdns.org" },
+  { id: "fi1",   name: "FI 1",   url: "snwy-fin.duckdns.org" },
+  { id: "nl1",   name: "NL 1",   url: "snwy-neth.duckdns.org" },
+  { id: "nl2",   name: "NL 2",   url: "nord-central.duckdns.org" },
+  { id: "ch1",   name: "CH 1",   url: "snwy-switz.duckdns.org" },
+  { id: "tr1",   name: "TR 1",   url: "snwy-turkey.duckdns.org" },
+  { id: "ru1",   name: "RU 1",   url: "frdm-central.duckdns.org" },
+  { id: "ru2",   name: "RU 2",   url: "snwy-central.duckdns.org" },
+  { id: "ru3",   name: "RU 3",   url: "lbrts-central.duckdns.org" },
+  { id: "ru4",   name: "RU 4",   url: "iron-central.duckdns.org" },
+  { id: "ru5",   name: "RU 5",   url: "woof-central.duckdns.org" },
+  { id: "ru6",   name: "RU 6",   url: "vld-central.duckdns.org" }
+];
 
-var TOTAL_NODES = 15, doneNodes = 0, upNodes = 0;
+var nodeStates = {}, retryCounters = {};
+NODES.forEach(function(n){ nodeStates[n.id] = false; retryCounters[n.id] = 0; });
+
+var TOTAL_NODES = NODES.length, doneNodes = 0, upNodes = 0;
+
+/* Рисует плитки узлов в #nodes по списку NODES. */
+function renderNodes(){
+  var box = document.getElementById('nodes');
+  if(!box) return;
+  box.innerHTML = '';
+  NODES.forEach(function(n){
+    var el = document.createElement('div');
+    el.className = 'node';
+    el.id = n.id;
+    el.innerHTML = '<span class="node-name"><span class="led"></span></span><span class="latency">…</span>';
+    el.querySelector('.node-name').appendChild(document.createTextNode(n.name));
+    box.appendChild(el);
+  });
+}
 
 function refreshSummary(){
   var num = document.getElementById('summary-num'),
@@ -681,23 +695,7 @@ function checkNodeAttempt(node){
 }
 
 async function startAggressivePing(){
-  var nodes = [
-    { id: "de1",   url: "nuxt-vless.duckdns.org" },
-    { id: "de2",   url: "nuxt-balancer.duckdns.org" },
-    { id: "dedns", url: "nuxt-doh.duckdns.org" },
-    { id: "us1",   url: "snwy-usa.duckdns.org" },
-    { id: "fi1",   url: "snwy-fin.duckdns.org" },
-    { id: "nl1",   url: "snwy-neth.duckdns.org" },
-    { id: "nl2",   url: "nord-central.duckdns.org" },
-    { id: "ch1",   url: "snwy-switz.duckdns.org" },
-    { id: "tr1",   url: "snwy-turkey.duckdns.org" },
-    { id: "ru1",   url: "frdm-central.duckdns.org" },
-    { id: "ru2",   url: "snwy-central.duckdns.org" },
-    { id: "ru3",   url: "lbrts-central.duckdns.org" },
-    { id: "ru4",   url: "iron-central.duckdns.org" },
-    { id: "ru5",   url: "woof-central.duckdns.org" },
-    { id: "ru6",   url: "vld-central.duckdns.org" }
-  ].map(function(node){
+  var nodes = NODES.map(function(node){
     var el = document.getElementById(node.id);
     return {
       id: node.id, url: node.url, el: el,
@@ -736,6 +734,7 @@ async function startAggressivePing(){
 }
 
 m3BuildLoaders();
+renderNodes();
 refreshSummary();
 document.addEventListener("DOMContentLoaded", startAggressivePing);
 
