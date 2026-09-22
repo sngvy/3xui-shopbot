@@ -1,0 +1,44 @@
+{# Единый источник разметки пагинации пользователей.
+   Окно из 5 страниц вокруг текущей + первая/последняя со схлопыванием,
+   иначе при большом числе страниц кнопок становится неуправляемо много. #}
+{% set cp = current_page or 1 %}
+{% set tp = total_pages or 1 %}
+{% set query = q or '' %}
+{% set pp = per_page or 20 %}
+
+<li class="page-item {% if cp <= 1 %}disabled{% endif %}">
+  <a class="page-link" href="{{ url_for('users_page', page=(cp - 1 if cp > 1 else 1), q=query, per_page=pp) }}"
+     data-page="{{ cp - 1 if cp > 1 else 1 }}" aria-label="Предыдущая">&laquo;</a>
+</li>
+
+{% set start = 1 if tp <= 7 else ([cp - 2, 1]|max) %}
+{% set end = tp if tp <= 7 else ([cp + 2, tp]|min) %}
+
+{% if start > 1 %}
+  <li class="page-item">
+    <a class="page-link" href="{{ url_for('users_page', page=1, q=query, per_page=pp) }}" data-page="1">1</a>
+  </li>
+  {% if start > 2 %}
+    <li class="page-item disabled"><span class="page-link">…</span></li>
+  {% endif %}
+{% endif %}
+
+{% for p in range(start, end + 1) %}
+  <li class="page-item {% if p == cp %}active{% endif %}">
+    <a class="page-link" href="{{ url_for('users_page', page=p, q=query, per_page=pp) }}" data-page="{{ p }}">{{ p }}</a>
+  </li>
+{% endfor %}
+
+{% if end < tp %}
+  {% if end < tp - 1 %}
+    <li class="page-item disabled"><span class="page-link">…</span></li>
+  {% endif %}
+  <li class="page-item">
+    <a class="page-link" href="{{ url_for('users_page', page=tp, q=query, per_page=pp) }}" data-page="{{ tp }}">{{ tp }}</a>
+  </li>
+{% endif %}
+
+<li class="page-item {% if cp >= tp %}disabled{% endif %}">
+  <a class="page-link" href="{{ url_for('users_page', page=(cp + 1 if cp < tp else tp), q=query, per_page=pp) }}"
+     data-page="{{ cp + 1 if cp < tp else tp }}" aria-label="Следующая">&raquo;</a>
+</li>

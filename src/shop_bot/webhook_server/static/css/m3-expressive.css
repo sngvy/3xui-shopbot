@@ -1,0 +1,1682 @@
+/* ==========================================================================
+   Material 3 Expressive — слой поверх Tabler/Bootstrap и style.css
+   Подключать после tabler.min.css и style.css.
+
+   Логика: style.css почти целиком построен на переменных проекта, поэтому
+   основную работу делает переназначение токенов, а не переписывание правил.
+   Ниже — те же роли цвета, шкала форм и моушн-токены, что и на публичных
+   страницах подписки/статуса, чтобы панель и клиентские страницы читались
+   как один продукт.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ 1. Токены -- */
+:root,
+[data-bs-theme='light']{
+  /* Поверхности */
+  --m3-surface:#FBF7FF;
+  --m3-surface-container:#F2ECFA;
+  --m3-surface-container-high:#EAE1F6;
+  --m3-surface-container-highest:#E2D8F1;
+  --m3-on-surface:#191424;
+  --m3-on-surface-variant:#4C4459;
+  --m3-outline-variant:#D6CCE4;
+
+  /* Акценты */
+  --m3-primary:#5B27F5;
+  --m3-on-primary:#FFFFFF;
+  --m3-primary-container:#E6DBFF;
+  --m3-on-primary-container:#210079;
+
+  --m3-secondary:#D9006C;
+  --m3-secondary-container:#FFD9E6;
+  --m3-on-secondary-container:#470022;
+
+  --m3-tertiary:#3F6E00;
+  --m3-tertiary-container:#C6F589;
+  --m3-on-tertiary-container:#122200;
+
+  --m3-amber:#7C5400;
+  --m3-amber-container:#FFDF90;
+  --m3-on-amber-container:#271900;
+
+  --m3-error:#BC0027;
+  --m3-error-container:#FFD9D8;
+  --m3-on-error-container:#450009;
+
+  --m3-online:#0C7A46;
+  --m3-online-container:#A6F2C6;
+  --m3-online-glow:rgba(12,122,70,.45);
+
+  --m3-press:rgba(25,20,36,.07);
+
+  /* Сетка и подписи графиков. В светлой теме значения совпадают с
+     дефолтами Chart.js, поэтому графики главной выглядят как прежде,
+     а мониторинг перестаёт отличаться сиреневым оттенком. */
+  --m3-chart-grid:rgba(0,0,0,.10);
+  --m3-chart-tick:#666666;
+}
+
+[data-bs-theme='dark']{
+  --m3-surface:#121016;
+  --m3-surface-container:#1D1A24;
+  --m3-surface-container-high:#27232F;
+  --m3-surface-container-highest:#322D3B;
+  --m3-on-surface:#ECE2F6;
+  --m3-on-surface-variant:#CBC1D9;
+  --m3-outline-variant:#4A4356;
+
+  --m3-primary:#CBB8FF;
+  --m3-on-primary:#320096;
+  --m3-primary-container:#4A19D2;
+  --m3-on-primary-container:#E9DDFF;
+
+  --m3-secondary:#FFB0CB;
+  --m3-secondary-container:#A80053;
+  --m3-on-secondary-container:#FFD9E6;
+
+  --m3-tertiary:#ABD86A;
+  --m3-tertiary-container:#2F5200;
+  --m3-on-tertiary-container:#C6F589;
+
+  --m3-amber:#FFDF90;
+  --m3-amber-container:#5D4000;
+  --m3-on-amber-container:#FFDF90;
+
+  --m3-error:#FFB3AE;
+  --m3-error-container:#93000F;
+  --m3-on-error-container:#FFD9D8;
+
+  --m3-online:#6EE0A0;
+  --m3-online-container:#00522E;
+  --m3-online-glow:rgba(110,224,160,.40);
+
+  --m3-press:rgba(255,255,255,.09);
+
+  --m3-chart-grid:rgba(255,255,255,.12);
+  --m3-chart-tick:#9b93a8;
+}
+
+:root{
+  /* Шкала форм M3 */
+  --m3-r-xs:8px;  --m3-r-s:12px;  --m3-r-m:16px;
+  --m3-r-l:24px;  --m3-r-xl:28px; --m3-r-xxl:36px; --m3-r-full:999px;
+
+  /* Моушн */
+  --m3-ease-emph:cubic-bezier(.2,0,0,1);
+  --m3-ease-spring:cubic-bezier(.34,1.42,.5,1);
+  --m3-dur-short:180ms;
+  --m3-dur-med:380ms;
+}
+
+/* --------------------------------- 2. Переназначение токенов проекта ----- */
+:root,
+[data-bs-theme='light'],
+[data-bs-theme='dark']{
+  --primary-color:var(--m3-primary);
+  --success-color:var(--m3-online);
+  --danger-color:var(--m3-error);
+  --warning-color:var(--m3-amber);
+
+  --bg-page:var(--m3-surface);
+  --bg-surface:var(--m3-surface-container);
+  --bg-card:var(--m3-surface-container);
+  --text-primary:var(--m3-on-surface);
+  --text-muted:var(--m3-on-surface-variant);
+  --border-color:var(--m3-outline-variant);
+
+  --ui-radius:20px;
+
+  /* пятна анимированного фона — делаем их сочными */
+  --accent-1:color-mix(in oklab, var(--m3-primary) 20%, transparent);
+  --accent-2:color-mix(in oklab, var(--m3-secondary) 16%, transparent);
+  --accent-3:color-mix(in oklab, var(--m3-tertiary) 14%, transparent);
+}
+
+/* ------------------------------- 3. Мост к Bootstrap / Tabler ------------ */
+:root,
+[data-bs-theme='light'],
+[data-bs-theme='dark']{
+  --tblr-primary:var(--m3-primary);
+  --bs-primary:var(--m3-primary);
+  --tblr-body-bg:var(--m3-surface);
+  --bs-body-bg:var(--m3-surface);
+  --tblr-body-color:var(--m3-on-surface);
+  --bs-body-color:var(--m3-on-surface);
+  --tblr-secondary:var(--m3-on-surface-variant);
+  --tblr-muted:var(--m3-on-surface-variant);
+  --tblr-border-color:var(--m3-outline-variant);
+  --bs-border-color:var(--m3-outline-variant);
+  --tblr-border-radius:var(--m3-r-m);
+  --bs-border-radius:var(--m3-r-m);
+  --tblr-bg-surface:var(--m3-surface-container);
+  --tblr-bg-surface-secondary:var(--m3-surface-container-high);
+  --tblr-bg-surface-tertiary:var(--m3-surface-container-highest);
+  --tblr-success:var(--m3-online);
+  --tblr-danger:var(--m3-error);
+  --tblr-warning:var(--m3-amber);
+  --tblr-font-sans-serif:"Unbounded",system-ui,sans-serif;
+  --bs-body-font-family:"Unbounded",system-ui,sans-serif;
+  --bs-body-font-weight:300;
+}
+/* --tblr-primary-rgb нельзя выразить через var() — Tabler/Bootstrap берут
+   его в rgba() для нативных компонентов (disabled-состояния, progress-bar,
+   спиннеры, bg-primary-lt), которых не касаются точечные правила ниже.
+   Раньше значение было одно на обе темы (91,39,245 — светлый #5B27F5). */
+:root,
+[data-bs-theme='light']{
+  --tblr-primary-rgb:91,39,245;
+  --bs-primary-rgb:91,39,245;
+}
+[data-bs-theme='dark']{
+  --tblr-primary-rgb:203,184,255;
+  --bs-primary-rgb:203,184,255;
+}
+
+/* ------------------------------------------------------ 4. Типографика --- */
+/* Unbounded — широкая витринная гарнитура. Мелкий текст ставим лёгким,
+   иначе интерфейс превращается в сплошные тяжёлые блоки.                  */
+body{
+  font-family:"Unbounded",system-ui,sans-serif !important;
+  font-weight:300;
+  letter-spacing:-.01em;
+  background:var(--m3-surface);
+  color:var(--m3-on-surface);
+}
+
+/* Material Symbols — единый иконочный набор панели.
+   Без этого блока <span class="msym">ac_unit</span> выводился как
+   обычный текст «ac_unit» шрифтом Unbounded.                            */
+.msym{
+  font-family:"Material Symbols Rounded" !important;
+  font-weight:400;
+  font-style:normal;
+  font-size:20px;
+  line-height:1;
+  letter-spacing:normal;
+  text-transform:none;
+  white-space:nowrap;
+  word-wrap:normal;
+  direction:ltr;
+  display:inline-block;
+  vertical-align:middle;
+  font-variation-settings:"FILL" 1,"wght" 500,"GRAD" 0,"opsz" 24;
+  -webkit-font-feature-settings:"liga";
+  font-feature-settings:"liga";
+  -webkit-font-smoothing:antialiased;
+  user-select:none;
+  flex-shrink:0;
+}
+/* контурный вариант — для крупных декоративных иконок */
+.msym.outlined{font-variation-settings:"FILL" 0,"wght" 400,"GRAD" 0,"opsz" 24;}
+.msym.sm{font-size:17px;}
+.btn .msym{font-size:18px;margin-right:2px;}
+.btn .msym:only-child{margin-right:0;}
+.alert .msym{margin-right:8px;}
+
+h1,h2,h3,h4,h5,h6,
+.h1,.h2,.h3,.h4,.h5,.h6,
+.page-title,.card-title,.modal-title{
+  font-family:"Unbounded",system-ui,sans-serif;
+  letter-spacing:-.03em;
+  line-height:1.15;
+}
+h1,.h1,.page-title{font-weight:800;}
+h2,.h2{font-weight:700;letter-spacing:-.03em;}
+h3,.h3,.card-title,.modal-title{font-weight:600;letter-spacing:-.02em;}
+h4,.h4,h5,.h5,h6,.h6{font-weight:600;}
+
+/* style.css центрирует h1 и рисует линию под h2 — в M3 это лишнее */
+h1{text-align:left !important;margin-bottom:22px !important;}
+h2{border-bottom:none !important;padding-bottom:0 !important;color:var(--m3-on-surface) !important;}
+
+.page-header{margin-bottom:20px;}
+.page-title{font-size:clamp(1.5rem,3.4vw,2.1rem);}
+.subheader{
+  font-size:.62rem;font-weight:500;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--m3-on-surface-variant);
+}
+small,.small,.text-muted,.text-secondary,.form-hint,.form-text{
+  font-weight:300;letter-spacing:0;
+}
+.text-muted,.text-secondary{color:var(--m3-on-surface-variant) !important;}
+strong,b{font-weight:600;}
+.table,.data,.metric-value,.stat-value{font-variant-numeric:tabular-nums;}
+
+/* --------------------------------------------------------- 5. Шапка ----- */
+.main-header{
+  background:var(--m3-surface-container) !important;
+  border:none !important;
+  border-radius:var(--m3-r-xxl) !important;
+  padding:12px 18px !important;
+  box-shadow:none !important;
+}
+.brand .brand-link{gap:12px;}
+.brand img{
+  height:44px !important;
+  border-radius:16px 22px 16px 22px !important;
+  filter:none !important;
+}
+.brand span,.brand #brand-title{
+  font-weight:700 !important;
+  font-size:.9rem !important;
+  letter-spacing:-.02em !important;
+  color:var(--m3-on-surface);
+}
+/* фирменный знак-снежинка, как на клиентских страницах */
+.brandmark{
+  width:40px;height:40px;flex-shrink:0;
+  display:grid;place-items:center;
+  background:var(--m3-primary) !important;
+  color:var(--m3-on-primary) !important;
+  border-radius:14px 20px 14px 20px;
+}
+.brandmark .msym{font-size:22px;color:inherit !important;}
+
+#brand-edit{
+  border-radius:var(--m3-r-full) !important;
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  color:var(--m3-on-surface-variant) !important;
+}
+
+/* Навигация — связанная группа пилюль в духе M3 Expressive */
+.navigation{gap:4px !important;}
+.navigation .nav-link{
+  border-radius:var(--m3-r-full) !important;
+  padding:9px 15px !important;
+  font-size:.72rem !important;
+  font-weight:500 !important;
+  letter-spacing:0 !important;
+  color:var(--m3-on-surface-variant) !important;
+  background:transparent !important;
+  border:none !important;
+  transition:background var(--m3-dur-short) var(--m3-ease-emph),
+             color var(--m3-dur-short) var(--m3-ease-emph),
+             border-radius var(--m3-dur-med) var(--m3-ease-spring);
+}
+.navigation .nav-link:hover{
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+  box-shadow:none !important;
+}
+.navigation .nav-link.active{
+  background:var(--m3-primary-container) !important;
+  color:var(--m3-on-primary-container) !important;
+  font-weight:600 !important;
+  box-shadow:none !important;
+}
+.navigation .nav-link:active{border-radius:var(--m3-r-s) !important;}
+
+.header-controls{gap:10px !important;}
+.bot-control{
+  display:flex;align-items:center;gap:10px;
+  background:var(--m3-surface-container-high);
+  border-radius:var(--m3-r-full);
+  padding:6px 8px 6px 14px;
+}
+.bot-control p{margin:0;font-size:.66rem;font-weight:500;white-space:nowrap;}
+.status-running{color:var(--m3-online) !important;}
+.status-stopped{color:var(--m3-on-surface-variant) !important;}
+.user-session-controls{
+  display:flex;align-items:center;gap:8px;
+  font-size:.64rem;font-weight:300;
+}
+
+/* Бургер */
+label.burger_img{
+  border-radius:var(--m3-r-m) !important;
+  border:none !important;
+  background:var(--m3-surface-container-high) !important;
+  box-shadow:none !important;
+}
+.bm .burger-menu{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  border-radius:var(--m3-r-xl) !important;
+  box-shadow:0 10px 34px rgba(0,0,0,.22) !important;
+  padding:8px !important;
+}
+.bm .burger-menu a{
+  border-radius:var(--m3-r-s) !important;
+  font-size:.72rem !important;
+  font-weight:400 !important;
+  color:var(--m3-on-surface) !important;
+}
+.bm .burger-menu a:hover{background:var(--m3-surface-container-highest) !important;}
+
+/* -------------------------------------------------------- 6. Карточки --- */
+.card,.card.glass{
+  background:var(--m3-surface-container) !important;
+  border:none !important;
+  border-radius:var(--m3-r-xl) !important;
+  box-shadow:none !important;
+}
+.card-header{
+  background:transparent !important;
+  border-bottom:1px solid var(--m3-outline-variant) !important;
+  padding:18px 20px 14px !important;
+  border-radius:var(--m3-r-xl) var(--m3-r-xl) 0 0 !important;
+}
+.card-body{padding:20px !important;}
+.card-footer{
+  background:transparent !important;
+  border-top:1px solid var(--m3-outline-variant) !important;
+}
+.card-title{font-size:1rem !important;margin:0;}
+
+/* Секции настроек и информационные блоки */
+/* .settings-section — обёртка: в settings.html внутри неё уже лежит .card,
+   а в support_bot_settings.html карточки нет. Поэтому поверхность даём
+   только тем секциям, где внутренней карточки не оказалось.              */
+.settings-section{
+  background:transparent !important;
+  border:none !important;
+  padding:0 !important;
+  margin-bottom:18px;
+}
+.settings-section:not(:has(> .card)):not(:has(.host-card)){
+  background:var(--m3-surface-container) !important;
+  border-radius:var(--m3-r-xl) !important;
+  padding:20px !important;
+}
+/* Скрытые вкладки настроек (Панель/Бот/Рефералы и т.д., когда активна
+   другая) должны полностью выпадать из потока. style.css пытался схлопнуть
+   их через opacity:0 + height:0 + overflow:hidden — но height:0 с
+   ненулевым padding (а .settings-section получает padding:20px !important
+   через правило выше) всё равно рендерится с остаточной высотой, так как
+   padding не может стать отрицательным. Из-за этого 7 невидимых, но всё
+   ещё занимающих место вкладок создавали огромный пустой отступ между
+   активной карточкой настроек и кнопкой «Сохранить все настройки».
+   display:none гарантированно убирает элемент из раскладки целиком. */
+.settings-section.is-hidden{display:none !important;}
+.info-item,.metric-item{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  border-radius:var(--m3-r-m) !important;
+  padding:14px 16px !important;
+}
+.metric-label,.stat-label{
+  font-size:.6rem !important;font-weight:500 !important;
+  letter-spacing:.08em;text-transform:uppercase;
+  color:var(--m3-on-surface-variant) !important;
+}
+.metric-value,.stat-value{
+  font-size:1.25rem !important;font-weight:700 !important;letter-spacing:-.03em !important;
+}
+
+/* Плитки статистики — разноцветные, как на странице подписки */
+.stat-card{
+  background:var(--m3-surface-container) !important;
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  padding:18px !important;
+}
+.row > [class*="col"]:nth-child(4n+1) .stat-card{
+  background:var(--m3-primary-container) !important;color:var(--m3-on-primary-container) !important;
+  border-radius:var(--m3-r-xxl) var(--m3-r-l) var(--m3-r-l) var(--m3-r-l) !important;
+}
+.row > [class*="col"]:nth-child(4n+2) .stat-card{
+  background:var(--m3-secondary-container) !important;color:var(--m3-on-secondary-container) !important;
+  border-radius:var(--m3-r-l) var(--m3-r-xxl) var(--m3-r-l) var(--m3-r-l) !important;
+}
+.row > [class*="col"]:nth-child(4n+3) .stat-card{
+  background:var(--m3-tertiary-container) !important;color:var(--m3-on-tertiary-container) !important;
+  border-radius:var(--m3-r-l) var(--m3-r-l) var(--m3-r-l) var(--m3-r-xxl) !important;
+}
+.row > [class*="col"]:nth-child(4n+4) .stat-card{
+  background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;
+  border-radius:var(--m3-r-l) var(--m3-r-l) var(--m3-r-xxl) var(--m3-r-l) !important;
+}
+.stat-card .stat-label,.stat-card .metric-label{color:inherit !important;opacity:.75;}
+.stat-card .stat-icon{opacity:.85;}
+
+/* --------------------------------------------------------- 7. Кнопки ---- */
+/* Фирменная деталь M3 Expressive: пилюля «сжимается» в скруглённый
+   квадрат на нажатии.                                                     */
+.btn{
+  border-radius:var(--m3-r-full) !important;
+  border:none !important;
+  font-family:inherit !important;
+  font-size:.76rem !important;
+  font-weight:500 !important;
+  letter-spacing:0 !important;
+  padding:11px 22px !important;
+  box-shadow:none !important;
+  transition:border-radius var(--m3-dur-med) var(--m3-ease-spring),
+             transform var(--m3-dur-short) var(--m3-ease-emph),
+             background var(--m3-dur-short) var(--m3-ease-emph),
+             filter var(--m3-dur-short) var(--m3-ease-emph) !important;
+}
+.btn:active{border-radius:var(--m3-r-m) !important;transform:scale(.96);}
+.btn-sm{padding:8px 16px !important;font-size:.68rem !important;border-radius:var(--m3-r-full) !important;}
+.btn.btn-xs{padding:5px 12px !important;font-size:.62rem !important;border-radius:var(--m3-r-full) !important;}
+.btn-icon{padding:9px !important;}
+
+.btn-primary{background:var(--m3-primary) !important;color:var(--m3-on-primary) !important;}
+.btn-primary:hover{filter:brightness(1.08);}
+.btn-secondary{background:var(--m3-surface-container-highest) !important;color:var(--m3-on-surface) !important;}
+.btn-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
+.btn-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
+.btn-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+
+/* Outline-варианты в M3 читаются как «тональные» */
+.btn-outline-secondary,.btn-outline-primary,
+.btn-outline-danger,.btn-outline-warning,.btn-outline-success{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+}
+.btn-outline-secondary{color:var(--m3-on-surface) !important;}
+.btn-outline-primary{color:var(--m3-primary) !important;}
+.btn-outline-danger{color:var(--m3-error) !important;}
+.btn-outline-warning{color:var(--m3-amber) !important;}
+.btn-outline-success{color:var(--m3-online) !important;}
+.btn-outline-secondary:hover,.btn-outline-primary:hover,
+.btn-outline-danger:hover,.btn-outline-warning:hover,.btn-outline-success:hover{
+  background:var(--m3-surface-container-highest) !important;
+}
+
+/* btn-glass из style.css переводим на тональные поверхности */
+.btn-glass{
+  backdrop-filter:none !important;
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+}
+.btn-glass.btn-primary{background:var(--m3-primary-container) !important;color:var(--m3-on-primary-container) !important;}
+.btn-glass.btn-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
+.btn-glass.btn-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
+.btn-glass.btn-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+
+.btn:disabled,.btn.disabled{opacity:.38 !important;}
+.btn-list{gap:8px !important;}
+
+/* Связанная группа кнопок */
+.btn-group > .btn{border-radius:var(--m3-r-xs) !important;margin-right:3px;}
+.btn-group > .btn:first-child{border-top-left-radius:var(--m3-r-full) !important;border-bottom-left-radius:var(--m3-r-full) !important;}
+.btn-group > .btn:last-child{border-top-right-radius:var(--m3-r-full) !important;border-bottom-right-radius:var(--m3-r-full) !important;margin-right:0;}
+
+/* ---------------------------------------------------------- 8. Формы ---- */
+.form-label{
+  font-size:.62rem !important;
+  font-weight:500 !important;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--m3-on-surface-variant) !important;
+  margin-bottom:7px !important;
+}
+.form-control,.form-select,
+.input-group .form-control,.input-group .form-select{
+  background:var(--m3-surface-container-high) !important;
+  border:1px solid transparent !important;
+  border-radius:var(--m3-r-m) !important;
+  color:var(--m3-on-surface) !important;
+  font-family:inherit !important;
+  font-size:.78rem !important;
+  font-weight:300 !important;
+  padding:12px 16px !important;
+  box-shadow:none !important;
+  transition:border-color var(--m3-dur-short) var(--m3-ease-emph),
+             background var(--m3-dur-short) var(--m3-ease-emph) !important;
+}
+.form-control:focus,.form-select:focus{
+  background:var(--m3-surface-container-high) !important;
+  border-color:var(--m3-primary) !important;
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent) !important;
+}
+.form-control::placeholder{color:var(--m3-on-surface-variant) !important;opacity:.6;}
+.form-control:disabled,.form-control[readonly]{opacity:.6;}
+.pill,.pill-md{border-radius:var(--m3-r-full) !important;}
+.form-hint,.form-text{
+  font-size:.62rem !important;
+  color:var(--m3-on-surface-variant) !important;
+  margin-top:6px !important;
+}
+.input-group-text{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  color:var(--m3-on-surface-variant) !important;
+  border-radius:var(--m3-r-m) 0 0 var(--m3-r-m) !important;
+}
+.input-group.seamless > .btn,
+.input-group.seamless > .form-control,
+.input-group.seamless > .form-select{
+  background:var(--m3-surface-container-high) !important;
+  border-color:transparent !important;
+}
+
+/* Чекбоксы и переключатели */
+.form-check-input{
+  background-color:var(--m3-surface-container-highest) !important;
+  border:2px solid var(--m3-on-surface-variant) !important;
+  border-radius:6px !important;
+  width:1.2em;height:1.2em;
+  transition:background var(--m3-dur-short) var(--m3-ease-emph),
+             border-color var(--m3-dur-short) var(--m3-ease-emph);
+}
+.form-check-input:checked{
+  background-color:var(--m3-primary) !important;
+  border-color:var(--m3-primary) !important;
+}
+.form-check-input:focus{
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent) !important;
+}
+.form-check-label{font-size:.74rem;font-weight:300;}
+
+/* Soft-select из style.css */
+.soft-select .soft-select-toggle{
+  background:var(--m3-surface-container-high) !important;
+  border:1px solid transparent !important;
+  border-radius:var(--m3-r-m) !important;
+  padding:12px 16px !important;
+  font-size:.78rem;font-weight:300;
+  color:var(--m3-on-surface) !important;
+}
+.soft-select.open .soft-select-toggle,
+.soft-select .soft-select-toggle:focus{
+  border-color:var(--m3-primary) !important;
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent) !important;
+}
+.soft-select .soft-select-menu{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  box-shadow:0 12px 34px rgba(0,0,0,.24) !important;
+  padding:8px !important;
+}
+.soft-select .soft-select-item{
+  border-radius:var(--m3-r-s) !important;
+  font-size:.74rem;font-weight:300;
+  padding:10px 12px !important;
+}
+.soft-select .soft-select-item:hover{background:var(--m3-surface-container-highest) !important;}
+.soft-select .soft-select-item.is-active{
+  background:var(--m3-primary-container) !important;
+  color:var(--m3-on-primary-container) !important;
+  box-shadow:none !important;
+}
+
+/* --------------------------------------------------------- 9. Таблицы -- */
+.table{
+  --tblr-table-bg:transparent;
+  color:var(--m3-on-surface) !important;
+  font-size:.74rem;
+  font-weight:300;
+  border-color:var(--m3-outline-variant) !important;
+}
+.table thead th{
+  background:transparent !important;
+  border-bottom:1px solid var(--m3-outline-variant) !important;
+  color:var(--m3-on-surface-variant) !important;
+  font-size:.58rem !important;
+  font-weight:500 !important;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  padding:12px 14px !important;
+}
+.table td{
+  border-color:var(--m3-outline-variant) !important;
+  padding:13px 14px !important;
+  vertical-align:middle;
+}
+.table tbody tr{transition:background var(--m3-dur-short) var(--m3-ease-emph);}
+.table tbody tr:hover{background:var(--m3-surface-container-high) !important;}
+.table-responsive{border-radius:var(--m3-r-l);}
+
+/* ------------------------------------- 10. Бейджи, статусы, уведомления - */
+.badge{
+  border-radius:var(--m3-r-full) !important;
+  font-size:.58rem !important;
+  font-weight:500 !important;
+  letter-spacing:.04em;
+  padding:5px 11px !important;
+  background:var(--m3-surface-container-highest) !important;
+  color:var(--m3-on-surface) !important;
+}
+.badge.bg-green,.badge.bg-green-lt,.bg-success{
+  background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
+.badge.bg-red,.badge.bg-red-lt,.bg-danger{
+  background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
+.badge.bg-yellow,.badge.bg-yellow-lt,.bg-warning{
+  background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+.badge.bg-blue,.badge.bg-blue-lt,.badge.bg-purple,.bg-primary{
+  background:var(--m3-primary-container) !important;color:var(--m3-on-primary-container) !important;}
+
+.status-dot{background:var(--m3-on-surface-variant) !important;}
+.status-dot.bg-green{background:var(--m3-online) !important;}
+.status-dot.bg-red{background:var(--m3-error) !important;}
+.status-dot-animated{animation:m3-led 2.4s var(--m3-ease-emph) infinite;}
+@keyframes m3-led{
+  0%{box-shadow:0 0 0 0 var(--m3-online-glow);}
+  70%{box-shadow:0 0 0 8px transparent;}
+  100%{box-shadow:0 0 0 0 transparent;}
+}
+
+.alert{
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  font-size:.74rem;font-weight:300;
+  padding:14px 18px !important;
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+  box-shadow:none !important;
+}
+.alert-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
+.alert-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
+.alert-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+
+.toast{
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  font-size:.74rem;font-weight:400;
+  box-shadow:0 12px 34px rgba(0,0,0,.26) !important;
+}
+.toast.text-bg-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
+.toast.text-bg-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
+.toast.text-bg-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+.toast.text-bg-secondary{background:var(--m3-surface-container-highest) !important;color:var(--m3-on-surface) !important;}
+
+/* ------------------------------ 11. Модалки, меню, пагинация ------------ */
+/* Бэкдроп добавляется JS-ом последним ребёнком <body> — если по любой
+   причине его z-index не встанет ниже z-index самой модалки, он перехватывает
+   клики/фокус поверх полей ввода, хотя сама модалка при этом видна.
+   Фиксируем порядок явно, не полагаясь только на бандл Tabler. */
+.modal{z-index:1055 !important;pointer-events:auto !important;}
+.modal-backdrop{z-index:1050 !important;}
+.modal-dialog{pointer-events:auto !important;}
+.modal-content{
+  isolation:isolate;
+  position:relative;
+  pointer-events:auto !important;
+}
+.modal-content *{pointer-events:auto;}
+.modal-content{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  border-radius:var(--m3-r-xxl) !important;
+  box-shadow:0 24px 64px rgba(0,0,0,.34) !important;
+}
+.modal-header,.modal-footer{border-color:var(--m3-outline-variant) !important;padding:20px 24px !important;}
+.modal-body{padding:8px 24px 20px !important;}
+.modal-title{font-size:1.05rem !important;}
+.btn-close{
+  border-radius:var(--m3-r-full) !important;
+  opacity:.6;
+}
+.btn-close:hover{opacity:1;background:var(--m3-surface-container-highest) !important;}
+
+.dropdown-menu{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  box-shadow:0 12px 34px rgba(0,0,0,.24) !important;
+  padding:8px !important;
+}
+.dropdown-item{
+  border-radius:var(--m3-r-s) !important;
+  font-size:.74rem;font-weight:300;
+  padding:10px 12px !important;
+  color:var(--m3-on-surface) !important;
+}
+.dropdown-item:hover{background:var(--m3-surface-container-highest) !important;}
+
+/* Все элементы пагинации — одинаковые круги фиксированного размера:
+   номера, стрелки и многоточие. Иначе ширина плывёт от длины подписи и
+   кнопки получаются разной формы. */
+.pagination{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  padding:0;
+  margin-top:1.25rem;
+  list-style:none;
+}
+.pagination .page-item .page-link,
+.page-link{
+  width:38px;
+  height:38px;
+  min-width:38px;
+  padding:0 !important;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:none !important;
+  border-radius:var(--m3-r-full) !important;
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+  font-family:inherit;
+  font-size:.68rem;
+  font-weight:500;
+  line-height:1;
+  text-decoration:none;
+  transition:background var(--m3-dur-short) var(--m3-ease-emph),
+             border-radius var(--m3-dur-med) var(--m3-ease-spring);
+}
+.pagination .page-item .page-link{box-sizing:border-box;}
+.pagination .page-item:not(.active):not(.disabled) .page-link:hover{
+  background:var(--m3-surface-container-highest) !important;
+}
+.pagination .page-item.active .page-link{
+  background:var(--m3-primary) !important;
+  color:var(--m3-on-primary) !important;
+}
+.pagination .page-item.disabled .page-link{
+  opacity:.38;
+  background:transparent !important;
+}
+.pagination .page-item .page-link:active{border-radius:var(--m3-r-s) !important;}
+
+/* Прогресс */
+.progress{
+  background:var(--m3-surface-container-highest) !important;
+  border-radius:var(--m3-r-full) !important;
+  height:8px !important;
+}
+.progress-bar{background:var(--m3-primary) !important;border-radius:var(--m3-r-full) !important;}
+
+/* --------------------------- 12. Индикатор загрузки (M3 Expressive) ----- */
+/* Морфирующая фигура вместо кольцевого спиннера — та же, что на
+   клиентских страницах. Разметку подставляет m3-loader.js.                */
+.m3-loader{
+  width:44px;height:44px;
+  color:var(--m3-primary);
+  animation:m3-spin 4.9s cubic-bezier(.4,0,.2,1) infinite;
+  display:block;
+}
+.m3-loader path{fill:currentColor;}
+@keyframes m3-spin{
+  0%{transform:rotate(0deg);}      14.28%{transform:rotate(51.4deg);}
+  28.57%{transform:rotate(102.8deg);} 42.85%{transform:rotate(154.2deg);}
+  57.14%{transform:rotate(205.7deg);} 71.42%{transform:rotate(257.1deg);}
+  85.71%{transform:rotate(308.5deg);} 100%{transform:rotate(360deg);}
+}
+.m3-loader-inline{width:22px;height:22px;display:inline-block;vertical-align:middle;}
+.loading-spinner{
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  padding:26px 0;
+  font-size:.7rem;font-weight:300;
+  color:var(--m3-on-surface-variant);
+}
+
+/* ----------------------------------------------------- 13. Мелочи ------- */
+:focus-visible{
+  outline:3px solid var(--m3-primary);
+  outline-offset:2px;
+  border-radius:var(--m3-r-xs);
+}
+::selection{background:var(--m3-primary-container);color:var(--m3-on-primary-container);}
+.main-footer{border:none !important;}
+hr{border-color:var(--m3-outline-variant) !important;opacity:1;}
+a{color:var(--m3-primary);}
+.text-primary{color:var(--m3-primary) !important;}
+.text-success{color:var(--m3-online) !important;}
+.text-danger{color:var(--m3-error) !important;}
+.text-warning{color:var(--m3-amber) !important;}
+.text-info{color:var(--m3-secondary) !important;}
+
+/* Плавное появление содержимого.
+   Важно: анимировать здесь можно только opacity. <main> — прямой предок
+   модалок (Bootstrap .modal с position:fixed), а элемент с ненулевым
+   transform становится containing block для своих fixed-потомков —
+   модалка тогда позиционируется/обрезается относительно <main>, а не
+   вьюпорта, и визуально "не открывается" (хотя backdrop уже показан).
+   Раньше здесь также анимировался transform:translateY — из-за этого
+   после появления m3-патча кнопки открытия модалок (например, «Ключи»)
+   переставали показывать окно. */
+main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
+@keyframes m3-reveal{from{opacity:0;}to{opacity:1;}}
+
+@media (max-width:860px){
+  .main-header{border-radius:var(--m3-r-xl) !important;padding:10px 14px !important;}
+  .brand img{height:36px !important;}
+  .btn{padding:10px 18px !important;}
+}
+
+/* --- Бургер и статус бота на мобильной шапке ------------------------------
+   .header-controls везде содержит сразу несколько элементов (статус,
+   кнопка старт/стоп, признак входа, кнопка выхода, переключатель темы) —
+   для них на узких телефонах просто нет места в одну строку с брендом и
+   бургером. Попытка удержать всё на одной строке приводила к обрезанному
+   тексту кнопки и бургеру, налипающему прямо на неё. Возвращаем блок на
+   свою отдельную строку (flex-basis:100%) — вертикальный отступ между
+   строками уже даёт .main-header{gap:16px}, а бургер получает свой отступ
+   от края и не сжимается. */
+@media (max-width:992px){
+  .main-header{align-items:center;}
+  .bm{flex-shrink:0;margin-right:6px;}
+  .header-controls{flex:1 1 100%;min-width:0;}
+}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+  }
+}
+
+/* ==========================================================================
+   14. Страница настроек (settings.html / support_bot_settings.html)
+   ========================================================================== */
+
+/* --- Колонки и заголовки секций ----------------------------------------- */
+.settings-container{gap:18px !important;}
+.settings-column-left{min-width:340px;}
+.settings-column-right{min-width:420px;}
+
+.settings-section > h2{
+  font-size:.68rem !important;
+  font-weight:600 !important;
+  letter-spacing:.16em !important;
+  text-transform:uppercase !important;
+  color:var(--m3-on-surface-variant) !important;
+  border-bottom:none !important;
+  margin:0 0 12px 6px !important;
+  padding:0 !important;
+}
+.settings-section:not(:has(> .card)):not(:has(.host-card)) > h2{margin-left:0 !important;}
+
+/* --- Навигация по разделам — чипы M3 ------------------------------------ */
+.nav-pills{gap:6px !important;flex-wrap:wrap;}
+.card .nav.nav-pills .nav-link,
+.nav-pills .nav-link{
+  border:none !important;
+  border-radius:var(--m3-r-full) !important;
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface-variant) !important;
+  padding:9px 16px !important;
+  font-size:.66rem !important;
+  font-weight:500 !important;
+  letter-spacing:0 !important;
+  box-shadow:none !important;
+  transition:background var(--m3-dur-short) var(--m3-ease-emph),
+             color var(--m3-dur-short) var(--m3-ease-emph),
+             border-radius var(--m3-dur-med) var(--m3-ease-spring);
+}
+.card .nav.nav-pills .nav-link:hover,
+.nav-pills .nav-link:hover{
+  background:var(--m3-surface-container-highest) !important;
+  color:var(--m3-on-surface) !important;
+  box-shadow:none !important;
+}
+.card .nav.nav-pills .nav-link.active,
+.nav-pills .nav-link.active{
+  background:var(--m3-primary-container) !important;
+  color:var(--m3-on-primary-container) !important;
+  font-weight:600 !important;
+  box-shadow:none !important;
+}
+.nav-pills .nav-link:active{border-radius:var(--m3-r-s) !important;}
+
+/* --- Карточка хоста ------------------------------------------------------ */
+.host-card,
+#hosts .host-card{
+  background:var(--m3-surface-container) !important;
+  border:none !important;
+  border-radius:var(--m3-r-xl) !important;
+  box-shadow:none !important;
+  padding:20px !important;
+  margin-bottom:12px !important;
+}
+/* вложенный блок SSH — на тон выше, чтобы отделяться от карточки хоста */
+.host-card .card,
+.host-card .card.glass{
+  background:var(--m3-surface-container-high) !important;
+  border-radius:var(--m3-r-l) !important;
+  box-shadow:none !important;
+}
+.host-header,
+#hosts .host-header{
+  border-bottom:1px solid var(--m3-outline-variant) !important;
+  padding-bottom:12px !important;
+  margin-bottom:14px !important;
+}
+.host-header h3,
+#hosts .host-header h3{
+  font-size:.95rem !important;
+  font-weight:600 !important;
+  letter-spacing:-.02em !important;
+}
+.host-card h4{
+  font-size:.9rem !important;
+  font-weight:600 !important;
+  letter-spacing:-.02em !important;
+  margin-bottom:14px !important;
+}
+
+/* --- Тарифы -------------------------------------------------------------- */
+.plans-section h4,
+.plans-section h5,
+#hosts .plans-section h4{
+  font-size:.6rem !important;
+  font-weight:500 !important;
+  letter-spacing:.1em !important;
+  text-transform:uppercase !important;
+  color:var(--m3-on-surface-variant) !important;
+  margin:16px 0 8px !important;
+}
+.plan-list{
+  display:grid !important;
+  gap:4px !important;
+  list-style:none !important;
+  padding:0 !important;
+  margin-bottom:16px !important;
+}
+/* связанный список в духе M3: крупные скругления только по краям группы */
+.plan-list li{
+  display:block !important;
+  background:var(--m3-surface-container-high) !important;
+  border-bottom:none !important;
+  border-radius:var(--m3-r-xs) !important;
+  padding:12px 14px !important;
+}
+.plan-list li:first-child{border-radius:var(--m3-r-l) var(--m3-r-l) var(--m3-r-xs) var(--m3-r-xs) !important;}
+.plan-list li:last-child{border-radius:var(--m3-r-xs) var(--m3-r-xs) var(--m3-r-l) var(--m3-r-l) !important;}
+.plan-list li:only-child{border-radius:var(--m3-r-l) !important;}
+.plan-label,
+#hosts .plan-list .plan-label{
+  font-size:.74rem !important;
+  font-weight:500 !important;
+  letter-spacing:-.01em;
+  color:var(--m3-on-surface) !important;
+}
+
+/* --- Поля без класса .form-control (форма добавления хоста) -------------- */
+.form-group label{
+  display:block;
+  font-size:.62rem !important;
+  font-weight:500 !important;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--m3-on-surface-variant) !important;
+  margin-bottom:7px !important;
+}
+.form-group input[type='text'],
+.form-group input[type='url'],
+.form-group input[type='password'],
+.form-group input[type='number'],
+.form-group select,
+.form-group textarea{
+  background:var(--m3-surface-container-high) !important;
+  border:1px solid transparent !important;
+  border-radius:var(--m3-r-m) !important;
+  color:var(--m3-on-surface) !important;
+  font-family:inherit !important;
+  font-size:.78rem !important;
+  font-weight:300 !important;
+  padding:12px 16px !important;
+  transition:border-color var(--m3-dur-short) var(--m3-ease-emph);
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus{
+  border-color:var(--m3-primary) !important;
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent) !important;
+}
+.form-group small{
+  display:block;
+  margin-top:6px;
+  font-size:.62rem;
+  font-weight:300;
+  color:var(--m3-on-surface-variant);
+}
+
+/* --- Кнопка «показать пароль» -------------------------------------------- */
+.toggle-password{
+  border-radius:var(--m3-r-full) !important;
+  color:var(--m3-on-surface-variant) !important;
+  width:30px !important;
+  height:30px !important;
+  bottom:9px !important;
+}
+.toggle-password:hover{background:var(--m3-surface-container-highest) !important;}
+
+/* --- Инлайновые формы редактирования ------------------------------------ */
+.form-inline{gap:8px !important;}
+.form-inline input{padding:11px 14px !important;font-size:.74rem !important;}
+.edit-row{gap:8px !important;}
+.edit-row .form-label{font-size:.6rem !important;margin:0 !important;}
+.edit-row .edit-actions{gap:6px !important;}
+
+/* --- Прочее -------------------------------------------------------------- */
+.hr-text{border-color:var(--m3-outline-variant) !important;opacity:1 !important;}
+.button{
+  border-radius:var(--m3-r-full) !important;
+  font-family:inherit !important;
+  font-size:.8rem !important;
+  font-weight:500 !important;
+  transition:border-radius var(--m3-dur-med) var(--m3-ease-spring),
+             transform var(--m3-dur-short) var(--m3-ease-emph);
+}
+.button:active{border-radius:var(--m3-r-m) !important;transform:scale(.96);}
+.button-primary{background:var(--m3-primary) !important;color:var(--m3-on-primary) !important;}
+
+
+/* ==========================================================================
+   15. Плоский фон
+   На клиентских страницах (подписка, статус, блокировка) фон — сплошная
+   поверхность без градиентов. Панель приводим к тому же виду: убираем
+   виньетку body::before и анимированную «аврору» body::after из style.css.
+   ========================================================================== */
+html[data-bs-theme='light'] body::before,
+html[data-bs-theme='dark'] body::before{box-shadow:none !important;}
+body::before,
+body::after{
+  content:none !important;
+  display:none !important;
+  background:none !important;
+  animation:none !important;
+  box-shadow:none !important;
+}
+
+/* ==========================================================================
+   16. Утраченные мобильные правила
+   Из style.css был удалён патч, содержавший в том числе мобильные
+   медиазапросы. Большую их часть закрывает сама сетка Bootstrap, поэтому
+   здесь возвращено только то, что иначе действительно ломается.
+   Блок самодостаточный — при желании удаляется целиком.
+   ========================================================================== */
+@media (max-width:992px){
+  /* без этого длинная таблица или карточка даёт горизонтальную прокрутку
+     всей страницы, а не своего контейнера */
+  html,body{overflow-x:hidden;}
+
+  .modal-dialog{
+    margin:12px !important;
+    max-width:calc(100% - 24px) !important;
+  }
+  .modal-content{
+    max-height:88vh;
+    overflow-y:auto;
+    border-radius:var(--m3-r-xl) !important;
+  }
+}
+
+@media (max-width:576px){
+  .page-title,h1,.h1{font-size:1.5rem !important;}
+  h2,.h2{font-size:1.15rem !important;}
+  .login-container{padding:26px 22px !important;margin:16px !important;}
+}
+
+/* ==========================================================================
+   17. Доводка цветов
+   Вместе с удалённым блоком ушёл и «anti-ghosting fix»,
+   который гасил захардкоженные тёмные цвета в светлой теме. Ниже эти места
+   закрыты через токены. Отдельная сложность: у части правил в style.css
+   специфичность (0,4,0) плюс !important, поэтому общие селекторы вроде
+   .btn-glass до них не дотягиваются — здесь специфичность повторена.
+   ========================================================================== */
+
+/* --- Переменная, которую style.css использует, но нигде не объявляет ------
+   Без неё 10 объявлений `color: var(--light-color)` невалидны и цвет просто
+   наследуется. Задаём явно, чтобы поведение было предсказуемым. */
+:root,
+[data-bs-theme='light'],
+[data-bs-theme='dark']{
+  --light-color:var(--m3-on-surface);
+}
+/* но внутри цветных плиток номер должен сохранять цвет самой плитки */
+.stat-card .stat-number,
+.stat-card .stat-number small{color:inherit !important;}
+
+/* --- Мелкие glass-кнопки (btn-sm + btn-glass) ---------------------------- */
+.btn.btn-sm.btn-glass.btn-outline-secondary{
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+  border-color:transparent !important;
+}
+.btn.btn-sm.btn-glass.btn-outline-secondary:hover,
+.btn.btn-sm.btn-glass.btn-outline-secondary:focus{
+  background:var(--m3-surface-container-highest) !important;
+  border-color:transparent !important;
+}
+.btn.btn-sm.btn-glass.btn-danger{
+  background:var(--m3-error-container) !important;
+  color:var(--m3-on-error-container) !important;
+  border-color:transparent !important;
+}
+.btn.btn-sm.btn-glass.btn-danger:hover,
+.btn.btn-sm.btn-glass.btn-danger:focus{
+  background:var(--m3-error-container) !important;
+  border-color:transparent !important;
+  filter:brightness(1.06);
+}
+.btn.btn-sm.btn-glass.btn-outline-warning{
+  background:var(--m3-amber-container) !important;
+  color:var(--m3-on-amber-container) !important;
+  border-color:transparent !important;
+}
+.btn.btn-sm.btn-glass.btn-outline-warning:hover,
+.btn.btn-sm.btn-glass.btn-outline-warning:focus{
+  background:var(--m3-amber-container) !important;
+  border-color:transparent !important;
+  filter:brightness(1.06);
+}
+
+/* --- Кнопка «Ключи» в разделе «Пользователи» -----------------------------
+   Первая попытка ([data-toggle="keys"].btn.btn-outline-secondary, специфич-
+   ность 0,3,0) проигрывала правилу .btn.btn-sm.btn-glass.btn-outline-secondary
+   выше по файлу (0,4,0 — 4 класса) — при !important с обеих сторон побеждает
+   более специфичный селектор, а не более поздний по каскаду. Повторяем все
+   его классы + атрибут, чтобы гарантированно выиграть. */
+[data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary{
+  background:var(--m3-secondary-container) !important;
+  color:var(--m3-on-secondary-container) !important;
+  border-color:transparent !important;
+}
+[data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary:hover,
+[data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary:focus{
+  background:var(--m3-secondary-container) !important;
+  border-color:transparent !important;
+  filter:brightness(1.08);
+}
+
+/* --- Кнопка «Комментарий» (иконка чата) на карточках ключей -------------
+   Та же логика специфичности, что и у «Ключи» выше. Берём последнюю
+   свободную акцентную роль M3 (tertiary), которую не использует ни одна
+   другая кнопка в приложении. */
+.btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment{
+  background:var(--m3-tertiary-container) !important;
+  color:var(--m3-on-tertiary-container) !important;
+  border-color:transparent !important;
+}
+.btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment:hover,
+.btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment:focus{
+  background:var(--m3-tertiary-container) !important;
+  border-color:transparent !important;
+  filter:brightness(1.08);
+}
+
+/* --- Поле ответа на странице тикета -------------------------------------
+   Класса .form-control у него нет, поэтому общие правила форм его не берут,
+   а в style.css ему задан тёмный фон #343a40. */
+.ticket-actions textarea[name="message"]{
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+  border:1px solid transparent !important;
+  border-radius:var(--m3-r-m) !important;
+  font-family:inherit !important;
+  font-size:.78rem !important;
+  font-weight:300 !important;
+  padding:12px 16px !important;
+}
+.ticket-actions textarea[name="message"]:focus{
+  border-color:var(--m3-primary) !important;
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent) !important;
+  outline:none;
+}
+
+/* --- Календарь flatpickr (admin_keys.html) ------------------------------- */
+.flatpickr-calendar{
+  background:var(--m3-surface-container-high) !important;
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  box-shadow:0 12px 34px rgba(0,0,0,.24) !important;
+  color:var(--m3-on-surface) !important;
+}
+.flatpickr-day{color:var(--m3-on-surface) !important;border-radius:var(--m3-r-full) !important;}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover{
+  background:var(--m3-primary) !important;
+  border-color:var(--m3-primary) !important;
+  color:var(--m3-on-primary) !important;
+}
+.flatpickr-day:hover{background:var(--m3-surface-container-highest) !important;}
+.flatpickr-months .flatpickr-month,
+.flatpickr-weekdays,
+.flatpickr-weekday{background:transparent !important;color:var(--m3-on-surface-variant) !important;}
+
+/* ==========================================================================
+   18. Точечные исправления по замечаниям с реальных страниц
+   Все правила ниже адресные: конкретный компонент, конкретная ширина.
+   ========================================================================== */
+
+/* --- Колонки настроек: на узких экранах min-width их распирал ------------
+   В style.css это снимается на 600px, но m3 грузится позже и перебивал. */
+@media (max-width:768px){
+  .settings-column-left,
+  .settings-column-right{min-width:0 !important;flex:1 1 100% !important;}
+  .settings-container{gap:12px !important;}
+}
+
+/* --- Шапка «Пользователи»: поиск наезжал на заголовок (скрин 3) ---------- */
+@media (max-width:768px){
+  .page-header .row{row-gap:12px;}
+  .page-header .col-auto.ms-auto{width:100%;margin-left:0 !important;}
+  .page-header .col-auto .d-flex{width:100%;}
+  #users-search{flex:1 1 auto;min-width:0 !important;}
+  #users-per-page{flex:0 0 auto;width:auto;}
+}
+
+/* --- Последний результат спидтеста вылезал за карточку (скрин 2) --------- */
+#st-latest{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px 10px;
+  overflow-wrap:anywhere;
+}
+
+/* --- Группы кнопок: вкладки ключей и переключатели периода (скрины 5, 9) -
+   Две длинные подписи в btn-group не помещались в карточку. */
+@media (max-width:576px){
+  .btn-group{display:flex;flex-wrap:wrap;width:100%;}
+  .btn-group > .btn,
+  .btn-group > .btn-check + .btn{
+    flex:1 1 auto;
+    margin-right:0;
+    border-radius:var(--m3-r-full) !important;
+  }
+  .btn-group{gap:6px;}
+  /* заголовок карточки с кнопками справа — переносим в две строки */
+  .card-header{flex-wrap:wrap;gap:10px;}
+  .card-header .btn-group{width:auto;}
+}
+/* переключатели периода в мониторинге компактнее */
+.btn-group-sm > .btn,
+.btn-group-sm > .btn-check + .btn{padding:7px 14px !important;font-size:.64rem !important;}
+
+/* --- Индикаторы состояния хостов: были цветными квадратами (скрин 10) ----
+   Заменяем на осмысленные иконки Material через лигатуры-коды, чтобы не
+   трогать JS, который переставляет классы bg-success / bg-danger и др. */
+.status-indicator{
+  width:auto !important;
+  height:auto !important;
+  background:none !important;
+  border:none !important;
+  border-radius:0 !important;
+  display:inline-flex;
+  align-items:center;
+  line-height:1;
+}
+.status-indicator::before{
+  font-family:"Material Symbols Rounded";
+  font-size:20px;
+  font-variation-settings:"FILL" 1,"wght" 500;
+  -webkit-font-feature-settings:"liga";
+  font-feature-settings:"liga";
+  -webkit-font-smoothing:antialiased;
+  content:"radio_button_unchecked";     /* нет данных */
+  color:var(--m3-on-surface-variant);
+}
+.status-indicator.bg-success::before{content:"check_circle";color:var(--m3-online);}
+.status-indicator.bg-warning::before{content:"warning";color:var(--m3-amber);}
+.status-indicator.bg-danger::before{content:"error";color:var(--m3-error);}
+.status-indicator.bg-secondary::before{content:"help";}                        /* help */
+.status-indicator.pulse{animation:m3-led 2.4s var(--m3-ease-emph) infinite;}
+
+/* --- Значение аптайма было крупнее соседних (скрин 11) ------------------- */
+.metric-value-sm{
+  font-size:.95rem !important;
+  line-height:1.25 !important;
+}
+
+/* --- Остатки тёмной темы в рамках и шапке таблицы ------------------------
+   В style.css у них рамка вида color-mix(#ffffff …), которая в светлой теме
+   вырождается в белую, и фон шапки #343a40. */
+.users-table thead{background:transparent !important;}
+.chart-container,
+.chat-box,
+.login-container{border:none !important;box-shadow:none !important;}
+/* .card-body{padding:20px} уже даёт отступ — свой padding у .chart-container
+   поверх него делал график в мониторинге заметно уже/меньше, чем такие же
+   графики на Главной (там canvas лежит прямо в .card-body без обёртки). */
+.chart-container{padding:0 !important;min-height:0 !important;height:280px;}
+/* --- Чат в тикете (скрины не присылали, нашли при аудите покрытия) ------
+   1) .chat-message в style.css объявлен дважды; второй (побеждающий по
+      каскаду) экземпляр хардкодит border-radius:14px мимо переменной
+      --ui-radius, которой держится форма скругления везде в остальном
+      приложении — пузыри чата были заметно "острее" всех прочих карточек.
+   2) Сообщения админа и пользователя красились в один и тот же
+      var(--bg-surface) без единого тонального различия — единственная
+      пара ролей в приложении без разделения контейнерными тонами M3
+      (кнопки, бейджи, алерты — везде есть разделение). */
+.chat-message{
+  border:none !important;
+  border-radius:var(--m3-r-l) !important;
+  box-shadow:none !important;
+}
+.chat-message.from-user{
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+}
+.chat-message.from-admin{
+  background:var(--m3-primary-container) !important;
+  color:var(--m3-on-primary-container) !important;
+}
+.chat-message .meta{color:inherit !important;opacity:.65;}
+.toast.text-bg-success,
+.toast.text-bg-danger,
+.toast.text-bg-warning,
+.toast.text-bg-secondary{border:none !important;}
+
+/* ==========================================================================
+   19. Мобильная раскладка и вылеты за экран
+   Вместе с удалённым из style.css блоком ушли правила,
+   которые прятали навигацию, позиционировали бургер и схлопывали колонки
+   в одну на узких экранах. Без них страница становится шире вьюпорта:
+   контент уезжает влево, а закреплённая шапка остаётся на месте — отсюда
+   «пустота справа». Здесь это восстановлено в стиле M3.
+   ========================================================================== */
+
+/* Шапка больше не липкая: на телефоне она разворачивается в несколько рядов
+   и перекрывала контент при скролле. position:relative обязателен —
+   бургер-меню позиционируется относительно неё. */
+.main-header{
+  position:relative !important;
+  top:auto !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+}
+
+@media (max-width:992px){
+  html,body{overflow-x:hidden;}
+
+  .container{max-width:100% !important;padding-left:14px !important;padding-right:14px !important;}
+
+  .main-header{padding:10px 12px !important;}
+  .main-header .navigation{display:none !important;}
+
+  .bm,
+  label.burger_img{display:flex !important;align-items:center;justify-content:center;}
+  /* position:relative — бургер остаётся частью обычного flex-потока шапки
+     (рядом с .brand), а не абсолютно спозиционирован поверх контента.
+     Выпадающее меню (.bm .burger-menu) всё равно позиционируется
+     относительно этого же элемента — для этого достаточно любого не-static
+     position, абсолютное позиционирование самой кнопки для этого не нужно
+     и как раз оно накладывало бургер прямо на .bot-control. */
+  .bm{
+    position:relative !important;
+    z-index:1010;
+  }
+  .bm .burger-menu{
+    top:44px !important;
+    right:0 !important;
+    left:auto !important;
+    min-width:230px;
+    max-width:calc(100vw - 32px) !important;
+  }
+  .header-controls{gap:6px !important;}
+  /* Хвост старого дизайна с абсолютно позиционированным бургером (см.
+     style.css) — резервировал место под кнопку в правом углу шапки.
+     Бургер снова в обычном flex-потоке, этот отступ больше не нужен. */
+  .header-controls{padding-right:0 !important;}
+
+  /* колонки в одну */
+  .row > *,
+  [class*="col-"],
+  [class*="settings-column-"]{
+    width:100% !important;
+    max-width:100% !important;
+    flex:0 0 100% !important;
+  }
+
+  /* таблицы прокручиваются внутри себя, а не тянут страницу */
+  table,
+  .table-responsive{
+    display:block !important;
+    width:100% !important;
+    overflow-x:auto !important;
+    -webkit-overflow-scrolling:touch;
+  }
+}
+
+/* --- Кнопка «Сохранить все настройки» была прибита к низу экрана -------- */
+.settings-column-right form > .text-end.mt-3,
+.settings-column-right form > .text-end{
+  position:static !important;
+  left:auto !important;
+  right:auto !important;
+  bottom:auto !important;
+  width:auto !important;
+  padding:0 !important;
+  margin-top:16px !important;
+  background:none !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+  border:none !important;
+}
+/* style.css резервировал 84px/72px снизу формы под старую фиксированную
+   панель — кнопка выше уже переведена в обычный поток, этот отступ больше
+   не нужен и просто оставлял пустой хвост под кнопкой. */
+.settings-column-right form{padding-bottom:0 !important;}
+
+/* --- Спидтест: строка метрик и ряд кнопок (скрин 2) --------------------- */
+#st-latest{
+  white-space:normal !important;
+  overflow:visible !important;
+  text-overflow:clip !important;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px 8px;
+  min-width:0;
+}
+
+/* --- Поиск и счётчик записей одного роста (скрин 4) --------------------- */
+#users-search,
+#users-per-page{height:44px !important;padding-top:0 !important;padding-bottom:0 !important;}
+#users-per-page{
+  width:auto !important;
+  min-width:72px;
+  flex:0 0 auto !important;
+  padding-left:12px !important;
+  padding-right:30px !important;
+  text-align:center;
+}
+#users-search{flex:1 1 auto !important;min-width:0 !important;}
+
+/* --- Кнопка «Ключи» сливалась с подсветкой строки (скрин 5) ------------- */
+.btn-outline-secondary{background:var(--m3-surface-container-highest) !important;}
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus{
+  background:var(--m3-primary-container) !important;
+  color:var(--m3-on-primary-container) !important;
+}
+
+/* --- Тариф и сумма в одну строку (скрин 6) ------------------------------ */
+.input-group > .soft-select,
+.input-group > .soft-select-toggle{min-width:0 !important;}
+.input-group > .soft-select{flex:1 1 auto;}
+
+/* --- Пагинация с текстовыми подписями: по размеру текста (скрин 8) ------ */
+.pagination-text .page-item .page-link{
+  width:auto !important;
+  height:38px;
+  min-width:0 !important;
+  padding:0 18px !important;
+  border-radius:var(--m3-r-full) !important;
+}
+
+/* --- Плитки метрик одной высоты (скрины 9, 10) -------------------------- */
+.row{align-items:stretch;}
+.stat-card{height:100%;}
+.metric-item{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+.metric-value{font-size:clamp(.85rem,3.2vw,1.15rem) !important;}
+.metric-value-sm{font-size:clamp(.75rem,2.6vw,.95rem) !important;}
+#network-trend small{font-size:.6rem;line-height:1.35;}
+@media (max-width:576px){
+  .stat-card .stat-value{font-size:1.15rem !important;}
+  .ssh-speedtest-actions{flex-wrap:wrap;gap:8px;}
+  .ssh-speedtest-actions .btn{
+    flex:1 1 100%;
+    margin-left:0 !important;
+  }
+}
+
+/* ==========================================================================
+   20. Фон панели — плоская подложка вместо «авроры»
+   На клиентских страницах (см. gistfile1) фон всегда плоский: body{background:
+   var(--surface)}. В style.css поверх этого рисуется анимированная виньетка
+   (body::before) и вращающийся conic/radial-градиент (body::after) — на части
+   устройств/масштабов это давало видимые швы и «грязные» пятна поверх
+   карточек, из-за чего фон выглядел сломанным что в светлой, что в тёмной
+   теме. Возвращаем плоский фон панели, как в исходном дизайне.
+   ========================================================================== */
+body::before,
+body::after{
+  content:none !important;
+  display:none !important;
+}
+body{background:var(--m3-surface) !important;}
+
+/* --------------------------------------------------- 21. Кнопка «Ключи» ---
+   При наведении на строку таблицы (.table tbody tr:hover) фон становится
+   var(--m3-surface-container-high) — почти тем же цветом, что и заливка
+   .btn-outline-secondary (surface-container-highest), поэтому кнопка
+   визуально пропадала. Даём кнопке собственную границу и более контрастную
+   заливку, не зависящую от фона строки.                                    */
+.btn-outline-secondary.btn-glass,
+.btn-outline-secondary{
+  background:var(--m3-surface-container-highest) !important;
+  border:1.5px solid var(--m3-outline-variant) !important;
+  color:var(--m3-on-surface-variant) !important;
+}
+.btn-outline-secondary.btn-glass:hover,
+.btn-outline-secondary.btn-glass:focus,
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus{
+  background:var(--m3-primary-container) !important;
+  border-color:var(--m3-primary) !important;
+  color:var(--m3-on-primary-container) !important;
+}
+
+/* --------------------------------------------- 22. Границы полей ввода ----
+   .form-control/.form-select рисовались с border:1px solid transparent —
+   в карточках .glass (полупрозрачный фон) поле и подложка почти сливались
+   по тону, и границы было не видно (особенно в блоке SSH для Speedtest).
+   Возвращаем настоящую, видимую в любой теме и на любом фоне границу.       */
+.form-control,.form-select,
+.input-group .form-control,.input-group .form-select{
+  border:1px solid var(--m3-outline-variant) !important;
+}
+.input-group.seamless > .btn,
+.input-group.seamless > .form-control,
+.input-group.seamless > .form-select{
+  border-color:var(--m3-outline-variant) !important;
+}
+.modal .form-control,
+.modal .form-select{
+  border:1px solid var(--m3-outline-variant) !important;
+  background:var(--m3-surface-container-high) !important;
+  color:var(--m3-on-surface) !important;
+}
+
+/* ------------------------------------------- 23. Плитки статистики ---------
+   .card-body{padding:20px} уже даёт внутренний отступ; .stat-card поверх
+   добавлял ещё 18px собственного padding на внешней карточке — отступы
+   складывались (≈38px со всех сторон), из-за чего плитки показателей
+   выглядели непропорционально большими и на ПК, и на телефоне.             */
+.stat-card{padding:0 !important;margin-bottom:0 !important;}
+.stat-card .card-body{padding:16px !important;}
+@media (max-width:576px){
+  .stat-card .card-body{padding:12px !important;}
+}
+/* Гарантированная сетка 2×2 для верхних показателей на /monitor на любой
+   ширине экрана — не полагаемся на flex-basis у col-6/col-md-3. */
+.row.g-3.mb-4{
+  display:grid !important;
+  grid-template-columns:repeat(2,1fr);
+  gap:.75rem;
+}
+@media (min-width:768px){
+  .row.g-3.mb-4{grid-template-columns:repeat(4,1fr);}
+}
+.row.g-3.mb-4 > [class*="col-"]{
+  width:auto;max-width:none;flex:none;padding:0;
+}
+
+/* ------------------------------------- 24. Список серверов на /monitor ----
+   .server-item / .server-header / .server-info / .server-name / .server-url /
+   .server-status / .monitor-info / .disks-section вообще не были описаны —
+   у них не было ни отступов, ни границ, ни flex-раскладки. Из-за этого
+   заголовок следующего сервера визуально «влипал» в метрики предыдущего
+   (карточки казались сломанными/наползающими друг на друга).               */
+.servers-list{display:flex;flex-direction:column;gap:12px;}
+.server-item{
+  background:var(--m3-surface-container-high) !important;
+  border-radius:var(--m3-r-l) !important;
+  padding:14px 16px;
+}
+.server-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.server-info{min-width:0;flex:1 1 auto;}
+.server-name{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:4px;
+  font-weight:600;
+  font-size:.8rem;
+  min-width:0;
+}
+.server-name .text-muted{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  min-width:0;
+  max-width:100%;
+}
+.server-url{display:block;margin-top:2px;overflow-wrap:anywhere;word-break:break-word;max-width:100%;}
+.server-status{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-shrink:0;
+}
+.server-metrics{margin-top:12px;}
+.server-metrics:empty{margin-top:0;}
+.server-metrics .row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.server-metrics .row > [class*="col-"]{
+  width:auto;max-width:none;flex:none;padding:0;
+  display:flex;flex-direction:column;gap:8px;
+}
+.server-metrics .metric-item{margin-bottom:0;}
+
+.monitor-info{display:flex;flex-direction:column;gap:8px;}
+.monitor-info .info-item{display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
+.disks-section{
+  background:var(--m3-surface-container-high) !important;
+  border-radius:var(--m3-r-m) !important;
+  padding:10px 14px;
+}
+
+/* Иконки статуса хоста использовали кодпоинты шрифта Font Awesome
+   (\f0be, \f083, \f8b6) внутри шрифта Material Symbols Rounded — глиф
+   с таким кодом там не существует, поэтому вместо иконки показывался
+   пустой прямоугольник/«тофу». Кодпоинты Material Symbols (\e86c и т.д.)
+   тоже ненадёжны: шрифт подключён как СОКРАЩЁННЫЙ набор (icon_names=... в
+   URL Google Fonts), а при таком сабсеттинге кодовые points в Private Use
+   Area переназначаются иначе, чем в «полном» шрифте — общеизвестные
+   кодпоинты из таблиц Material Symbols могут указывать не на ту иконку.
+   Переходим на лигатуры по имени (как .msym по всему проекту) — они не
+   зависят от нумерации конкретного сабсета, только от того, что имя
+   иконки есть в icon_names (все четыре ниже там есть).                    */
+.status-indicator.bg-success::before{content:"check_circle";color:var(--m3-online);}
+.status-indicator.bg-warning::before{content:"warning";color:var(--m3-amber);}
+.status-indicator.bg-danger::before{content:"error";color:var(--m3-error);}
+.status-indicator.bg-secondary::before{content:"help";}                        /* help */
+
+/* --------------------------------------- 25. Кнопка восстановления бэкапа --
+   На узких экранах строка «Выбрать файл» + «Восстановить» не переносилась
+   (d-flex без flex-wrap), поэтому кнопка «Восстановить» вылезала за правый
+   край экрана. На мобильном переносим её на отдельную строку на всю ширину.*/
+@media (max-width:576px){
+  .restore-db-row{flex-wrap:wrap !important;}
+  .restore-db-row .btn-danger{
+    flex:1 1 100%;
+    margin-left:0 !important;
+  }
+}

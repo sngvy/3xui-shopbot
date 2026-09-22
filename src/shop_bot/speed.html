@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#FBF7FF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121016" media="(prefers-color-scheme: dark)">
+<title>Тест скорости</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%235B27F5'/%3E%3Cstop offset='100%25' stop-color='%23D9006C'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='m422-232 207-248H469l29-227-185 267h139l-30 208ZM320-80l40-280H160l360-520h80l-40 320h240L400-80h-80Zm151-390Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300..800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-25..0&icon_names=ac_unit,arrow_downward,arrow_upward,bolt,check,content_copy,expand_more,graphic_eq,more_horiz,network_check,public,refresh,rocket_launch,schedule,shield,speed,timer&display=block">
+<style>
+/* ==========================================================================
+   Snowy Services — Material 3 Expressive design tokens
+   ========================================================================== */
+:root{
+  color-scheme: light dark;
+
+  --surface:#FBF7FF;
+  --surface-container:#F2ECFA;
+  --surface-container-high:#EAE1F6;
+  --surface-container-highest:#E2D8F1;
+  --on-surface:#191424;
+  --on-surface-variant:#4C4459;
+  --outline-variant:#D6CCE4;
+
+  --primary:#5B27F5;
+  --on-primary:#FFFFFF;
+  --primary-container:#E6DBFF;
+  --on-primary-container:#210079;
+
+  --secondary:#D9006C;
+  --on-secondary:#FFFFFF;
+  --secondary-container:#FFD9E6;
+  --on-secondary-container:#470022;
+
+  --tertiary:#3F6E00;
+  --on-tertiary:#FFFFFF;
+  --tertiary-container:#C6F589;
+  --on-tertiary-container:#122200;
+
+  --amber:#7C5400;
+  --amber-container:#FFDF90;
+  --on-amber-container:#271900;
+
+  --error:#BC0027;
+  --error-container:#FFD9D8;
+  --on-error-container:#450009;
+
+  --online:#0C7A46;
+  --online-container:#A6F2C6;
+  --online-glow:rgba(12,122,70,.45);
+
+  --scrim:rgba(25,20,36,.10);
+
+  --r-xs:8px;  --r-s:12px;  --r-m:16px;
+  --r-l:24px;  --r-xl:28px; --r-xxl:36px; --r-full:999px;
+
+  --ease-emph:cubic-bezier(.2,0,0,1);
+  --ease-spring:cubic-bezier(.34,1.42,.5,1);
+  --dur-short:180ms;
+  --dur-med:380ms;
+  --dur-long:520ms;
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface:#121016;
+    --surface-container:#1D1A24;
+    --surface-container-high:#27232F;
+    --surface-container-highest:#322D3B;
+    --on-surface:#ECE2F6;
+    --on-surface-variant:#CBC1D9;
+    --outline-variant:#4A4356;
+
+    --primary:#CBB8FF;
+    --on-primary:#320096;
+    --primary-container:#4A19D2;
+    --on-primary-container:#E9DDFF;
+
+    --secondary:#FFB0CB;
+    --on-secondary:#6D0038;
+    --secondary-container:#A80053;
+    --on-secondary-container:#FFD9E6;
+
+    --tertiary:#ABD86A;
+    --on-tertiary:#1F3700;
+    --tertiary-container:#2F5200;
+    --on-tertiary-container:#C6F589;
+
+    --amber:#FFDF90;
+    --amber-container:#5D4000;
+    --on-amber-container:#FFDF90;
+
+    --error:#FFB3AE;
+    --error-container:#93000F;
+    --on-error-container:#FFD9D8;
+
+    --online:#6EE0A0;
+    --online-container:#00522E;
+    --online-glow:rgba(110,224,160,.40);
+
+    --scrim:rgba(0,0,0,.35);
+  }
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;}
+
+body{
+  font-family:"Unbounded",system-ui,sans-serif;
+  background:var(--surface);
+  color:var(--on-surface);
+  min-height:100vh;
+  min-height:100dvh;
+  padding:20px 16px 32px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  -webkit-font-smoothing:antialiased;
+}
+
+::selection{background:var(--primary-container);color:var(--on-primary-container);}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px;border-radius:var(--r-xs);}
+
+/* --------------------------------------------------------------- Typography */
+.display{
+  font-family:"Unbounded",sans-serif;
+  font-weight:800;
+  font-size:clamp(2.1rem,10vw,3.4rem);
+  line-height:1.02;
+  letter-spacing:-.03em;
+  color:var(--on-surface);
+}
+.display em{font-style:normal;color:var(--primary);}
+
+.headline{font-size:1.2rem;font-weight:500;letter-spacing:-.02em;line-height:1.25;}
+.body{font-size:.82rem;line-height:1.65;letter-spacing:-.01em;color:var(--on-surface-variant);font-weight:300;}
+.label{font-size:.62rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--on-surface-variant);}
+.data{font-variant-numeric:tabular-nums;}
+
+.section-title{
+  font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--on-surface-variant);margin:32px 4px 12px;display:flex;align-items:center;gap:10px;
+}
+.section-title::after{content:"";flex:1;height:2px;border-radius:2px;background:var(--outline-variant);}
+
+.msym{
+  font-family:"Material Symbols Rounded";font-weight:400;font-style:normal;line-height:1;
+  letter-spacing:normal;text-transform:none;white-space:nowrap;direction:ltr;
+  font-variation-settings:"FILL" 1,"wght" 500,"GRAD" 0,"opsz" 24;
+  -webkit-font-feature-settings:"liga";font-feature-settings:"liga";
+  -webkit-font-smoothing:antialiased;user-select:none;
+}
+
+/* ------------------------------------------------------------------- Layout */
+.shell{width:100%;max-width:560px;display:flex;flex-direction:column;}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:24px;}
+.brandmark{
+  width:40px;height:40px;display:grid;place-items:center;background:var(--primary);
+  color:var(--on-primary);border-radius:14px 20px 14px 20px;flex-shrink:0;
+}
+.brandmark .msym{font-size:22px;}
+.brandname{font-size:.66rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--on-surface-variant);}
+
+/* -------------------------------------------------------------------- Cards */
+.card{background:var(--surface-container);border-radius:var(--r-xl);padding:20px;}
+.card + .card{margin-top:12px;}
+
+/* --------------------------------------------------------------- Stat tiles */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.tile{
+  border-radius:var(--r-l);padding:16px 16px 14px;display:flex;flex-direction:column;gap:6px;
+  min-height:96px;justify-content:space-between;
+  transition:border-radius var(--dur-med) var(--ease-spring);
+}
+.tile:nth-child(1){border-radius:var(--r-xxl) var(--r-l) var(--r-l) var(--r-l);}
+.tile:nth-child(2){border-radius:var(--r-l) var(--r-xxl) var(--r-l) var(--r-l);}
+.tile:nth-child(3){border-radius:var(--r-l) var(--r-l) var(--r-l) var(--r-xxl);}
+.tile:nth-child(4){border-radius:var(--r-l) var(--r-l) var(--r-xxl) var(--r-l);}
+.tile .msym{font-size:22px;}
+.tile-key{font-size:.6rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;opacity:.75;}
+.tile-val{font-size:1rem;font-weight:600;letter-spacing:-.02em;line-height:1.2;}
+.tile-val .unit{font-size:.6rem;font-weight:500;opacity:.75;margin-left:2px;}
+.tile.active{animation:tile-breathe 1.6s var(--ease-emph) infinite;}
+@keyframes tile-breathe{0%,100%{filter:brightness(1);}50%{filter:brightness(1.08);}}
+
+.t-primary{background:var(--primary-container);color:var(--on-primary-container);}
+.t-secondary{background:var(--secondary-container);color:var(--on-secondary-container);}
+.t-tertiary{background:var(--tertiary-container);color:var(--on-tertiary-container);}
+.t-amber{background:var(--amber-container);color:var(--on-amber-container);}
+
+/* ------------------------------------------------------------------ Buttons */
+.btn{
+  -webkit-tap-highlight-color:transparent;appearance:none;border:none;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 24px;
+  font-family:inherit;font-size:.82rem;font-weight:500;letter-spacing:0;text-decoration:none;
+  border-radius:var(--r-full);background:var(--primary);color:var(--on-primary);
+  transition:border-radius var(--dur-med) var(--ease-spring),
+             transform var(--dur-short) var(--ease-emph),
+             filter var(--dur-short) var(--ease-emph);
+}
+.btn .msym{font-size:20px;}
+.btn:hover{filter:brightness(1.06);}
+.btn:active{border-radius:var(--r-m);transform:scale(.96);}
+.btn:disabled{opacity:.55;cursor:default;filter:none;transform:none;}
+.btn-full{width:100%;}
+
+/* ---------------------------------------------------------------- Dot / led */
+.led{width:10px;height:10px;border-radius:50%;background:var(--on-surface-variant);flex-shrink:0;opacity:.4;animation:led-wait 1.4s var(--ease-emph) infinite;}
+.led.on{background:var(--online);opacity:1;animation:led-pulse 2.4s var(--ease-emph) infinite;}
+.led.off{background:var(--error);opacity:1;animation:none;}
+@keyframes led-wait{0%,100%{opacity:.25;transform:scale(.8);}50%{opacity:.6;transform:scale(1);}}
+@keyframes led-pulse{0%{box-shadow:0 0 0 0 var(--online-glow);}70%{box-shadow:0 0 0 9px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+
+/* ------------------------------------------------------------- Speed meter */
+.meter{display:flex;flex-direction:column;align-items:center;gap:4px;padding:22px 4px 6px;}
+.meter-stage{display:flex;align-items:center;gap:8px;}
+.meter-stage .msym{font-size:18px;color:var(--primary);}
+.meter-num{
+  font-size:clamp(2.6rem,15vw,3.6rem);font-weight:800;letter-spacing:-.03em;line-height:1;
+  color:var(--on-surface);display:flex;align-items:baseline;gap:8px;
+}
+.meter-num .unit{font-size:1rem;font-weight:500;color:var(--on-surface-variant);}
+.meter-label{font-size:.66rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--on-surface-variant);}
+
+/* ------------------------------------------------- Wavy progress (M3E) ---- */
+.wavy{width:100%;height:auto;display:block;overflow:visible;margin-top:16px;}
+.wavy .wave{stroke:var(--primary);stroke-width:7;stroke-linecap:round;fill:none;animation:wave-flow 2.2s linear infinite;}
+.wavy #prect{transition:width .35s var(--ease-emph);}
+@keyframes wave-flow{from{transform:translateX(0);}to{transform:translateX(-40px);}}
+.wavy.idle .wave{animation-play-state:paused;}
+
+/* ---------------------------------------------------------------- History */
+.list{display:grid;gap:4px;}
+.list-item{
+  background:var(--surface-container);border-radius:var(--r-xs);padding:14px 16px;
+  display:flex;align-items:center;gap:12px;transition:border-radius var(--dur-med) var(--ease-spring);
+}
+.list-item:first-child{border-radius:var(--r-xl) var(--r-xl) var(--r-xs) var(--r-xs);}
+.list-item:last-child{border-radius:var(--r-xs) var(--r-xs) var(--r-xl) var(--r-xl);}
+.list-item:only-child{border-radius:var(--r-xl);}
+.li-icon{width:34px;height:34px;border-radius:var(--r-s);display:grid;place-items:center;flex-shrink:0;background:var(--surface-container-high);}
+.li-icon .msym{font-size:18px;}
+.li-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.li-title{font-size:.76rem;font-weight:500;letter-spacing:-.02em;}
+.li-sub{font-size:.64rem;font-weight:300;color:var(--on-surface-variant);}
+.li-val{font-size:.8rem;font-weight:600;letter-spacing:-.01em;flex-shrink:0;}
+
+/* ------------------------------------------------------------------- Footer */
+.foot{margin-top:36px;text-align:center;font-size:.6rem;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--on-surface-variant);opacity:.5;}
+
+/* --------------------------------------------- Loading indicator (M3E) ---- */
+#page-loader{
+  position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;gap:18px;
+  justify-content:center;align-items:center;background:var(--surface);
+  transition:opacity var(--dur-med) var(--ease-emph);
+}
+#page-loader.hidden{opacity:0;pointer-events:none;}
+.m3-loader{width:56px;height:56px;color:var(--primary);animation:m3-spin 4.9s cubic-bezier(.4,0,.2,1) infinite;}
+.m3-loader path{fill:currentColor;}
+@keyframes m3-spin{
+  0%{transform:rotate(0deg);}14.28%{transform:rotate(51.4deg);}28.57%{transform:rotate(102.8deg);}
+  42.85%{transform:rotate(154.2deg);}57.14%{transform:rotate(205.7deg);}71.42%{transform:rotate(257.1deg);}
+  85.71%{transform:rotate(308.5deg);}100%{transform:rotate(360deg);}
+}
+.loader-hint{font-size:.62rem;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:var(--on-surface-variant);opacity:.6;}
+body.loading .shell,body.loading .foot{visibility:hidden;}
+
+/* ------------------------------------------------------------ Entry motion */
+.reveal{animation:reveal var(--dur-long) var(--ease-emph) both;}
+@keyframes reveal{from{opacity:0;transform:translateY(18px) scale(.985);}to{opacity:1;transform:none;}}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;}
+  .m3-loader{animation:none;}
+}
+
+@media (max-width:400px){
+  .tile{min-height:88px;}
+}
+</style>
+</head>
+<body class="loading">
+<div id="page-loader">
+  <svg class="m3-loader" viewBox="0 0 48 48" aria-hidden="true"><path></path></svg>
+  <div class="loader-hint">Загрузка</div>
+</div>
+
+<div class="shell reveal">
+  <header class="topbar">
+    <div class="brandmark"><span class="msym">ac_unit</span></div>
+    <div class="brandname">Snowy Services</div>
+  </header>
+
+  <h1 class="display">Тест<br><em>скорости</em></h1>
+  <p class="body" style="margin-top:10px;">Замеряем задержку, скачивание и отдачу до ближайшей точки сети. Тест выполняется прямо в браузере — данные никуда не сохраняются.</p>
+
+  <div class="card" style="margin-top:20px;">
+    <div class="meter">
+      <div class="meter-stage" id="stage-row">
+        <span class="msym" id="stage-icon">schedule</span>
+        <span class="meter-label" id="stage-label">Готов к запуску</span>
+      </div>
+      <div class="meter-num"><span id="meter-num">—</span><span class="unit" id="meter-unit">Мбит/с</span></div>
+
+      <svg class="wavy idle" id="progress-bar" viewBox="0 0 400 22" role="img" aria-label="Прогресс теста">
+        <defs><clipPath id="pclip"><rect id="prect" x="0" y="0" width="0" height="22"></rect></clipPath></defs>
+        <g clip-path="url(#pclip)">
+          <path class="wave" d="M-40 11 q10 -7 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"></path>
+        </g>
+      </svg>
+    </div>
+
+    <button class="btn btn-full" id="start-btn" style="margin-top:18px;">
+      <span class="msym">rocket_launch</span><span id="start-label">Начать тест</span>
+    </button>
+  </div>
+
+  <div class="tiles" style="margin-top:12px;">
+    <div class="tile t-primary" id="tile-ping">
+      <span class="msym">network_check</span>
+      <div>
+        <div class="tile-key">Пинг</div>
+        <div class="tile-val" id="val-ping">—<span class="unit">мс</span></div>
+      </div>
+    </div>
+    <div class="tile t-secondary" id="tile-jitter">
+      <span class="msym">graphic_eq</span>
+      <div>
+        <div class="tile-key">Джиттер</div>
+        <div class="tile-val" id="val-jitter">—<span class="unit">мс</span></div>
+      </div>
+    </div>
+    <div class="tile t-tertiary" id="tile-down">
+      <span class="msym">arrow_downward</span>
+      <div>
+        <div class="tile-key">Скачивание</div>
+        <div class="tile-val" id="val-down">—<span class="unit">Мбит/с</span></div>
+      </div>
+    </div>
+    <div class="tile t-amber" id="tile-up">
+      <span class="msym">arrow_upward</span>
+      <div>
+        <div class="tile-key">Отдача</div>
+        <div class="tile-val" id="val-up">—<span class="unit">Мбит/с</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Как это работает</h2>
+  <div class="list">
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">timer</span></div>
+      <div class="li-text"><div class="li-title">Пинг и джиттер</div><div class="li-sub">Серия коротких запросов измеряет задержку и её стабильность</div></div>
+    </div>
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">arrow_downward</span></div>
+      <div class="li-text"><div class="li-title">Скачивание</div><div class="li-sub">Загружаем тестовые данные и считаем реальную пропускную способность</div></div>
+    </div>
+    <div class="list-item">
+      <div class="li-icon"><span class="msym">arrow_upward</span></div>
+      <div class="li-text"><div class="li-title">Отдача</div><div class="li-sub">Отправляем данные обратно, чтобы измерить скорость в обратную сторону</div></div>
+    </div>
+  </div>
+
+  <div class="foot">Snowy Services</div>
+</div>
+
+<script>
+/* Material 3 Expressive loading indicator morph (page loader) ------------- */
+function m3LoaderPaths(){
+  var N=72, TAU=Math.PI*2;
+  function map(f){var a=[],i;for(i=0;i<N;i++){a.push(f(i/N*TAU));}return a;}
+  function cookie(n,amp,ph){return map(function(t){var r=1+amp*Math.cos(n*(t-ph));return [r*Math.cos(t),r*Math.sin(t)];});}
+  function oval(a,b){return map(function(t){return [a*Math.cos(t),b*Math.sin(t)];});}
+  function pill(A,B){var h=A-B;return map(function(t){
+    var cx=Math.cos(t),cy=Math.sin(t),lo=0,hi=4,m,x,y,px,k;
+    for(k=0;k<32;k++){m=(lo+hi)/2;px=cx*m;y=cy*m;x=Math.min(Math.max(px,-h),h);
+      if(Math.sqrt((px-x)*(px-x)+y*y)<=B){lo=m;}else{hi=m;}}
+    return [cx*lo,cy*lo];});}
+  function poly(n,ph,sm){
+    var seg=TAU/n,i,j,k=[],s=0,o=[],p=map(function(t){
+      var phi=((t-ph)%seg+seg)%seg-seg/2,r=Math.cos(Math.PI/n)/Math.cos(phi);
+      return [r*Math.cos(t),r*Math.sin(t)];});
+    for(i=-sm;i<=sm;i++){var w=Math.exp(-Math.pow(i/sm*2,2));k.push(w);s+=w;}
+    for(i=0;i<N;i++){var ax=0,ay=0;
+      for(j=-sm;j<=sm;j++){var q=p[(i+j+N*2)%N],w2=k[j+sm];ax+=q[0]*w2;ay+=q[1]*w2;}
+      o.push([ax/s,ay/s]);}
+    return o;}
+
+  var S=[cookie(10,.14,0),cookie(9,.16,.3),poly(5,-Math.PI/2,4),pill(1.35,.72),
+         cookie(4,.3,.5),oval(1.22,.86),cookie(7,.21,.2)],i,j,max=0;
+  for(i=0;i<S.length;i++){
+    var p=S[i],a=0;
+    for(j=0;j<N;j++){var q=p[j],r=p[(j+1)%N];a+=q[0]*r[1]-r[0]*q[1];}
+    var sc=Math.sqrt(Math.PI/Math.abs(a/2));
+    for(j=0;j<N;j++){p[j][0]*=sc;p[j][1]*=sc;
+      var d=Math.sqrt(p[j][0]*p[j][0]+p[j][1]*p[j][1]);if(d>max){max=d;}}
+  }
+  var g=23/max;
+  return S.map(function(p){
+    var d='M',j;
+    for(j=0;j<N;j++){d+=(j?'L':'')+(24+p[j][0]*g).toFixed(1)+' '+(24+p[j][1]*g).toFixed(1);}
+    return d+'Z';
+  });
+}
+function m3BuildLoaders(){
+  var paths, nodes = document.querySelectorAll('.m3-loader');
+  if(!nodes.length) return;
+  try{ paths = m3LoaderPaths(); }catch(e){ return; }
+  var vals = paths.concat([paths[0]]).join(';'),
+      keys = [], splines = [], n = paths.length, i;
+  for(i=0;i<=n;i++){ keys.push((i/n).toFixed(4)); }
+  for(i=0;i<n;i++){ splines.push('0.4 0 0.2 1'); }
+  nodes.forEach(function(svg){
+    var p = svg.querySelector('path');
+    if(!p) return;
+    p.setAttribute('d', paths[0]);
+    var a = document.createElementNS('http://www.w3.org/2000/svg','animate');
+    a.setAttribute('attributeName','d');
+    a.setAttribute('dur','4.9s');
+    a.setAttribute('repeatCount','indefinite');
+    a.setAttribute('calcMode','spline');
+    a.setAttribute('keyTimes', keys.join(';'));
+    a.setAttribute('keySplines', splines.join(';'));
+    a.setAttribute('values', vals);
+    p.appendChild(a);
+  });
+}
+function hidePageLoader(){
+  var loader = document.getElementById('page-loader');
+  document.body.classList.remove('loading');
+  if(!loader) return;
+  loader.classList.add('hidden');
+  setTimeout(function(){ loader.remove(); }, 420);
+}
+
+/* ---------------------------------------------------------- Speed test ---
+   Measurement backend: M-Lab NDT7 (measurementlab.net) — a public,
+   non-profit measurement platform (Google/Princeton-backed), not tied to
+   any single CDN. Protocol: WebSocket, subprotocol
+   "net.measurementlab.ndt.v7". A locate API call picks the nearest
+   measurement server for this run.
+
+   NDT7's own methodology intentionally uses a single well-instrumented
+   stream per direction — that's the academically "honest" way to measure
+   one real TCP connection. We deliberately deviate from that here and open
+   several PARALLEL streams to the same server instead (below), because a
+   single stream is disproportionately hurt by RTT and any packet loss
+   (bandwidth-delay product limits it hard), so on higher-latency or
+   slightly lossy links it reports numbers far below what commercial tools
+   like Ookla/Fast.com show for the same connection — those tools use
+   multiple parallel streams for exactly this reason. This trades NDT7's
+   "pure single-connection" fidelity for numbers that match what people
+   are used to seeing and comparing. Worth knowing: M-Lab is free,
+   non-profit infrastructure — opening several connections per test run is
+   fine for individual use, but is heavier on their public service than a
+   single stream, at scale.                                              */
+var LOCATE_URL = "https://locate.measurementlab.net/v2/nearest/ndt/ndt7";
+var NDT7_PROTOCOL = "net.measurementlab.ndt.v7";
+var PARALLEL_STREAMS = 8;
+
+async function ndt7Locate(){
+  var res = await fetch(LOCATE_URL, {cache:'no-store'});
+  if(!res.ok) throw new Error('locate failed');
+  var j = await res.json();
+  var r = j.results && j.results[0];
+  if(!r) throw new Error('no measurement servers available');
+  return {
+    download: r.urls['wss:///ndt/v7/download'],
+    upload: r.urls['wss:///ndt/v7/upload']
+  };
+}
+
+var els = {
+  startBtn: document.getElementById('start-btn'),
+  startLabel: document.getElementById('start-label'),
+  stageIcon: document.getElementById('stage-icon'),
+  stageLabel: document.getElementById('stage-label'),
+  meterNum: document.getElementById('meter-num'),
+  meterUnit: document.getElementById('meter-unit'),
+  progressWavy: document.getElementById('progress-bar'),
+  prect: document.getElementById('prect'),
+  valPing: document.getElementById('val-ping'),
+  valJitter: document.getElementById('val-jitter'),
+  valDown: document.getElementById('val-down'),
+  valUp: document.getElementById('val-up'),
+  tilePing: document.getElementById('tile-ping'),
+  tileJitter: document.getElementById('tile-jitter'),
+  tileDown: document.getElementById('tile-down'),
+  tileUp: document.getElementById('tile-up')
+};
+
+function setProgress(frac){
+  frac = Math.max(0, Math.min(1, frac));
+  var w = 396 * frac;
+  els.prect.setAttribute('width', w.toFixed(1));
+}
+function setRunning(isRunning){
+  els.progressWavy.classList.toggle('idle', !isRunning);
+}
+function setStage(icon, label){
+  els.stageIcon.textContent = icon;
+  els.stageLabel.textContent = label;
+}
+function fmt(n, d){
+  if(!isFinite(n)) return '—';
+  return n.toFixed(d === undefined ? 1 : d);
+}
+
+/* Trimmed mean: drop the top/bottom `frac` of sorted samples before
+   averaging — resistant to one-off stalls or spikes in either direction. */
+function trimmedMean(arr, frac){
+  if(!arr.length) return 0;
+  var sorted = arr.slice().sort(function(a,b){return a-b;});
+  var cut = Math.floor(sorted.length * frac);
+  var kept = (sorted.length - cut*2) > 0 ? sorted.slice(cut, sorted.length-cut) : sorted;
+  return kept.reduce(function(a,b){return a+b;},0) / kept.length;
+}
+
+/* Adaptive warm-up filter: instead of discarding a fixed slice of time,
+   discard everything before the first sample that reaches 80% of the
+   "typical peak" seen during the run — i.e. cut once TCP slow-start has
+   actually plateaued, whenever that happens to occur for this connection.
+
+   The reference peak is the 90th percentile, not the raw maximum: a single
+   one-off spike (e.g. a timing artifact on the very last chunk right before
+   the socket closes) would otherwise inflate the threshold so much that
+   nothing earlier reaches it, and trimRampUp would discard almost the
+   entire run — keeping only the anomalous tail. The 90th percentile is
+   barely moved by one outlier sample, so the cut stays anchored to the
+   connection's real sustained throughput. */
+function percentile(values, p){
+  var sorted = values.slice().sort(function(a,b){return a-b;});
+  var idx = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
+  return sorted[idx];
+}
+function trimRampUp(samples){
+  if(samples.length < 6) return samples.map(function(s){ return s.v; });
+  var values = samples.map(function(s){ return s.v; });
+  var robustPeak = percentile(values, 0.9);
+  var threshold = robustPeak * 0.8;
+  var startIdx = 0;
+  for(var j=0;j<samples.length;j++){
+    if(samples[j].v >= threshold){ startIdx = j; break; }
+  }
+  return samples.slice(startIdx).map(function(s){ return s.v; });
+}
+
+function pingOnce(url){
+  return new Promise(function(resolve){
+    var start = performance.now();
+    var ws;
+    try{ ws = new WebSocket(url, NDT7_PROTOCOL); }catch(e){ resolve(null); return; }
+    var settled = false;
+    function done(v){
+      if(settled) return;
+      settled = true;
+      try{ ws.close(); }catch(err){}
+      resolve(v);
+    }
+    ws.onopen = function(){ done(performance.now() - start); };
+    ws.onerror = function(){ done(null); };
+    setTimeout(function(){ done(null); }, 4000);
+  });
+}
+
+async function runPingTest(count, url){
+  var samples = [];
+
+  /* M-Lab's NDT7 locate API doesn't expose a separate lightweight
+     ping/echo endpoint — download/upload are the only sockets on offer,
+     so "ping" is necessarily measured as WebSocket connect time to the
+     download URL, not a raw ICMP-style round trip. Each connect also pays
+     a full TCP+TLS handshake, which inflates the number well above real
+     network RTT.
+
+     We can't eliminate that, but we can reduce it: do one throwaway
+     connect-and-close to the same host *before* the timed samples. Most
+     TLS servers (this one included, in practice) support session
+     resumption, so the 12 connections that follow reuse the earlier TLS
+     session instead of negotiating one from scratch — noticeably
+     shrinking (not eliminating) the handshake overhead baked into every
+     sample. Still a proxy for RTT, not a true one — just a less inflated
+     proxy. */
+  await pingOnce(url);
+
+  for(var i=0;i<count;i++){
+    var t = await pingOnce(url);
+    if(t !== null){
+      samples.push(t);
+      els.meterNum.textContent = fmt(t, 0);
+      if(els.meterUnit) els.meterUnit.textContent = 'мс';
+    }
+    setProgress((i+1)/count);
+  }
+  if(!samples.length) return {ping:null, jitter:null};
+  var minPing = Math.min.apply(null, samples);
+  var diffs = [];
+  for(var k=1;k<samples.length;k++){ diffs.push(Math.abs(samples[k]-samples[k-1])); }
+  var minJitter = diffs.length ? Math.min.apply(null, diffs) : 0;
+  return {ping: minPing, jitter: minJitter};
+}
+
+function runDownloadTest(url){
+  var duration = 10000;
+  var streamCount = PARALLEL_STREAMS;
+  return new Promise(function(resolve){
+    var sockets = [];
+    var totalBytes = 0, lastTotal = 0;
+    var start = null, lastT = null;
+    var samples = [];
+    var finished = false, settledCount = 0;
+    var sampleTimer = null;
+    var hardTimer = null;
+
+    function finish(){
+      if(finished) return;
+      finished = true;
+      if(sampleTimer) clearInterval(sampleTimer);
+      if(hardTimer) clearTimeout(hardTimer);
+      resolve(trimmedMean(trimRampUp(samples), 0.1) / 1e6);
+    }
+    // Единый счётчик "уладившихся" потоков (закрылся/упал с ошибкой/не
+    // удалось создать) — сравниваем со streamCount (константа), а не с
+    // sockets.length (успешные), чтобы не словить рассинхрон, если часть
+    // потоков не поднялась.
+    function settle(){
+      settledCount++;
+      if(settledCount >= streamCount) finish();
+    }
+    function sampleTick(){
+      var now = performance.now();
+      var dt = now - lastT;
+      if(dt > 150){
+        var speed = ((totalBytes - lastTotal) * 8) / (dt / 1000);
+        if(speed > 0){
+          samples.push({t: now - start, v: speed});
+          els.meterNum.textContent = fmt(speed / 1e6);
+        }
+        lastTotal = totalBytes;
+        lastT = now;
+      }
+    }
+
+    hardTimer = setTimeout(function(){
+      sockets.forEach(function(ws){ try{ ws.close(); }catch(e){} });
+    }, duration + 1000);
+
+    for(var i=0;i<streamCount;i++){
+      (function(){
+        var ws;
+        try{ ws = new WebSocket(url, NDT7_PROTOCOL); }
+        catch(e){ settle(); return; }
+        ws.binaryType = 'arraybuffer';
+        sockets.push(ws);
+
+        ws.onopen = function(){
+          // Общий таймер и точка отсчёта времени — одна на все потоки
+          // (запускается по первому открывшемуся), суммарная скорость
+          // считается по совокупному трафику всех потоков разом.
+          if(start === null){
+            start = performance.now();
+            lastT = start;
+            sampleTimer = setInterval(sampleTick, 200);
+          }
+        };
+        ws.onmessage = function(ev){
+          if(typeof ev.data === 'string') return; // JSON measurement frame from server, not payload
+          totalBytes += (ev.data.byteLength || 0);
+          if(start !== null){
+            var elapsed = performance.now() - start;
+            setProgress(Math.min(1, elapsed / duration));
+            if(elapsed >= duration){ try{ ws.close(); }catch(e){} }
+          }
+        };
+        ws.onclose = settle;
+        ws.onerror = settle;
+      })();
+    }
+  });
+}
+
+function runUploadTest(url){
+  var duration = 10000;
+  var streamCount = PARALLEL_STREAMS;
+  var chunkSize = 64 * 1024;
+  var chunk = new Uint8Array(chunkSize);
+  for(var ci=0; ci<chunk.length; ci+=4096){ chunk[ci] = (Math.random()*255)|0; }
+  var maxBuffered = 2 * 1024 * 1024;
+
+  return new Promise(function(resolve){
+    var streams = [];  // { ws, sentBytes, lastServerBytes, closed }
+    var start = null, lastT = null, lastTickTotal = 0;
+    var samples = [];
+    var finished = false, settledCount = 0;
+    var sampleTimer = null;
+
+    // Для каждого потока берём авторитетные данные сервера (TCP_INFO), если
+    // они уже приходили, иначе — клиентскую оценку по факту "на проводе"
+    // (отправлено минус ещё не ушедшее из буфера). Разные потоки могут
+    // получить первый TCP_INFO в разное время — источник выбирается
+    // независимо для каждого потока, а не для всех сразу.
+    function currentStreamBytes(s){
+      return s.lastServerBytes != null
+        ? s.lastServerBytes
+        : Math.max(0, s.sentBytes - s.ws.bufferedAmount);
+    }
+
+    function finish(){
+      if(finished) return;
+      finished = true;
+      if(sampleTimer) clearInterval(sampleTimer);
+      resolve(trimmedMean(trimRampUp(samples), 0.1) / 1e6);
+    }
+    function settle(s){
+      if(s) s.closed = true;
+      settledCount++;
+      if(settledCount >= streamCount) finish();
+    }
+    function sampleTick(){
+      var now = performance.now();
+      var dt = now - lastT;
+      if(dt > 150){
+        var total = 0;
+        for(var k=0;k<streams.length;k++){ total += currentStreamBytes(streams[k]); }
+        var speed = ((total - lastTickTotal) * 8) / (dt / 1000);
+        if(speed > 0){
+          samples.push({t: now - start, v: speed});
+          els.meterNum.textContent = fmt(speed / 1e6);
+        }
+        lastTickTotal = total;
+        lastT = now;
+      }
+      var elapsed = now - start;
+      setProgress(Math.min(1, elapsed / duration));
+      if(elapsed >= duration){
+        streams.forEach(function(s){
+          if(!s.closed){ try{ s.ws.close(); }catch(e){} }
+        });
+      }
+    }
+    function pump(s){
+      if(s.closed) return;
+      while(s.ws.bufferedAmount < maxBuffered && !s.closed){
+        try{ s.ws.send(chunk); }catch(err){ break; }
+        s.sentBytes += chunk.byteLength;
+      }
+      if(!s.closed) setTimeout(function(){ pump(s); }, 0);
+    }
+
+    for(var i=0;i<streamCount;i++){
+      (function(){
+        var ws;
+        try{ ws = new WebSocket(url, NDT7_PROTOCOL); }
+        catch(e){ settle(); return; }
+        var s = { ws: ws, sentBytes: 0, lastServerBytes: null, closed: false };
+        streams.push(s);
+
+        ws.onmessage = function(ev){
+          if(typeof ev.data !== 'string') return; // binary frames aren't expected during upload
+          var msg;
+          try{ msg = JSON.parse(ev.data); }catch(err){ return; }
+          var info = msg && msg.TCPInfo;
+          if(info && typeof info.BytesReceived === 'number'){
+            s.lastServerBytes = info.BytesReceived;
+          }
+        };
+
+        ws.onopen = function(){
+          // Общий таймер и точка отсчёта — одна на все потоки, запускается
+          // по первому открывшемуся; суммарная скорость считается по
+          // совокупному трафику всех потоков разом.
+          if(start === null){
+            start = performance.now();
+            lastT = start;
+            sampleTimer = setInterval(sampleTick, 200);
+          }
+          pump(s);
+        };
+        ws.onclose = function(){ settle(s); };
+        ws.onerror = function(){ settle(s); };
+      })();
+    }
+  });
+}
+
+var running = false;
+async function startTest(){
+  if(running) return;
+  running = true;
+  els.startBtn.disabled = true;
+  els.startLabel.textContent = 'Тестируем…';
+  setRunning(true);
+
+  [els.tilePing, els.tileJitter, els.tileDown, els.tileUp].forEach(function(t){ t.classList.remove('active'); });
+
+  try{
+    setStage('schedule', 'Ищем ближайший сервер');
+    els.meterNum.textContent = '—';
+    var servers = await ndt7Locate();
+
+    setStage('network_check', 'Измеряем пинг');
+    els.tilePing.classList.add('active');
+    els.tileJitter.classList.add('active');
+    els.meterNum.textContent = '—';
+    setProgress(0);
+    var pingResult = await runPingTest(12, servers.download);
+    els.tilePing.classList.remove('active');
+    els.tileJitter.classList.remove('active');
+    els.valPing.innerHTML = (pingResult.ping !== null ? fmt(pingResult.ping,0) : '—') + '<span class="unit">мс</span>';
+    els.valJitter.innerHTML = (pingResult.jitter !== null ? fmt(pingResult.jitter,1) : '—') + '<span class="unit">мс</span>';
+
+    setStage('arrow_downward', 'Измеряем скачивание');
+    els.tileDown.classList.add('active');
+    els.meterUnit.textContent = 'Мбит/с';
+    setProgress(0);
+    var downMbps = await runDownloadTest(servers.download);
+    els.tileDown.classList.remove('active');
+    els.valDown.innerHTML = fmt(downMbps) + '<span class="unit">Мбит/с</span>';
+
+    setStage('arrow_upward', 'Измеряем отдачу');
+    els.tileUp.classList.add('active');
+    setProgress(0);
+    var upMbps = await runUploadTest(servers.upload);
+    els.tileUp.classList.remove('active');
+    els.valUp.innerHTML = fmt(upMbps) + '<span class="unit">Мбит/с</span>';
+
+    els.meterNum.textContent = fmt(downMbps);
+    setStage('check', 'Тест завершён');
+  }catch(e){
+    setStage('shield', 'Не удалось подключиться к серверу измерений');
+  }finally{
+    setProgress(1);
+    setRunning(false);
+    running = false;
+    els.startBtn.disabled = false;
+    els.startLabel.textContent = 'Повторить тест';
+  }
+}
+
+els.startBtn.addEventListener('click', startTest);
+
+m3BuildLoaders();
+
+if(document.readyState === 'complete'){ hidePageLoader(); }
+else{ window.addEventListener('load', hidePageLoader); }
+</script>
+</body>
+</html>
