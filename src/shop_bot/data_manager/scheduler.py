@@ -28,6 +28,21 @@ CHECK_INTERVAL_SECONDS = 300
 NOTIFY_BEFORE_HOURS = {72, 48, 24, 1}
 notified_users = {}
 
+# -------------------------------------------------------------------------
+# Grace-период между истечением подписки и физическим удалением ключа.
+# -------------------------------------------------------------------------
+EXPIRED_KEY_DELETION_GRACE = timedelta(days=5)
+
+# -------------------------------------------------------------------------
+# Инбаунд для доступа к Telegram в течение grace-периода: пока подписка уже
+# истекла, но ключ ещё не подошёл к порогу физического удаления
+# (EXPIRED_KEY_DELETION_GRACE), пользователю реплицируется отдельный клиент
+# на этот инбаунд — с урезанным трафиком, без доступа к обычным клонам.
+# -------------------------------------------------------------------------
+GRACE_INBOUND_REMARK = "🇱🇨 Подписка истекла. Подключитесь для продления"
+GRACE_INBOUND_TOTAL_GB_BYTES = int(0.5 * 1024**3)  # 0.5 ГБ; totalGB в API 3X-UI — это байты, не гигабайты
+GRACE_EMAIL_SUFFIX = "-expired"  # никогда не пересекается с числовыми суффиксами клонов (-2, -3, ...)
+
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------------
@@ -440,7 +455,7 @@ async def _cleanup_expired_keys_for_host(
             if processed_count >= MAX_EXPIRED_KEYS_PER_CYCLE:
                 break
             t_expiry = datetime.fromisoformat(t_key["expiry_date"])
-            if t_expiry < now - timedelta(days=5):
+            if t_expiry < now - EXPIRED_KEY_DELETION_GRACE:
                 processed_count += 1
                 if await _delete_key_everywhere(api, all_inbounds, host_name, t_key):
                     deleted_any = True
@@ -451,7 +466,7 @@ async def _cleanup_expired_keys_for_host(
             if processed_count >= MAX_EXPIRED_KEYS_PER_CYCLE:
                 break
             p_expiry = datetime.fromisoformat(p_key["expiry_date"])
-            if p_expiry < now - timedelta(days=5):
+            if p_expiry < now - EXPIRED_KEY_DELETION_GRACE:
                 processed_count += 1
                 if await _delete_key_everywhere(api, all_inbounds, host_name, p_key):
                     deleted_any = True
@@ -505,14 +520,17 @@ async def _sweep_orphaned_clients_for_host(api, host_name: str) -> int:
     all_keys = await asyncio.to_thread(database.get_keys_for_host, host_name)
 
     # Легитимные базовые username'ы: в БД хранится только email мастер-ключа,
-    # у клонов свой "-N" суффикс, поэтому сравниваем по базовому префиксу
-    # без суффикса-ординала.
+    # у клонов свой "-N" суффикс (или GRACE_EMAIL_SUFFIX у grace-клиента на
+    # GRACE_INBOUND_REMARK), поэтому сравниваем по базовому префиксу без
+    # суффикса. Без учёта GRACE_EMAIL_SUFFIX здесь легитимный grace-клиент
+    # ошибочно считался бы сиротой и удалялся при каждой сверке.
+    suffix_pattern = re.compile(r"-\d+$|" + re.escape(GRACE_EMAIL_SUFFIX) + r"$")
     known_prefixes = set()
     for k in all_keys:
         email = str(k.get("key_email") or "").strip().lower()
         if not email or "@" not in email:
             continue
-        prefix = re.sub(r"-\d+$", "", email.split("@")[0])
+        prefix = suffix_pattern.sub("", email.split("@")[0])
         known_prefixes.add(prefix)
 
     domain_suffix = f"@{xui_api.EMAIL_DOMAIN}"
@@ -524,7 +542,7 @@ async def _sweep_orphaned_clients_for_host(api, host_name: str) -> int:
             email = str(getattr(c, "email", "") or "").strip().lower()
             if not email.endswith(domain_suffix):
                 continue
-            base_prefix = re.sub(r"-\d+$", "", email.split("@")[0])
+            base_prefix = suffix_pattern.sub("", email.split("@")[0])
             if base_prefix in known_prefixes:
                 continue
             if email in xui_api.emails_in_transition:
@@ -660,9 +678,15 @@ async def _sync_clones_for_host(
     keys_in_db: list[dict],
     banned_map: dict[int, bool],
     now: datetime,
+    grace_inbound=None,
 ) -> tuple[int, int]:
     """
     Полная сверка мастер-ключей и их клонов на всех инбаундах хоста.
+
+    grace_inbound (опционально) — инбаунд для доступа к Telegram в течение
+    EXPIRED_KEY_DELETION_GRACE после истечения подписки (см. константы
+    вверху модуля). None, если на хосте такой инбаунд не настроен — тогда
+    grace-логика для этого хоста полностью пропускается.
 
     Создание новых клонов не выполняется по одному api.client.add()
     на каждого клиента, а батчится — один api.client.add() со списком клиентов
@@ -776,7 +800,7 @@ async def _sync_clones_for_host(
             # когда-нибудь дочистить конкретно эти зависшие записи.
             try:
                 key_expiry = datetime.fromisoformat(db_key["expiry_date"])
-                already_past_deletion_threshold = key_expiry < now - timedelta(days=5)
+                already_past_deletion_threshold = key_expiry < now - EXPIRED_KEY_DELETION_GRACE
             except (ValueError, TypeError):
                 already_past_deletion_threshold = False
 
@@ -1169,6 +1193,97 @@ async def _sync_clones_for_host(
         is_expired = datetime.fromisoformat(db_key["expiry_date"]) <= now
         master_enable_current = bool(getattr(server_client, "enable", True))
         desired_master_enable = (not is_banned) and (not is_expired)
+
+        # ---------------------------------------------------------------
+        # Grace-доступ к Telegram: пока ключ уже истёк, но ещё не достиг
+        # EXPIRED_KEY_DELETION_GRACE (порога физического удаления),
+        # реплицируем клиента на GRACE_INBOUND_REMARK и включаем его.
+        # Если пользователь оплатил (is_expired снова стал False) — не
+        # удаляем клиента, а просто выключаем (enable=False): дешевле для
+        # панели (без лишнего рестарта Xray на add/delete) и симметрично
+        # с тем, как уже устроено включение/выключение мастера и обычных
+        # клонов в этой же функции. Физическое удаление, когда до него
+        # дойдёт очередь, всё равно снесёт и этот клиент — email начинается
+        # с того же prefix-, а _delete_key_everywhere матчит по этому
+        # признаку по всем инбаундам хоста, не только по тегированным.
+        # ---------------------------------------------------------------
+        if grace_inbound is not None:
+            already_past_deletion_threshold = (
+                datetime.fromisoformat(db_key["expiry_date"]) < now - EXPIRED_KEY_DELETION_GRACE
+            )
+            desired_grace_enable = is_expired and not already_past_deletion_threshold and not is_banned
+
+            grace_email = f"{prefix}{GRACE_EMAIL_SUFFIX}@{xui_api.EMAIL_DOMAIN}"
+            grace_is_hysteria = xui_api.is_hysteria_protocol(getattr(grace_inbound, "protocol", ""))
+            grace_client = next(
+                (
+                    c
+                    for c in (grace_inbound.settings.clients or [])
+                    if str(getattr(c, "id", "")) == client_uuid
+                    or str(getattr(c, "email", "")).strip().lower() == grace_email
+                ),
+                None,
+            )
+
+            if grace_client is None:
+                if desired_grace_enable:
+                    new_grace_client = xui_api.Client(
+                        id=client_uuid,
+                        email=grace_email,
+                        enable=True,
+                        expiry_time=0,  # состоянием управляет сам шедулер (enable), не таймер панели
+                        total_gb=GRACE_INBOUND_TOTAL_GB_BYTES,
+                        sub_id=master_sub_id,
+                    )
+                    try:
+                        payload = (
+                            [xui_api.HysteriaClientWrapper(new_grace_client, client_uuid)]
+                            if grace_is_hysteria
+                            else [new_grace_client]
+                        )
+                        await asyncio.to_thread(
+                            xui_api.add_client_robust, api, grace_inbound.id, payload, grace_email
+                        )
+                        await asyncio.sleep(0.5)
+                        globally_taken_emails.add(grace_email)
+                        logger.info(
+                            f"[{host_name}] {client_email}: подписка истекла — создан grace-клиент "
+                            f"на '{GRACE_INBOUND_REMARK}' (доступ к Telegram, {GRACE_INBOUND_TOTAL_GB_BYTES} байт)"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"[{host_name}] Не удалось создать grace-клиента {grace_email}: {e}"
+                        )
+                # desired_grace_enable=False и клиента ещё нет — создавать
+                # выключенным незачем, ничего не делаем
+            else:
+                grace_enable_current = bool(getattr(grace_client, "enable", True))
+                if grace_enable_current != desired_grace_enable:
+                    try:
+                        grace_client.enable = desired_grace_enable
+                        grace_client.id = client_uuid
+                        grace_client.inbound_id = grace_inbound.id
+                        if grace_is_hysteria:
+                            update_identifier, new_auth = resolve_hysteria_update(
+                                str(getattr(grace_client, "email", "")).strip().lower(),
+                                grace_inbound.id,
+                                client_uuid,
+                            )
+                            wrapped_grace = xui_api.HysteriaClientWrapper(grace_client, new_auth)
+                            await asyncio.to_thread(api.client.update, update_identifier, wrapped_grace)
+                        else:
+                            await asyncio.to_thread(api.client.update, client_uuid, grace_client)
+                        await asyncio.sleep(0.5)
+                        action = (
+                            "включён (истекла, окно до удаления)"
+                            if desired_grace_enable
+                            else "отключён (оплата/бан/скоро удаление)"
+                        )
+                        logger.info(f"[{host_name}] Grace-клиент {grace_email} {action}")
+                    except Exception as e:
+                        logger.warning(
+                            f"[{host_name}] Не удалось изменить enable grace-клиента {grace_email}: {e}"
+                        )
 
         if master_enable_current != desired_master_enable:
             try:
@@ -1748,6 +1863,15 @@ async def _sync_single_host(
             logger.error(f"[{host_name}] Не удалось авторизоваться или найти мастер-inbound")
             return None
 
+        # Инбаунд для grace-доступа к Telegram (см. GRACE_INBOUND_REMARK) —
+        # ищем по remark один раз за проход хоста, не через ordinal-логику
+        # target_inbounds (он намеренно без тега 🌍/🏳️). None, если на этом
+        # хосте такой инбаунд не настроен — тогда _sync_clones_for_host
+        # просто пропускает всю grace-логику для этого хоста.
+        grace_inbound = next(
+            (ib for ib in all_inbounds if ib.remark == GRACE_INBOUND_REMARK), None
+        )
+
         keys_in_db = await asyncio.to_thread(database.get_keys_for_host, host_name)
 
         # -------------------------------------------------------------------------
@@ -1794,6 +1918,7 @@ async def _sync_single_host(
                     keys_in_db,
                     banned_map,
                     now,
+                    grace_inbound=grace_inbound,
                 )
                 _host_state_hash[host_name] = state_hash
                 _host_last_full_sync_at[host_name] = now
