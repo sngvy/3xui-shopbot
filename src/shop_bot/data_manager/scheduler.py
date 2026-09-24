@@ -1195,7 +1195,7 @@ async def _sync_clones_for_host(
 
         # Grace-доступ к Telegram (GRACE_INBOUND_REMARK) вынесен в отдельную
         # функцию _sync_grace_inbound_for_host — она вызывается из
-        # _sync_single_host на КАЖДОМ проходе шедулера, а не только когда
+        # _sync_single_host на каждом проходе шедулера, а не только когда
         # сюда доходит очередь полной сверки (по хэшу/раз в
         # FULL_RECONCILE_INTERVAL_SECONDS) — иначе доступ к Telegram мог
         # включаться с задержкой до 30 минут после истечения подписки.
@@ -1826,7 +1826,7 @@ async def _sync_grace_inbound_for_host(
             if not desired_grace_enable:
                 continue  # создавать выключенным незачем
 
-            # sub_id общий с мастером/клонами — чтобы grace-сервер появился
+            # sub_id — общий с мастером/клонами, чтобы grace-сервер появился
             # в уже существующей у пользователя ссылке подписки сам, без
             # ручного переимпорта. Ищем среди уже загруженных all_inbounds
             # (без похода к панели за отдельным запросом) — по любому
@@ -1954,7 +1954,7 @@ async def _sync_single_host(
                 # следующая за нами сверка клонов должна это увидеть.
                 all_inbounds = await asyncio.to_thread(api.inbound.get_list)
 
-            # Grace-доступ к Telegram — безусловно, на КАЖДОМ проходе
+            # Grace-доступ к Telegram — безусловно, на каждом проходе
             # шедулера (не по хэшу и не раз в FULL_RECONCILE_INTERVAL_SECONDS,
             # как полная сверка клонов ниже). all_inbounds на этот момент —
             # самые свежие (учитывает возможное обновление чисткой/сиротами
