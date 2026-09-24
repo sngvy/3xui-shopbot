@@ -2055,6 +2055,104 @@ def get_admin_router() -> Router:
             ),
         )
 
+    # --- Уменьшение срока конкретного ключа из карточки (полная аналогия
+    # с продлением выше, отличие только в знаке days_to_add) ---
+    class AdminReduceSingleKey(StatesGroup):
+        waiting_days = State()
+
+    @admin_router.callback_query(F.data.startswith("admin_key_reduce_"))
+    async def admin_key_reduce_prompt(callback: types.CallbackQuery, state: FSMContext):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        try:
+            key_id = int(callback.data.split("_")[-1])
+        except Exception:
+            await callback.message.answer("❌ Неверный формат key_id")
+            return
+        await state.update_data(reduce_key_id=key_id)
+        await state.set_state(AdminReduceSingleKey.waiting_days)
+        await safe_edit_text(callback, 
+            f"📅 <b>Укажите, на сколько дней убавить срок подписки № {key_id} (число):</b>",
+            reply_markup=keyboards.create_admin_cancel_keyboard(),
+            parse_mode="HTML",
+        )
+
+    @admin_router.message(AdminReduceSingleKey.waiting_days)
+    async def admin_key_reduce_process(message: types.Message, state: FSMContext):
+        if not is_admin(message.from_user.id):
+            return
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        data = await state.get_data()
+        key_id = int(data.get("reduce_key_id", 0))
+        if not key_id:
+            await state.clear()
+            await message.answer("❌ Не удалось определить подписку")
+            return
+        try:
+            days = int((message.text or "").strip())
+        except Exception:
+            await message.answer("❌ Введите число дней")
+            return
+        if days <= 0:
+            await message.answer("❌ Дней должно быть положительное число (это то, на сколько убавить)")
+            return
+        key = await asyncio.to_thread(get_key_by_id, key_id)
+        if not key:
+            await message.answer("❌ Подписка не найдена")
+            await state.clear()
+            return
+        host = key.get("host_name")
+        email = key.get("key_email")
+        if not host or not email:
+            await message.answer("❌ У подписки отсутствует сервер или email")
+            await state.clear()
+            return
+        # Уменьшение срока на хосте — тот же путь, что и продление, но с
+        # отрицательным days_to_add: update_or_create_client_on_panel
+        # считает новый expiry_time как (точка_отсчёта + timedelta(days=...)),
+        # отрицательная timedelta корректно уменьшает срок относительно
+        # текущего expiry_time (если он ещё не истёк) или относительно
+        # текущего момента (если уже истёк).
+        try:
+            resp = await create_or_update_key_on_host(host, email, days_to_add=-days)
+        except Exception as e:
+            logger.error(
+                f"Уменьшение срока ключа админом: не удалось обновить сервер для ключа № {key_id}: {e}"
+            )
+            resp = None
+        if not resp or not resp.get("client_uuid") or not resp.get("expiry_timestamp_ms"):
+            await message.answer("❌ Не удалось изменить срок подписки на сервере")
+            return
+        # Обновление в БД
+        try:
+            update_key_info(key_id, resp["client_uuid"], int(resp["expiry_timestamp_ms"]))
+        except Exception as e:
+            logger.error(
+                f"Уменьшение срока ключа админом: не удалось обновить БД для ключа № {key_id}: {e}"
+            )
+        await state.clear()
+        # Повторный показ карточки ключа
+        new_key = await asyncio.to_thread(get_key_by_id, key_id)
+        text = (
+            f"🔑 <b>Подписка № {key_id}</b>\n\n"
+            f"🗺️ <b>Сервер:</b> {new_key.get('host_name') or '—'}\n"
+            f"🆔 <b>Email:</b> {new_key.get('key_email') or '—'}\n"
+            f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
+        )
+        await message.answer(f"✅ Срок подписки уменьшен на {days} дн.")
+        await message.answer(
+            text,
+            reply_markup=keyboards.create_admin_key_actions_keyboard(
+                key_id,
+                (int(new_key.get("user_id")) if new_key and new_key.get("user_id") else None),
+            ),
+        )
+
     # --- Управление администраторами: добавить админа ---
     class AdminAddAdmin(StatesGroup):
         waiting_for_input = State()
