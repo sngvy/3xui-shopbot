@@ -1954,6 +1954,15 @@ def get_user_router() -> Router:
     # этому якорю, — так группировка переживёт даже небольшие расхождения
     # в форматировании remark между хостами.
     _FLAG_EMOJI_RE = re.compile(r"^[\U0001F1E6-\U0001F1FF]{2}")
+    # Разделитель — " • " (обычные города) или дефис. Некоторые remark'ы вроде
+    # "Автовыбора" технического вида "🇱🇨 Автовыбор🌍-vol_choke" вообще не
+    # используют " • " — без второй альтернативы вся строка после флага,
+    # включая technical-суффикс, попадала бы в ключ группировки целиком, и
+    # "Автовыбор", "Автовыбор 2", "Автовыбор 3" считались бы тремя разными
+    # "странами" вместо одной.
+    _CITY_SEPARATOR_RE = re.compile(r" • |-")
+    _TRAILING_EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF\uFE0F]+$")
+    _TRAILING_NUMBER_RE = re.compile(r"\s*\d+\s*$")
 
     def _extract_city_label(remark: str) -> str:
         """Страна/город из remark — флаг в начале + текст. Так все ярусы одного города группируются под одной
@@ -1964,9 +1973,12 @@ def get_user_router() -> Router:
         stripped = remark.strip()
         m = _FLAG_EMOJI_RE.match(stripped)
         if not m:
-            return stripped.split(" • ")[0].strip()
+            return _CITY_SEPARATOR_RE.split(stripped)[0].strip()
         flag = m.group(0)
-        rest = stripped[m.end():].split(" • ")[0].strip()
+        rest = stripped[m.end():].strip()
+        rest = _CITY_SEPARATOR_RE.split(rest)[0].strip()
+        rest = _TRAILING_EMOJI_RE.sub("", rest).strip()
+        rest = _TRAILING_NUMBER_RE.sub("", rest).strip()
         return f"{flag} {rest}".strip()
 
     def _link_city_label(link: str) -> str | None:
