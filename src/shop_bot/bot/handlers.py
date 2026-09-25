@@ -2083,6 +2083,11 @@ def get_user_router() -> Router:
             await callback.message.answer("❌ Подписка не найдена")
             return
 
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
         connection_string = await _get_connection_string(callback, key_id)
         if not connection_string:
             return
@@ -2119,6 +2124,11 @@ def get_user_router() -> Router:
         except ValueError:
             await callback.message.answer("❌ Подписка не найдена")
             return
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
         connection_string = await _get_connection_string(callback, key_id)
         if not connection_string:
@@ -2162,6 +2172,11 @@ def get_user_router() -> Router:
         except (ValueError, IndexError):
             await callback.message.answer("❌ Некорректный запрос")
             return
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
         connection_string = await _get_connection_string(callback, key_id)
         if not connection_string:
@@ -2274,6 +2289,11 @@ def get_user_router() -> Router:
         except (ValueError, IndexError):
             await callback.message.answer("❌ Некорректный запрос")
             return
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
         connection_string = await _get_connection_string(callback, key_id)
         if not connection_string:
