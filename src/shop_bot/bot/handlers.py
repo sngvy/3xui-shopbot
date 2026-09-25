@@ -2055,6 +2055,27 @@ def get_user_router() -> Router:
     # =========================================================================
     @user_router.callback_query(F.data.startswith("download_xkeen_outbounds_"))
     async def download_xkeen_outbounds_handler(callback: types.CallbackQuery):
+        """Первый шаг: спрашиваем, какое ядро стоит на роутере — Xray или
+        Mihomo прежде чем идти дальше за файлами. У них разный формат
+        (пачка отдельных JSON по серверам для Xray vs один config.yaml для
+        Mihomo), поэтому и обработка расходится сразу на этом шаге."""
+        await callback.answer()
+        try:
+            key_id = int(callback.data.split("_")[-1])
+        except ValueError:
+            await callback.message.answer("❌ Подписка не найдена")
+            return
+
+        await callback.message.answer(
+            "⚙️ <b>Выберите установленное ядро:</b>",
+            reply_markup=keyboards.create_xkeen_core_keyboard(key_id),
+            parse_mode="HTML",
+        )
+
+    @user_router.callback_query(F.data.startswith("xkeen_core_xray_"))
+    async def xkeen_core_xray_handler(callback: types.CallbackQuery):
+        """Xray — дальше по привычному флоу: выбор страны, файлы по одному
+        JSON на сервер (см. xkeen_pick_country_handler)."""
         await callback.answer("⏳ Получаю список серверов...")
         try:
             key_id = int(callback.data.split("_")[-1])
@@ -2086,6 +2107,51 @@ def get_user_router() -> Router:
             reply_markup=keyboards.create_country_picker_keyboard("xkeen", key_id, countries),
             parse_mode="HTML",
         )
+
+    @user_router.callback_query(F.data.startswith("xkeen_core_mihomo_"))
+    async def xkeen_core_mihomo_handler(callback: types.CallbackQuery):
+        """Mihomo — своя подписка (/clash/ вместо /sub/), один YAML-файл на
+        всю конфигурацию сразу, без выбора страны (Mihomo сам переключает
+        прокси внутри одного файла, отдельные файлы по серверам ему не нужны)."""
+        await callback.answer("⏳ Получаю конфигурацию...")
+        try:
+            key_id = int(callback.data.split("_")[-1])
+        except ValueError:
+            await callback.message.answer("❌ Подписка не найдена")
+            return
+
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
+            return
+
+        clash_url = _force_https(connection_string.replace("/sub/", "/clash/"))
+        try:
+            status, raw_body = await fetch_via_https(clash_url, timeout=30.0)
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения Clash/Mihomo-конфигурации для ключа {key_id}: {e}",
+                exc_info=True,
+            )
+            await callback.message.answer("❌ Не удалось получить конфигурацию")
+            return
+
+        if status != 200 or not raw_body:
+            await callback.message.answer("❌ Сервер подписки временно недоступен")
+            return
+
+        document = BufferedInputFile(file=raw_body, filename="config.yaml")
+        caption = (
+            "🛜 <b>Файл подключения для XKeen (Mihomo)</b>\n\n"
+            "⚠️ Сохраните этот файл на роутере в папке <code>\\etc\\mihomo</code> "
+            "и выполните команду <code>xkeen -restart</code>"
+        )
+        try:
+            await callback.message.answer_document(
+                document=document, caption=caption, parse_mode="HTML"
+            )
+        except Exception as send_err:
+            logger.error(f"Ошибка отправки Mihomo-конфигурации для ключа {key_id}: {send_err}")
+            await callback.message.answer("❌ Не удалось отправить файл. Попробуйте позже")
 
     @user_router.callback_query(F.data.startswith("xkeen_pick_"))
     async def xkeen_pick_country_handler(callback: types.CallbackQuery):
