@@ -1295,6 +1295,30 @@ def create_key_info_keyboard(
     return builder.as_markup()
 
 
+def create_country_picker_keyboard(
+    action: str, key_id: int, countries: list[str]
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора страны/города для XKeen-файлов, Podkop-ключей
+    или полного списка ключей — вместо выдачи всех серверов разом (что при
+    20-70 серверах на хосте превращалось в шквал сообщений), пользователь
+    сначала выбирает одну страну, и файлы/ключи присылаются только для неё.
+
+    action — префикс callback_data ("xkeen" | "podkop" | "rawkeys"), кнопка
+    страны с индексом idx получает callback_data f"{action}_pick_{key_id}_{idx}".
+    Порядковый индекс, а не сама строка страны — так как страна с эмодзи-флагом
+    может не влезть в лимит callback_data (64 байта) на некоторых хостах с
+    длинными названиями; повторное построение списка стран на стороне
+    обработчика детерминировано (тот же порядок first-seen), так что индекс
+    надёжно указывает на ту же страну и при повторном запросе.
+    """
+    builder = InlineKeyboardBuilder()
+    for idx, country in enumerate(countries):
+        builder.button(text=country, callback_data=f"{action}_pick_{key_id}_{idx}")
+    builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def create_howto_vless_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру выбора платформы для общей инструкции по подключению VLESS."""
     builder = InlineKeyboardBuilder()
