@@ -2201,7 +2201,7 @@ def get_user_router() -> Router:
 
     @user_router.callback_query(F.data.startswith("podkop_pick_"))
     async def podkop_pick_country_handler(callback: types.CallbackQuery):
-        await callback.answer("⏳ Получаю ключ...")
+        await callback.answer("⏳ Получаю ключи...")
         try:
             _, _, key_id_str, idx_str = callback.data.split("_", 3)
             key_id, idx = int(key_id_str), int(idx_str)
