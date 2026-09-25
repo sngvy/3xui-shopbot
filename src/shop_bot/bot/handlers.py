@@ -10,6 +10,7 @@ import os
 import re
 import ssl
 import uuid
+import zipfile
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from functools import wraps
@@ -1948,424 +1949,387 @@ def get_user_router() -> Router:
                 reply_markup=keyboards.create_back_to_menu_keyboard(),
             )
 
-    async def send_outbounds_file(message, connection_string: str):
-        """
-        Скачивает JSON-конфигурацию подписки и отправляет каждый outbound отдельным файлом.
+    # Флаг — два кодпоинта из диапазона regional indicator symbols (U+1F1E6-
+    # U+1F1FF), из которых составлены все флаги-эмодзи. Извлекаем страну по
+    # этому якорю, — так группировка переживёт даже небольшие расхождения
+    # в форматировании remark между хостами.
+    _FLAG_EMOJI_RE = re.compile(r"^[\U0001F1E6-\U0001F1FF]{2}")
 
-        Особенности:
-        • URL подписки преобразуется в /json/-вариант
-        • Каждый outbound (или группа) отправляется как отдельный файл "04_outbounds.json"
-        • Первый outbound в файле получает тег "vless-reality"
-        • Сохраняется оригинальный текст сообщений и подписей (без изменений)
-        • Итоговое сообщение о количестве файлов НЕ отправляется
+    def _extract_city_label(remark: str) -> str:
+        """Страна/город из remark — флаг в начале + текст. Так все ярусы одного города группируются под одной
+        кнопкой выбора страны. Если флага в начале нет вообще (не должно
+        случаться в реальных remark'ах) — фолбэк на старое поведение."""
+        if not remark:
+            return "Неизвестно"
+        stripped = remark.strip()
+        m = _FLAG_EMOJI_RE.match(stripped)
+        if not m:
+            return stripped.split(" • ")[0].strip()
+        flag = m.group(0)
+        rest = stripped[m.end():].split(" • ")[0].strip()
+        return f"{flag} {rest}".strip()
 
-        Args:
-            message: Объект Message от aiogram
-            connection_string: Ссылка на подписку
-        """
-        # -------------------------------------------------------------------------
-        # 1. Преобразование ссылки подписки → JSON-эндпоинт, схема принудительно HTTPS
-        # -------------------------------------------------------------------------
-        json_url = _force_https(connection_string.replace("/sub/", "/json/"))
-
-        # -------------------------------------------------------------------------
-        # 2. Загрузка конфигурации — общий хелпер fetch_via_https
-        # -------------------------------------------------------------------------
+    def _link_city_label(link: str) -> str | None:
+        """То же самое, но для сырой vless://-ссылки — город берём из remark
+        после #, с unquote. None, если у ссылки вообще нет remark."""
+        if "#" not in link:
+            return None
+        raw_remark = link.split("#")[-1]
         try:
-            status, raw_body = await fetch_via_https(json_url)
+            return _extract_city_label(unquote(raw_remark))
+        except Exception:
+            return _extract_city_label(raw_remark)
 
-            if status != 200:
-                await message.answer("❌ Сервер подписки временно недоступен")
-                return
-
-            data = json.loads(raw_body.decode("utf-8", errors="replace"))
-        except json.JSONDecodeError as e:
-            logger.error(f"Не удалось разобрать JSON от {json_url}: {e}")
-            await message.answer("❌ Не удалось получить конфигурацию с сервера")
-            return
+    async def _get_connection_string(callback: types.CallbackQuery, key_id: int) -> str | None:
+        """Общая проверка владельца ключа + получение актуальной ссылки подписки.
+        При ошибке сама шлёт сообщение пользователю и возвращает None."""
+        key_data = await asyncio.to_thread(get_key_by_id, key_id)
+        if not key_data or key_data.get("user_id") != callback.from_user.id:
+            await callback.message.answer("🚫 Это не ваша подписка")
+            return None
+        try:
+            details = await xui_api.get_key_details_from_host(key_data)
+            if not details or not details.get("connection_string"):
+                await callback.message.answer(
+                    "❌ Не удалось получить актуальную подписку с сервера"
+                )
+                return None
+            return details["connection_string"]
         except Exception as e:
-            logger.error(f"Ошибка получения JSON от {json_url}: {e}")
-            await message.answer("❌ Не удалось получить конфигурацию с сервера")
-            return
+            logger.error(
+                f"Ошибка получения connection_string для ключа {key_id}: {e}", exc_info=True
+            )
+            await callback.message.answer("❌ Не удалось получить данные подписки")
+            return None
 
-        # -------------------------------------------------------------------------
-        # 3. Нормализация данных
-        # -------------------------------------------------------------------------
+    async def _fetch_xkeen_outbounds(connection_string: str) -> list | None:
+        """Скачивает JSON-подписку, возвращает список outbound'ов без Podkop,
+        или None при любой ошибке/пустом результате."""
+        json_url = _force_https(connection_string.replace("/sub/", "/json/"))
+        status, raw_body = await fetch_via_https(json_url)
+        if status != 200:
+            return None
+        data = json.loads(raw_body.decode("utf-8", errors="replace"))
         raw_outbounds = data.get("outbounds", []) if isinstance(data, dict) else data
-
         if not isinstance(raw_outbounds, list) or not raw_outbounds:
-            await message.answer("❌ Нет доступных серверов в подписке")
-            return
+            return None
+        filtered = [ob for ob in raw_outbounds if "podkop" not in ob.get("remarks", "").lower()]
+        return filtered or None
 
-        # -------------------------------------------------------------------------
-        # 4. Отправка каждого outbound отдельным файлом (с фильтрацией)
-        # -------------------------------------------------------------------------
-        file_counter = 0  # Счётчик для красивой порядковой нумерации в Telegram
+    async def _fetch_vless_links(connection_string: str) -> list[str] | None:
+        """Скачивает подписку (/sub/), декодирует base64, возвращает список
+        сырых vless:// ссылок, или None при любой ошибке/пустом результате."""
+        sub_url = _force_https(connection_string)
+        status, raw_body = await fetch_via_https(sub_url, timeout=30.0)
+        if status != 200:
+            return None
+        content = raw_body.decode("utf-8", errors="replace").strip()
+        decoded_data = base64.b64decode(content).decode("utf-8").strip()
+        links = [link.strip() for link in decoded_data.splitlines() if link.strip()]
+        return links or None
 
-        for outbound_item in raw_outbounds:
-            # Получаем remark текущего аутбаунда
-            raw_remarks = outbound_item.get("remarks", "Default")
+    @user_router.callback_query(F.data == "cancel_country_picker")
+    async def cancel_country_picker_handler(callback: types.CallbackQuery):
+        await callback.answer()
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
-            # Игнорируем Podkop
-            if "podkop" in raw_remarks.lower():
-                continue
-
-            actual_outbounds = outbound_item.get("outbounds", [outbound_item])
-
-            if not actual_outbounds:
-                continue
-
-            # Принудительная установка тега для первого outbound
-            actual_outbounds[0]["tag"] = "vless-reality"
-
-            single_proxy_config = {"outbounds": actual_outbounds}
-            json_str = json.dumps(single_proxy_config, ensure_ascii=False, indent=2)
-
-            document = BufferedInputFile(
-                file=json_str.encode("utf-8"), filename="04_outbounds.json"
-            )
-
-            # Увеличиваем счётчик только для тех файлов, которые прошли проверку
-            file_counter += 1
-            server_name = raw_remarks.split("-")[0].strip()
-
-            caption = (
-                f"🛜 <b>Файл подключения для XKeen № {file_counter}</b>\n"
-                f"🗺️ {server_name}\n\n"
-                f"⚠️ Сохраните этот файл на роутере в папке <code>\\etc\\xray\\configs</code> и выполните команду <code>xkeen -restart</code>"
-            )
-
-            try:
-                await message.answer_document(document=document, caption=caption, parse_mode="HTML")
-            except Exception as send_err:
-                logger.error(f"Ошибка отправки файла №{file_counter} ({server_name}): {send_err}")
-                # Не прерываем отправку остальных файлов при ошибке одного
-                continue
-
+    # =========================================================================
+    # XKeen: сначала выбор страны, файлы присылаются только для неё — раньше
+    # все страны разом при 20-70 серверах на хосте превращались в шквал
+    # сообщений подряд (риск упереться в rate-limit Telegram).
+    # =========================================================================
     @user_router.callback_query(F.data.startswith("download_xkeen_outbounds_"))
     async def download_xkeen_outbounds_handler(callback: types.CallbackQuery):
-        """
-        Обработчик callback-запроса для генерации и отправки файлов конфигурации XKeen.
-
-        Логика:
-        1. Извлекает ID ключа из callback.data
-        2. Проверяет принадлежность ключа текущему пользователю
-        3. Получает актуальную ссылку подписки с панели
-        4. Вызывает send_outbounds_file для скачивания и отправки файлов
-
-        Args:
-            callback: CallbackQuery от aiogram
-
-        Сообщения пользователю остаются без изменений.
-        """
-        await callback.answer("⏳ Создаю файлы...")
-
-        # -------------------------------------------------------------------------
-        # 1. Извлечение ID ключа
-        # -------------------------------------------------------------------------
+        await callback.answer("⏳ Получаю список серверов...")
         try:
             key_id = int(callback.data.split("_")[-1])
         except ValueError:
             await callback.message.answer("❌ Подписка не найдена")
             return
 
-        # -------------------------------------------------------------------------
-        # 2. Проверка существования ключа и прав доступа
-        # -------------------------------------------------------------------------
-        key_data = await asyncio.to_thread(get_key_by_id, key_id)
-        if not key_data or key_data["user_id"] != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
             return
 
-        # -------------------------------------------------------------------------
-        # 3. Получение актуальной ссылки подписки
-        # -------------------------------------------------------------------------
         try:
-            details = await xui_api.get_key_details_from_host(key_data)
-            if not details or not details.get("connection_string"):
-                await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
-                )
-                return
-
-            connection_string = details["connection_string"]
-
-            # -------------------------------------------------------------------------
-            # 4. Запуск отправки файлов
-            # -------------------------------------------------------------------------
-            await send_outbounds_file(callback.message, connection_string)
-
+            outbounds = await _fetch_xkeen_outbounds(connection_string)
         except Exception as e:
-            logger.error(f"Ошибка при генерации outbounds для ключа {key_id}: {e}", exc_info=True)
-            await callback.message.answer("❌ Ошибка при генерации файла. Попробуйте позже")
+            logger.error(
+                f"Ошибка получения XKeen-подписки для ключа {key_id}: {e}", exc_info=True
+            )
+            outbounds = None
 
+        if not outbounds:
+            await callback.message.answer("❌ Нет доступных серверов для XKeen")
+            return
+
+        countries = list(
+            dict.fromkeys(_extract_city_label(ob.get("remarks", "Default")) for ob in outbounds)
+        )
+        await callback.message.answer(
+            "🗺️ <b>Выберите страну, для которой нужны файлы XKeen:</b>",
+            reply_markup=keyboards.create_country_picker_keyboard("xkeen", key_id, countries),
+            parse_mode="HTML",
+        )
+
+    @user_router.callback_query(F.data.startswith("xkeen_pick_"))
+    async def xkeen_pick_country_handler(callback: types.CallbackQuery):
+        await callback.answer("⏳ Создаю файлы...")
+        try:
+            _, _, key_id_str, idx_str = callback.data.split("_", 3)
+            key_id, idx = int(key_id_str), int(idx_str)
+        except (ValueError, IndexError):
+            await callback.message.answer("❌ Некорректный запрос")
+            return
+
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
+            return
+
+        try:
+            outbounds = await _fetch_xkeen_outbounds(connection_string)
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения XKeen-подписки для ключа {key_id}: {e}", exc_info=True
+            )
+            outbounds = None
+
+        if not outbounds:
+            await callback.message.answer("❌ Нет доступных серверов для XKeen")
+            return
+
+        countries = list(
+            dict.fromkeys(_extract_city_label(ob.get("remarks", "Default")) for ob in outbounds)
+        )
+        if idx < 0 or idx >= len(countries):
+            await callback.message.answer("❌ Список серверов изменился, повторите запрос заново")
+            return
+        target_country = countries[idx]
+
+        file_counter = 0
+        for outbound_item in outbounds:
+            raw_remarks = outbound_item.get("remarks", "Default")
+            if _extract_city_label(raw_remarks) != target_country:
+                continue
+
+            actual_outbounds = outbound_item.get("outbounds", [outbound_item])
+            if not actual_outbounds:
+                continue
+            actual_outbounds[0]["tag"] = "vless-reality"
+            single_proxy_config = {"outbounds": actual_outbounds}
+            json_str = json.dumps(single_proxy_config, ensure_ascii=False, indent=2)
+
+            file_counter += 1
+            # Оригинальное поведение: в caption — server_name из самого этого
+            # outbound'а (split("-")[0]), а не общий ярлык страны, который
+            # использовался только для фильтрации/группировки по кнопкам.
+            server_name = raw_remarks.split("-")[0].strip()
+            document = BufferedInputFile(
+                file=json_str.encode("utf-8"), filename="04_outbounds.json"
+            )
+            caption = (
+                f"🛜 <b>Файл подключения для XKeen № {file_counter}</b>\n"
+                f"🗺️ {server_name}\n\n"
+                f"⚠️ Сохраните этот файл на роутере в папке <code>\\etc\\xray\\configs</code> "
+                f"и выполните команду <code>xkeen -restart</code>"
+            )
+            try:
+                await callback.message.answer_document(
+                    document=document, caption=caption, parse_mode="HTML"
+                )
+            except Exception as send_err:
+                logger.error(f"Ошибка отправки файла №{file_counter} ({server_name}): {send_err}")
+                continue
+
+        if file_counter == 0:
+            await callback.message.answer(f"❌ Не нашлось файлов для {target_country}")
+
+    # =========================================================================
+    # Ключи для Podkop: сначала выбор страны, ключ присылается только для неё
+    # =========================================================================
     @user_router.callback_query(F.data.startswith("show_podkop_keys_"))
     async def show_podkop_keys_handler(callback: types.CallbackQuery):
-        """
-        Обработчик callback-запроса для выдачи сырых VLESS-ссылок для Podkop в текстовом виде.
-
-        Логика работы:
-        1. Проверяет принадлежность ключа текущему пользователю
-        2. Получает актуальную ссылку подписки с панели хоста
-        3. Загружает содержимое подписки (base64-encoded список ссылок)
-        4. Декодирует и разбивает на отдельные vless:// строки
-        5. Для каждой ссылки извлекает remark (название сервера после #)
-        6. Отправляет каждую ссылку в файле отдельным сообщением с номером и названием
-
-        Формат отправляемого сообщения:
-        • Заголовок: «Ключ в формате vless:// №N»
-        • На новой строке: 🗺️ Название сервера (если есть remark)
-        • Сама ссылка в <code>блоке</code>
-
-        Args:
-            callback: CallbackQuery от aiogram (содержит data с key_id)
-
-        Особенности:
-        • Защита от доступа к чужим подпискам
-        • Таймаут на загрузку подписки — 30 секунд
-        • Обработка ошибок на каждом этапе с понятными сообщениями пользователю
-        • Использует unquote для корректного отображения кириллицы/спецсимволов в remark
-        """
-        # Подтверждаем получение запроса (убираем "часики" у кнопки)
-        await callback.answer("⏳ Получаю ключи...")
-
-        # -------------------------------------------------------------------------
-        # 1. Извлечение ID ключа из callback.data
-        # -------------------------------------------------------------------------
+        await callback.answer("⏳ Получаю список серверов...")
         try:
-            # Ожидаемый формат: prefix_key_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
             await callback.message.answer("❌ Некорректный идентификатор подписки")
             return
 
-        # -------------------------------------------------------------------------
-        # 2. Получение данных ключа из локальной БД + проверка владельца
-        # -------------------------------------------------------------------------
-        key_data = await asyncio.to_thread(get_key_by_id, key_id)
-        if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
             return
 
-        # -------------------------------------------------------------------------
-        # 3. Получение актуальной ссылки подписки с панели
-        # -------------------------------------------------------------------------
         try:
-            details = await xui_api.get_key_details_from_host(key_data)
-            if not details or not details.get("connection_string"):
-                await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
-                )
-                return
-
-            connection_string = details["connection_string"]
-
+            links = await _fetch_vless_links(connection_string)
         except Exception as e:
-            logger.error(
-                f"Ошибка при получении subscription link для ключа {key_id}: {e}",
-                exc_info=True,
-            )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            logger.error(f"Ошибка загрузки подписки для ключа {key_id}: {e}", exc_info=True)
+            links = None
+
+        if not links:
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
             return
 
-        # -------------------------------------------------------------------------
-        # 4. Загрузка содержимого подписки (base64-encoded список ссылок)
-        # -------------------------------------------------------------------------
+        podkop_links = [
+            l for l in links if "podkop" in (l.split("#")[-1].lower() if "#" in l else "")
+        ]
+        countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in podkop_links) if c))
+        if not countries:
+            await callback.message.answer("❌ Ключей для Podkop не найдено")
+            return
+
+        await callback.message.answer(
+            "🗺️ <b>Выберите страну, для которой нужен ключ Podkop:</b>",
+            reply_markup=keyboards.create_country_picker_keyboard("podkop", key_id, countries),
+            parse_mode="HTML",
+        )
+
+    @user_router.callback_query(F.data.startswith("podkop_pick_"))
+    async def podkop_pick_country_handler(callback: types.CallbackQuery):
+        await callback.answer("⏳ Получаю ключ...")
         try:
-            sub_url = _force_https(connection_string)
-            status, raw_body = await fetch_via_https(sub_url, timeout=30.0)
-            if status != 200:
-                await callback.message.answer("❌ Не удалось загрузить конфигурацию")
-                return
-
-            content = raw_body.decode("utf-8", errors="replace").strip()
-
-        except Exception as e:
-            logger.error(f"Ошибка загрузки подписки {connection_string}: {e}", exc_info=True)
-            await callback.message.answer("❌ Произошла ошибка при загрузке ключей")
+            _, _, key_id_str, idx_str = callback.data.split("_", 3)
+            key_id, idx = int(key_id_str), int(idx_str)
+        except (ValueError, IndexError):
+            await callback.message.answer("❌ Некорректный запрос")
             return
 
-        # -------------------------------------------------------------------------
-        # 5. Декодирование base64 и разбиение на отдельные VLESS-ссылки
-        # -------------------------------------------------------------------------
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
+            return
+
         try:
-            decoded_data = base64.b64decode(content).decode("utf-8").strip()
-            vless_links = [link.strip() for link in decoded_data.splitlines() if link.strip()]
-
-            if not vless_links:
-                await callback.message.answer("❌ В подписке не найдено ни одного ключа")
-                return
-
+            links = await _fetch_vless_links(connection_string)
         except Exception as e:
-            logger.error(f"Ошибка декодирования base64-подписки для ключа {key_id}: {e}")
-            await callback.message.answer("❌ Некорректный формат данных подписки")
+            logger.error(f"Ошибка загрузки подписки для ключа {key_id}: {e}", exc_info=True)
+            links = None
+
+        if not links:
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
             return
 
-        # -------------------------------------------------------------------------
-        # 6. Отправка каждой VLESS-ссылки отдельным сообщением
-        # -------------------------------------------------------------------------
-        file_counter = 1
+        podkop_links = [
+            l for l in links if "podkop" in (l.split("#")[-1].lower() if "#" in l else "")
+        ]
+        countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in podkop_links) if c))
+        if idx < 0 or idx >= len(countries):
+            await callback.message.answer("❌ Список стран изменился, повторите запрос заново")
+            return
+        target_country = countries[idx]
 
-        for index, link in enumerate(vless_links, start=1):
+        file_counter = 0
+        for link in podkop_links:
+            if _link_city_label(link) != target_country:
+                continue
+
+            # Оригинальное поведение: remark в caption берём из самой этой
+            # ссылки (split("-")[0]), а не общий ярлык страны.
             remark_text = ""
-
-            # Извлекаем remark (всё после #), если он есть
             if "#" in link:
                 raw_remark = link.split("#")[-1]
                 try:
                     decoded_full = unquote(raw_remark)
-
-                    # Игнорируем все, кроме "Podkop"
-                    if "podkop" not in decoded_full.lower():
-                        continue
-
                     decoded_remark = decoded_full.split("-")[0].strip()
                     remark_text = f"\n🗺️ {decoded_remark}"
                 except Exception:
-                    # Если декодирование не удалось — показываем как есть
-                    if "podkop" not in raw_remark.lower():
-                        continue
                     remark_text = f"\n🗺️ {raw_remark}"
-            else:
-                # Если в ссылке нет знака #, то в ней нет и remark с ключевым словом
-                continue
 
-            # Формируем красивое сообщение
+            file_counter += 1
+            document = BufferedInputFile(file=link.encode("utf-8"), filename=f"key_{file_counter}.txt")
             caption = (
                 f"🔑 <b>Ключ для Podkop в формате vless:// № {file_counter}</b>" f"{remark_text}"
             )
-
-            document = BufferedInputFile(
-                file=link.encode("utf-8"), filename=f"key_{file_counter}.txt"
-            )
-
             try:
                 await callback.message.answer_document(
                     document=document, caption=caption, parse_mode="HTML"
                 )
-                file_counter += 1
             except Exception as send_err:
                 logger.error(
-                    f"Ошибка отправки VLESS-ссылки №{index} пользователю {callback.from_user.id}: {send_err}"
+                    f"Ошибка отправки Podkop-ключа пользователю {callback.from_user.id}: {send_err}"
                 )
-                # Продолжаем отправку остальных ссылок
+                continue
 
-        # -------------------------------------------------------------------------
-        # 7. Все ссылки отправлены (без итогового сообщения)
-        # -------------------------------------------------------------------------
-        # Здесь можно добавить финальное сообщение, если потребуется в будущем
-        # await callback.message.answer("✅ Все доступные ключи отправлены")
+        if file_counter == 0:
+            await callback.message.answer(f"❌ Не нашлось ключей Podkop для {target_country}")
 
+    # =========================================================================
+    # Все ключи: сначала выбор страны, ключи присылаются только для неё
+    # =========================================================================
     @user_router.callback_query(F.data.startswith("show_raw_keys_"))
     async def show_raw_keys_handler(callback: types.CallbackQuery):
-        """
-        Обработчик callback-запроса для выдачи сырых VLESS-ссылок в текстовом виде.
-
-        Логика работы:
-        1. Проверяет принадлежность ключа текущему пользователю
-        2. Получает актуальную ссылку подписки с панели хоста
-        3. Загружает содержимое подписки (base64-encoded список ссылок)
-        4. Декодирует и разбивает на отдельные vless:// строки
-        5. Для каждой ссылки извлекает remark (название сервера после #)
-        6. Отправляет каждую ссылку в файле отдельным сообщением с номером и названием
-
-        Формат отправляемого сообщения:
-        • Заголовок: «Ключ в формате vless:// №N»
-        • На новой строке: 🗺️ Название сервера (если есть remark)
-        • Сама ссылка в <code>блоке</code>
-
-        Args:
-            callback: CallbackQuery от aiogram (содержит data с key_id)
-
-        Особенности:
-        • Защита от доступа к чужим подпискам
-        • Таймаут на загрузку подписки — 30 секунд
-        • Обработка ошибок на каждом этапе с понятными сообщениями пользователю
-        • Использует unquote для корректного отображения кириллицы/спецсимволов в remark
-        """
-        # Подтверждаем получение запроса (убираем "часики" у кнопки)
-        await callback.answer("⏳ Получаю ключи...")
-
-        # -------------------------------------------------------------------------
-        # 1. Извлечение ID ключа из callback.data
-        # -------------------------------------------------------------------------
+        await callback.answer("⏳ Получаю список серверов...")
         try:
-            # Ожидаемый формат: prefix_key_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
             await callback.message.answer("❌ Некорректный идентификатор подписки")
             return
 
-        # -------------------------------------------------------------------------
-        # 2. Получение данных ключа из локальной БД + проверка владельца
-        # -------------------------------------------------------------------------
-        key_data = await asyncio.to_thread(get_key_by_id, key_id)
-        if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
             return
 
-        # -------------------------------------------------------------------------
-        # 3. Получение актуальной ссылки подписки с панели
-        # -------------------------------------------------------------------------
         try:
-            details = await xui_api.get_key_details_from_host(key_data)
-            if not details or not details.get("connection_string"):
-                await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
-                )
-                return
-
-            connection_string = details["connection_string"]
-
+            links = await _fetch_vless_links(connection_string)
         except Exception as e:
-            logger.error(
-                f"Ошибка при получении subscription link для ключа {key_id}: {e}",
-                exc_info=True,
-            )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            logger.error(f"Ошибка загрузки подписки для ключа {key_id}: {e}", exc_info=True)
+            links = None
+
+        if not links:
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
             return
 
-        # -------------------------------------------------------------------------
-        # 4. Загрузка содержимого подписки (base64-encoded список ссылок)
-        # -------------------------------------------------------------------------
+        countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in links) if c))
+        if not countries:
+            await callback.message.answer("❌ Ключей не найдено")
+            return
+
+        await callback.message.answer(
+            "🗺️ <b>Выберите страну, для которой нужны ключи:</b>",
+            reply_markup=keyboards.create_country_picker_keyboard("rawkeys", key_id, countries),
+            parse_mode="HTML",
+        )
+
+    @user_router.callback_query(F.data.startswith("rawkeys_pick_"))
+    async def rawkeys_pick_country_handler(callback: types.CallbackQuery):
+        await callback.answer("⏳ Получаю ключи...")
         try:
-            sub_url = _force_https(connection_string)
-            status, raw_body = await fetch_via_https(sub_url, timeout=30.0)
-            if status != 200:
-                await callback.message.answer("❌ Не удалось загрузить конфигурацию")
-                return
-
-            content = raw_body.decode("utf-8", errors="replace").strip()
-
-        except Exception as e:
-            logger.error(f"Ошибка загрузки подписки {connection_string}: {e}", exc_info=True)
-            await callback.message.answer("❌ Произошла ошибка при загрузке ключей")
+            _, _, key_id_str, idx_str = callback.data.split("_", 3)
+            key_id, idx = int(key_id_str), int(idx_str)
+        except (ValueError, IndexError):
+            await callback.message.answer("❌ Некорректный запрос")
             return
 
-        # -------------------------------------------------------------------------
-        # 5. Декодирование base64 и разбиение на отдельные VLESS-ссылки
-        # -------------------------------------------------------------------------
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
+            return
+
         try:
-            decoded_data = base64.b64decode(content).decode("utf-8").strip()
-            vless_links = [link.strip() for link in decoded_data.splitlines() if link.strip()]
-
-            if not vless_links:
-                await callback.message.answer("❌ В подписке не найдено ни одного ключа")
-                return
-
+            links = await _fetch_vless_links(connection_string)
         except Exception as e:
-            logger.error(f"Ошибка декодирования base64-подписки для ключа {key_id}: {e}")
-            await callback.message.answer("❌ Некорректный формат данных подписки")
+            logger.error(f"Ошибка загрузки подписки для ключа {key_id}: {e}", exc_info=True)
+            links = None
+
+        if not links:
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
             return
 
-        # -------------------------------------------------------------------------
-        # 6. Отправка каждой VLESS-ссылки отдельным сообщением
-        # -------------------------------------------------------------------------
+        countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in links) if c))
+        if idx < 0 or idx >= len(countries):
+            await callback.message.answer("❌ Список стран изменился, повторите запрос заново")
+            return
+        target_country = countries[idx]
 
-        for index, link in enumerate(vless_links, start=1):
+        file_counter = 0
+        for index, link in enumerate(links, start=1):
+            if _link_city_label(link) != target_country:
+                continue
+
+            # Оригинальное поведение: remark в caption берём из самой этой
+            # ссылки (split("-")[0]), а не общий ярлык страны.
             remark_text = ""
-
-            # Извлекаем remark (всё после #), если он есть
             if "#" in link:
                 raw_remark = link.split("#")[-1]
                 try:
@@ -2373,29 +2337,21 @@ def get_user_router() -> Router:
                     decoded_remark = decoded_full.split("-")[0].strip()
                     remark_text = f"\n🗺️ {decoded_remark}"
                 except Exception:
-                    # Если декодирование не удалось — показываем как есть
                     remark_text = f"\n🗺️ {raw_remark}"
 
-            # Формируем красивое сообщение
-            caption = f"🔑 <b>Ключ в формате vless:// № {index}</b>" f"{remark_text}"
-
-            document = BufferedInputFile(file=link.encode("utf-8"), filename=f"key_{index}.txt")
-
+            file_counter += 1
+            document = BufferedInputFile(file=link.encode("utf-8"), filename=f"key_{file_counter}.txt")
+            caption = f"🔑 <b>Ключ в формате vless:// № {file_counter}</b>" f"{remark_text}"
             try:
                 await callback.message.answer_document(
                     document=document, caption=caption, parse_mode="HTML"
                 )
             except Exception as send_err:
-                logger.error(
-                    f"Ошибка отправки VLESS-ссылки №{index} пользователю {callback.from_user.id}: {send_err}"
-                )
-                # Продолжаем отправку остальных ссылок
+                logger.error(f"Ошибка отправки ключа пользователю {callback.from_user.id}: {send_err}")
+                continue
 
-        # -------------------------------------------------------------------------
-        # 7. Все ссылки отправлены (без итогового сообщения)
-        # -------------------------------------------------------------------------
-        # Здесь можно добавить финальное сообщение, если потребуется в будущем
-        # await callback.message.answer("✅ Все доступные ключи отправлены")
+        if file_counter == 0:
+            await callback.message.answer(f"❌ Не нашлось ключей для {target_country}")
 
     @user_router.callback_query(F.data.startswith("add_to_happ_"))
     async def add_to_happ_handler(callback: types.CallbackQuery):
