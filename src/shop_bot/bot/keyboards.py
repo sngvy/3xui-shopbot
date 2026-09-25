@@ -1319,6 +1319,19 @@ def create_country_picker_keyboard(
     return builder.as_markup()
 
 
+def create_xkeen_core_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора установленного на роутере ядра перед выдачей файлов
+    для XKeen — Xray идёт дальше по обычному флоу (выбор страны), Mihomo
+    получает один config.yaml сразу, без выбора страны (там один файл на
+    всю подписку, а не по серверу)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="☢️ Xray", callback_data=f"xkeen_core_xray_{key_id}")
+    builder.button(text="🐱 Mihomo", callback_data=f"xkeen_core_mihomo_{key_id}")
+    builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
 def create_howto_vless_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру выбора платформы для общей инструкции по подключению VLESS."""
     builder = InlineKeyboardBuilder()
