@@ -2152,7 +2152,7 @@ def get_user_router() -> Router:
         document = BufferedInputFile(file=raw_body, filename="config.yaml")
         caption = (
             "🛜 <b>Файл подключения для XKeen (Mihomo)</b>\n\n"
-            "⚠️ Сохраните этот файл на роутере в папке <code>\\etc\\mihomo</code> "
+            "⚠️ Сохраните этот файл на роутере в папке <code>/etc/mihomo</code> "
             "и выполните команду <code>xkeen -restart</code>"
         )
         try:
@@ -2226,7 +2226,7 @@ def get_user_router() -> Router:
             caption = (
                 f"🛜 <b>Файл подключения для XKeen № {file_counter}</b>\n"
                 f"🗺️ {server_name}\n\n"
-                f"⚠️ Сохраните этот файл на роутере в папке <code>\\etc\\xray\\configs</code> "
+                f"⚠️ Сохраните этот файл на роутере в папке <code>/etc/xray/configs</code> "
                 f"и выполните команду <code>xkeen -restart</code>"
             )
             try:
