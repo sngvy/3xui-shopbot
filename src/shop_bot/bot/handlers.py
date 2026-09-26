@@ -1994,7 +1994,7 @@ def get_user_router() -> Router:
 
     def _is_podkop_link(link: str) -> bool:
         """Ключ подходит для Podkop, если в remark есть "Podkop" (обычный
-        Podkop/Mihomo-ярус) ИЛИ "Вездеход" (Hysteria-ярус — тоже отдаём для
+        Podkop/Mihomo-ярус) или "Вездеход" (Hysteria-ярус — тоже отдаём для
         Podkop, по отдельной договорённости, не только "чистый" Podkop).
         remark в ссылке идёт percent-encoded — "Podkop" (латиница) пережил бы
         и сырую проверку без unquote, а вот "Вездеход" (кириллица) в
