@@ -1992,6 +1992,23 @@ def get_user_router() -> Router:
         except Exception:
             return _extract_city_label(raw_remark)
 
+    def _is_podkop_link(link: str) -> bool:
+        """Ключ подходит для Podkop, если в remark есть "Podkop" (обычный
+        Podkop/Mihomo-ярус) ИЛИ "Вездеход" (Hysteria-ярус — тоже отдаём для
+        Podkop, по отдельной договорённости, не только "чистый" Podkop).
+        remark в ссылке идёт percent-encoded — "Podkop" (латиница) пережил бы
+        и сырую проверку без unquote, а вот "Вездеход" (кириллица) в
+        закодированном виде выглядит как "%D0%92%D0%B5%D0%B7..." и никогда
+        не совпал бы без unquote — поэтому декодируем всегда, для обоих."""
+        if "#" not in link:
+            return False
+        raw_remark = link.split("#")[-1]
+        try:
+            remark = unquote(raw_remark).lower()
+        except Exception:
+            remark = raw_remark.lower()
+        return "podkop" in remark or "вездеход" in remark
+
     async def _get_connection_string(callback: types.CallbackQuery, key_id: int) -> str | None:
         """Общая проверка владельца ключа + получение актуальной ссылки подписки.
         При ошибке сама шлёт сообщение пользователю и возвращает None."""
@@ -2266,9 +2283,7 @@ def get_user_router() -> Router:
             await callback.message.answer("❌ В подписке не найдено ни одного ключа")
             return
 
-        podkop_links = [
-            l for l in links if "podkop" in (l.split("#")[-1].lower() if "#" in l else "")
-        ]
+        podkop_links = [l for l in links if _is_podkop_link(l)]
         countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in podkop_links) if c))
         if not countries:
             await callback.message.answer("❌ Ключей для Podkop не найдено")
@@ -2309,9 +2324,7 @@ def get_user_router() -> Router:
             await callback.message.answer("❌ В подписке не найдено ни одного ключа")
             return
 
-        podkop_links = [
-            l for l in links if "podkop" in (l.split("#")[-1].lower() if "#" in l else "")
-        ]
+        podkop_links = [l for l in links if _is_podkop_link(l)]
         countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in podkop_links) if c))
         if idx < 0 or idx >= len(countries):
             await callback.message.answer("❌ Список стран изменился, повторите запрос заново")
