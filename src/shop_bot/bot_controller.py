@@ -13,7 +13,11 @@ from yookassa import Configuration
 from shop_bot.bot import handlers
 from shop_bot.bot.admin_handlers import get_admin_router
 from shop_bot.bot.handlers import get_user_router
-from shop_bot.bot.middlewares import BanMiddleware
+from shop_bot.bot.middlewares import (
+    MAIN_BOT_HEAVY_CALLBACKS,
+    BanMiddleware,
+    ThrottlingMiddleware,
+)
 from shop_bot.data_manager import database
 
 logger = logging.getLogger(__name__)
@@ -108,6 +112,12 @@ class BotController:
 
             # Вешаем BanMiddleware на уровни событий, где доступен event_from_user
             # Вместо уровня update, чтобы корректно отлавливать сообщения/колбэки забаненных пользователей
+            # Антифлуд идёт первым: дешёвая проверка в памяти отсекает поток событий
+            # до обращений к БД (BanMiddleware читает пользователя на каждом апдейте).
+            # Один экземпляр на оба наблюдателя — лимит общий для сообщений и кнопок.
+            throttle = ThrottlingMiddleware(heavy_prefixes=MAIN_BOT_HEAVY_CALLBACKS)
+            self._dp.message.middleware(throttle)
+            self._dp.callback_query.middleware(throttle)
             self._dp.message.middleware(BanMiddleware())
             self._dp.callback_query.middleware(BanMiddleware())
 
