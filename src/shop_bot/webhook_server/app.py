@@ -53,6 +53,7 @@ from shop_bot.data_manager.database import (
     add_support_message,
     adjust_user_balance,
     ban_user,
+    claim_payment,
     create_host,
     create_plan,
     delete_host,
@@ -2300,6 +2301,27 @@ def create_webhook_app(bot_controller_instance):
             flash("Не удалось обновить тариф (возможно, он не найден).", "danger")
         return redirect(url_for("settings_page", tab="hosts"))
 
+    def _schedule_payment(processor, bot, metadata, loop, provider, external_id):
+        """Ставит обработку платежа в event loop бота и логирует исключение, если
+        оно вырвется из process_successful_payment (сам claim при этом остаётся —
+        повторная автоматическая обработка риск двойного зачисления, поэтому такие
+        случаи нужно сверять вручную по логу)."""
+        fut = asyncio.run_coroutine_threadsafe(processor(bot, metadata), loop)
+
+        def _log_failure(f):
+            try:
+                exc = f.exception()
+            except Exception as e:  # отмена и т.п.
+                exc = e
+            if exc:
+                logger.error(
+                    f"Обработка платежа {provider}:{external_id} завершилась ошибкой — "
+                    f"требуется ручная сверка: {exc!r}",
+                    exc_info=exc,
+                )
+
+        fut.add_done_callback(_log_failure)
+
     @csrf.exempt
     @flask_app.route("/yookassa-webhook", methods=["POST"])
     def yookassa_webhook_handler():
@@ -2332,15 +2354,24 @@ def create_webhook_app(bot_controller_instance):
 
             metadata = real_payment.metadata or {}
 
+            if not metadata:
+                return "OK", 200
+
             bot = _bot_controller.get_bot_instance()
             payment_processor = handlers.process_successful_payment
+            loop = current_app.config.get("EVENT_LOOP")
 
-            if metadata and bot is not None and payment_processor is not None:
-                loop = current_app.config.get("EVENT_LOOP")
-                if loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
-                else:
-                    logger.error("YooKassa вебхук: цикл событий недоступен!")
+            if bot is None or payment_processor is None or not (loop and loop.is_running()):
+                logger.error(
+                    "YooKassa вебхук: бот или цикл событий недоступны, прошу YooKassa повторить позже."
+                )
+                return "Service Unavailable", 503
+
+            if not claim_payment("yookassa", payment_id):
+                logger.info(f"YooKassa вебхук: платёж {payment_id} уже обработан, повтор проигнорирован.")
+                return "OK", 200
+
+            _schedule_payment(payment_processor, bot, metadata, loop, "yookassa", payment_id)
             return "OK", 200
         except Exception as e:
             logger.error(f"Ошибка в обработчике вебхука YooKassa: {e}", exc_info=True)
@@ -2409,12 +2440,20 @@ def create_webhook_app(bot_controller_instance):
                 loop = current_app.config.get("EVENT_LOOP")
                 payment_processor = handlers.process_successful_payment
 
-                if bot and loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
-                else:
+                if not (bot and loop and loop.is_running()):
                     logger.error(
-                        "CryptoBot вебхук: не удалось обработать платёж — бот или цикл событий не запущены."
+                        "CryptoBot вебхук: бот или цикл событий не запущены, прошу повторить позже."
                     )
+                    return "Service Unavailable", 503
+
+                invoice_id = payload_data.get("invoice_id")
+                if invoice_id is None:
+                    logger.warning("CryptoBot вебхук: в payload нет invoice_id — дедупликация невозможна.")
+                elif not claim_payment("cryptobot", invoice_id):
+                    logger.info(f"CryptoBot вебхук: инвойс {invoice_id} уже обработан, повтор проигнорирован.")
+                    return "OK", 200
+
+                _schedule_payment(payment_processor, bot, metadata, loop, "cryptobot", invoice_id)
 
             return "OK", 200
 
@@ -2458,8 +2497,22 @@ def create_webhook_app(bot_controller_instance):
                 loop = current_app.config.get("EVENT_LOOP")
                 payment_processor = handlers.process_successful_payment
 
-                if bot and loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
+                if not (bot and loop and loop.is_running()):
+                    logger.error(
+                        "Heleket вебхук: бот или цикл событий не запущены, прошу повторить позже."
+                    )
+                    return "Service Unavailable", 503
+
+                dedupe_id = (
+                    data.get("uuid")
+                    or data.get("order_id")
+                    or hashlib.sha256(sorted_data_str.encode()).hexdigest()
+                )
+                if not claim_payment("heleket", dedupe_id):
+                    logger.info(f"Heleket вебхук: платёж {dedupe_id} уже обработан, повтор проигнорирован.")
+                    return "OK", 200
+
+                _schedule_payment(payment_processor, bot, metadata, loop, "heleket", dedupe_id)
 
             return "OK", 200
         except Exception as e:
@@ -2467,13 +2520,31 @@ def create_webhook_app(bot_controller_instance):
             return "Error", 500
 
     @csrf.exempt
-    @flask_app.route("/ton-webhook", methods=["POST"])
-    def ton_webhook_handler():
+    @flask_app.route("/ton-webhook", defaults={"secret": ""}, methods=["POST"])
+    @flask_app.route("/ton-webhook/<secret>", methods=["POST"])
+    def ton_webhook_handler(secret):
+        expected_secret = (get_setting("ton_webhook_secret") or "").strip()
+        if not expected_secret or not compare_digest(
+            secret.encode("utf-8"), expected_secret.encode("utf-8")
+        ):
+            logger.warning(
+                "TON вебхук: запрос отклонён (ton_webhook_secret не задан в настройках или не совпал)."
+            )
+            return "Forbidden", 403
+
         try:
             data = request.json
             logger.info(f"Получен вебхук TonAPI: {data}")
 
             if "tx_id" in data:
+                bot = _bot_controller.get_bot_instance()
+                loop = current_app.config.get("EVENT_LOOP")
+                payment_processor = handlers.process_successful_payment
+
+                if not (bot and loop and loop.is_running()):
+                    logger.error("TON вебхук: бот или цикл событий не запущены, прошу повторить позже.")
+                    return "Service Unavailable", 503
+
                 for tx in data.get("in_progress_txs", []) + data.get("txs", []):
                     in_msg = tx.get("in_msg")
                     if in_msg and in_msg.get("decoded_comment"):
@@ -2485,14 +2556,7 @@ def create_webhook_app(bot_controller_instance):
 
                         if metadata:
                             logger.info(f"Успешная оплата TON для payment_id: {payment_id}")
-                            bot = _bot_controller.get_bot_instance()
-                            loop = current_app.config.get("EVENT_LOOP")
-                            payment_processor = handlers.process_successful_payment
-
-                            if bot and loop and loop.is_running():
-                                asyncio.run_coroutine_threadsafe(
-                                    payment_processor(bot, metadata), loop
-                                )
+                            _schedule_payment(payment_processor, bot, metadata, loop, "ton", payment_id)
 
             return "OK", 200
         except Exception as e:
@@ -2775,6 +2839,9 @@ def create_webhook_app(bot_controller_instance):
                 return "OK", 200
 
             secret = get_setting("yoomoney_secret") or ""
+            if not secret:
+                logger.error("YooMoney webhook: yoomoney_secret не задан — уведомление отклонено.")
+                return "Forbidden", 403
             signature_str = "&".join(
                 [
                     form.get("notification_type", ""),
@@ -2813,20 +2880,20 @@ def create_webhook_app(bot_controller_instance):
                 try:
                     bot = _bot_controller.get_bot_instance()
                     payment_processor = handlers.process_successful_payment
+                    loop = current_app.config.get("EVENT_LOOP")
                     if bot and label:
+                        if not (loop and loop.is_running()):
+                            logger.error(
+                                "YooMoney webhook: цикл событий недоступен, прошу повторить позже."
+                            )
+                            return "Service Unavailable", 503
                         metadata = find_and_complete_pending_transaction(
                             payment_id=label,
                             amount_rub=amount,
                             payment_method="YooMoney",
                         )
                         if metadata:
-                            loop = current_app.config.get("EVENT_LOOP")
-                            if loop and loop.is_running():
-                                asyncio.run_coroutine_threadsafe(
-                                    payment_processor(bot, metadata), loop
-                                )
-                            else:
-                                logger.error("YooMoney webhook: цикл событий недоступен!")
+                            _schedule_payment(payment_processor, bot, metadata, loop, "yoomoney", label)
                         else:
                             logger.warning(
                                 f"YooMoney webhook: не найдена ожидающая транзакция "
