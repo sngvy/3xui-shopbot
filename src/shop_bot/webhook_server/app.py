@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -32,6 +33,8 @@ from flask import (
     url_for,
 )
 from flask_wtf.csrf import CSRFProtect, generate_csrf
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash, generate_password_hash
 from yookassa import Payment
 
 logging.basicConfig(level=logging.INFO)
@@ -243,6 +246,20 @@ def create_webhook_app(bot_controller_instance):
 
     flask_app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
+    # Панель стоит за nginx: без ProxyFix все клиенты выглядят как 127.0.0.1 и
+    # ограничение попыток входа по IP не работает. x_for=1 берёт последнее
+    # значение X-Forwarded-For — то, что дописал nginx ($proxy_add_x_forwarded_for),
+    # поэтому подделать его префиксом в запросе клиента нельзя.
+    flask_app.wsgi_app = ProxyFix(flask_app.wsgi_app, x_for=1, x_proto=1)
+
+    # Флаги cookie сессии. Secure можно отключить переменной SHOPBOT_COOKIE_SECURE=0,
+    # если панель временно открывают по http (по https через nginx работает как есть).
+    flask_app.config["SESSION_COOKIE_HTTPONLY"] = True
+    flask_app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    flask_app.config["SESSION_COOKIE_SECURE"] = os.getenv(
+        "SHOPBOT_COOKIE_SECURE", "1"
+    ).strip().lower() not in ("0", "false", "no")
+
     # CSRF защита для всех POST форм в панели; вебхуки будут исключены
     csrf = CSRFProtect()
     csrf.init_app(flask_app)
@@ -286,34 +303,135 @@ def create_webhook_app(bot_controller_instance):
         # Добавляем csrf_token в шаблоны для meta и скрытых полей
         return {"current_year": datetime.now().year, "csrf_token": generate_csrf}
 
+    # --- Аутентификация панели -------------------------------------------------
+    _PW_HASH_PREFIXES = ("pbkdf2:", "scrypt:", "argon2")
+    _LOGIN_WINDOW_SEC = 15 * 60
+    _LOGIN_MAX_FAILS = 5
+    _MIN_PASSWORD_LEN = 10
+    _PW_CHANGE_ALLOWED_ENDPOINTS = {"settings_page", "logout_page"}
+    _login_fails: dict = {}
+    _login_fails_lock = threading.Lock()
+
+    def _is_pw_hash(value) -> bool:
+        return isinstance(value, str) and value.startswith(_PW_HASH_PREFIXES)
+
+    def _password_matches(stored: str, candidate: str) -> bool:
+        """Сверка пароля: хэш (werkzeug) или, для ещё не мигрировавшей БД, открытый
+        текст через compare_digest. Пустой сохранённый пароль не подходит никогда."""
+        if not stored:
+            return False
+        if _is_pw_hash(stored):
+            try:
+                return check_password_hash(stored, candidate)
+            except Exception:
+                return False
+        return compare_digest(candidate.encode("utf-8"), stored.encode("utf-8"))
+
+    def _current_epoch() -> str:
+        return (get_setting("panel_session_epoch") or "0").strip() or "0"
+
+    def _login_wait_seconds(ip: str) -> int:
+        now = time.time()
+        with _login_fails_lock:
+            recent = [ts for ts in _login_fails.get(ip, []) if now - ts < _LOGIN_WINDOW_SEC]
+            if recent:
+                _login_fails[ip] = recent
+            else:
+                _login_fails.pop(ip, None)
+            if len(recent) >= _LOGIN_MAX_FAILS:
+                return int(_LOGIN_WINDOW_SEC - (now - recent[0])) + 1
+        return 0
+
+    def _login_register_fail(ip: str) -> None:
+        now = time.time()
+        with _login_fails_lock:
+            _login_fails.setdefault(ip, []).append(now)
+            if len(_login_fails) > 2000:  # защита памяти при переборе с множества адресов
+                for key in [
+                    k for k, v in _login_fails.items() if not v or now - v[-1] >= _LOGIN_WINDOW_SEC
+                ]:
+                    _login_fails.pop(key, None)
+
+    def _login_clear(ip: str) -> None:
+        with _login_fails_lock:
+            _login_fails.pop(ip, None)
+
+    def _validate_new_password(password: str, login: str):
+        if len(password) < _MIN_PASSWORD_LEN:
+            return f"Пароль слишком короткий: минимум {_MIN_PASSWORD_LEN} символов."
+        if password.lower() in ("admin", "password", "12345678", "1234567890") or (
+            login and password.lower() == login.lower()
+        ):
+            return "Пароль слишком простой. Выберите другой."
+        return None
+
     def login_required(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if "logged_in" not in session:
                 return redirect(url_for("login_page"))
+            # Смена пароля отзывает все прежние сессии (см. _current_epoch)
+            if session.get("epoch") != _current_epoch():
+                session.clear()
+                return redirect(url_for("login_page"))
+            # Пока пароль по умолчанию не заменён — доступны только настройки и выход
+            if session.get("must_change_pw") and request.endpoint not in _PW_CHANGE_ALLOWED_ENDPOINTS:
+                flash("Смените пароль по умолчанию, чтобы продолжить работу с панелью.", "warning")
+                return redirect(url_for("settings_page", tab="panel"))
             return f(*args, **kwargs)
 
         return decorated_function
 
     @flask_app.route("/login", methods=["GET", "POST"])
     def login_page():
-        settings = get_all_settings()
         if request.method == "POST":
-            if request.form.get("username") == settings.get("panel_login") and request.form.get(
-                "password"
-            ) == settings.get("panel_password"):
+            ip = request.remote_addr or "unknown"
+            wait = _login_wait_seconds(ip)
+            if wait:
+                logger.warning(f"Вход в панель заблокирован для {ip}: слишком много неудачных попыток.")
+                flash(
+                    f"Слишком много неудачных попыток входа. Повторите через {ceil(wait / 60)} мин.",
+                    "danger",
+                )
+                return render_template("login.html"), 429
+
+            stored_login = get_setting("panel_login") or ""
+            stored_password = get_setting("panel_password") or ""
+            submitted_login = request.form.get("username") or ""
+            submitted_password = request.form.get("password") or ""
+
+            # Обе проверки выполняются всегда — без раннего выхода по логину
+            login_ok = bool(stored_login) and compare_digest(
+                submitted_login.encode("utf-8"), stored_login.encode("utf-8")
+            )
+            password_ok = _password_matches(stored_password, submitted_password)
+
+            if login_ok and password_ok:
+                _login_clear(ip)
+                uses_default = _password_matches(stored_password, "admin")
+                if not _is_pw_hash(stored_password):
+                    # Миграция: открытый текст -> хэш при первом успешном входе
+                    update_setting("panel_password", generate_password_hash(submitted_password))
+                session.clear()
                 session["logged_in"] = True
+                session["epoch"] = _current_epoch()
                 # Remember-me: делаем сессию постоянной при установленном чекбоксе
                 session.permanent = bool(request.form.get("remember_me"))
+                if uses_default:
+                    session["must_change_pw"] = True
+                    flash("Установлен пароль по умолчанию. Задайте новый, прежде чем продолжить.", "warning")
+                    return redirect(url_for("settings_page", tab="panel"))
                 return redirect(url_for("dashboard_page"))
-            else:
-                flash("Неверный логин или пароль", "danger")
+
+            _login_register_fail(ip)
+            logger.warning(f"Неудачная попытка входа в панель с адреса {ip}.")
+            flash("Неверный логин или пароль", "danger")
         return render_template("login.html")
 
     @flask_app.route("/logout", methods=["POST"])
     @login_required
     def logout_page():
-        session.pop("logged_in", None)
+        session.clear()
         flash("Вы успешно вышли.", "success")
         return redirect(url_for("login_page"))
 
@@ -1817,8 +1935,21 @@ def create_webhook_app(bot_controller_instance):
     def settings_page():
         if request.method == "POST":
             # Смена пароля панели (если поле не пустое)
-            if "panel_password" in request.form and request.form.get("panel_password"):
-                update_setting("panel_password", request.form.get("panel_password"))
+            new_panel_password = request.form.get("panel_password")
+            if new_panel_password:
+                pw_error = _validate_new_password(
+                    new_panel_password,
+                    request.form.get("panel_login") or get_setting("panel_login") or "",
+                )
+                if pw_error:
+                    flash(pw_error, "danger")
+                else:
+                    update_setting("panel_password", generate_password_hash(new_panel_password))
+                    new_epoch = secrets.token_hex(8)
+                    update_setting("panel_session_epoch", new_epoch)
+                    session["epoch"] = new_epoch  # текущая сессия остаётся, остальные завершаются
+                    session.pop("must_change_pw", None)
+                    flash("Пароль панели изменён, остальные сессии завершены.", "success")
 
             # Обработка чекбоксов, где в форме идёт hidden=false + checkbox=true
             checkbox_keys = [
@@ -2593,11 +2724,22 @@ def create_webhook_app(bot_controller_instance):
             }
         )
         url = f"https://yoomoney.ru/oauth/authorize?{qs}"
+        # Метка «подключение начато этой сессией»: callback принимается только после неё
+        session["ym_oauth_started"] = time.time()
         return redirect(url)
 
     @csrf.exempt
     @flask_app.route("/yoomoney/callback")
+    @login_required
     def yoomoney_callback_route():
+        started = session.pop("ym_oauth_started", 0)
+        if not started or time.time() - float(started) > 600:
+            flash(
+                "YooMoney: подключение не начиналось из этой сессии или устарело. "
+                "Нажмите «Подключить YooMoney (OAuth)» ещё раз.",
+                "danger",
+            )
+            return redirect(url_for("settings_page", tab="payments"))
         code = (request.args.get("code") or "").strip()
         if not code:
             flash("YooMoney: не получен code из OAuth.", "danger")
