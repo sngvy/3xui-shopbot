@@ -2304,8 +2304,8 @@ def create_webhook_app(bot_controller_instance):
     def _schedule_payment(processor, bot, metadata, loop, provider, external_id):
         """Ставит обработку платежа в event loop бота и логирует исключение, если
         оно вырвется из process_successful_payment (сам claim при этом остаётся —
-        повторная автоматическая обработка риск двойного зачисления, поэтому такие
-        случаи нужно сверять вручную по логу)."""
+        повторная автоматическая обработка создает риск двойного зачисления, поэтому
+        такие случаи нужно сверять вручную по логу)."""
         fut = asyncio.run_coroutine_threadsafe(processor(bot, metadata), loop)
 
         def _log_failure(f):
