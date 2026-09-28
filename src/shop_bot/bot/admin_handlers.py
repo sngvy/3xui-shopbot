@@ -30,6 +30,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from shop_bot.bot import keyboards
 from shop_bot.bot.handlers import delete_and_send, format_transaction_line, safe_edit_text
+from shop_bot.bot.middlewares import AdminOnlyFilter
 from shop_bot.data_manager import (
     backup_manager,
     database,
@@ -125,6 +126,10 @@ def format_dt_for_display(raw) -> str:
 def get_admin_router() -> Router:
     """Собирает и возвращает Router со всеми обработчиками админ-панели бота."""
     admin_router = Router()
+    # Default-deny: все обработчики этого роутера доступны только администраторам,
+    # независимо от проверок внутри отдельных хендлеров.
+    admin_router.message.filter(AdminOnlyFilter())
+    admin_router.callback_query.filter(AdminOnlyFilter())
 
     # Helper: форматирование упоминания пользователя (инициатора)
     def _format_user_mention(u: types.User) -> str:
