@@ -9,7 +9,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 
-from shop_bot.bot.middlewares import BanMiddleware
+from shop_bot.bot.middlewares import BanMiddleware, ThrottlingMiddleware
 from shop_bot.data_manager import database
 from shop_bot.data_manager.database import get_admin_ids
 from shop_bot.support_bot.handlers import get_support_router
@@ -112,6 +112,11 @@ class SupportBotController:
             self._dp = Dispatcher()
 
             # Подключаем BanMiddleware, чтобы заблокированные пользователи не писали в поддержку
+            # Антифлуд против спама тикетами; burst побольше, чтобы не резать альбом
+            # из нескольких фото, который клиент присылает пачкой сообщений.
+            throttle = ThrottlingMiddleware(rate=1.0, burst=10, notice_interval=10.0)
+            self._dp.message.middleware(throttle)
+            self._dp.callback_query.middleware(throttle)
             self._dp.message.middleware(BanMiddleware())
             self._dp.callback_query.middleware(BanMiddleware())
 
