@@ -145,6 +145,15 @@ def initialize_db():
             """)
 
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS processed_payments (
+                    provider TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    PRIMARY KEY (provider, external_id)
+                )
+            """)
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS vpn_keys (
                     key_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -1578,6 +1587,23 @@ def get_latest_backup_created_at() -> datetime | None:
         return None
 
 
+def claim_payment(provider: str, external_id) -> bool:
+    """Атомарно «занимает» платёж провайдера: True — платёж видим впервые, его
+    нужно обработать; False — уже обрабатывался, повтор вебхука надо игнорировать.
+
+    При ошибке БД исключение НЕ гасится: вебхук ответит 5xx и провайдер повторит
+    доставку, а не потеряет платёж и не зачислит его дважды."""
+    ext = str(external_id if external_id is not None else "").strip()
+    if not ext:
+        raise ValueError("claim_payment: пустой external_id")
+    with get_db_connection() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO processed_payments (provider, external_id) VALUES (?, ?)",
+            (str(provider), ext),
+        )
+        return cur.rowcount == 1
+
+
 def find_and_complete_pending_transaction(
     payment_id: str,
     amount_rub: float | None,
@@ -1608,7 +1634,7 @@ def find_and_complete_pending_transaction(
                     amount_currency = COALESCE(?, amount_currency),
                     currency_name = COALESCE(?, currency_name),
                     payment_method = COALESCE(?, payment_method)
-                WHERE payment_id = ?
+                WHERE payment_id = ? AND status = 'pending'
                 """,
                 (
                     amount_rub,
@@ -1618,6 +1644,10 @@ def find_and_complete_pending_transaction(
                     payment_id,
                 ),
             )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                logger.warning(f"Транзакция {payment_id} уже завершена параллельным запросом.")
+                return None
             conn.commit()
 
             try:
@@ -2555,9 +2585,13 @@ def find_and_complete_ton_transaction(payment_id: str, amount_ton: float) -> dic
                     pass
 
             cursor.execute(
-                "UPDATE transactions SET status = 'paid', amount_currency = ?, currency_name = 'TON', payment_method = 'TON' WHERE payment_id = ?",
+                "UPDATE transactions SET status = 'paid', amount_currency = ?, currency_name = 'TON', payment_method = 'TON' WHERE payment_id = ? AND status = 'pending'",
                 (amount_ton, payment_id),
             )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                logger.warning(f"TON Webhook: транзакция {payment_id} уже завершена параллельным запросом.")
+                return None
             conn.commit()
 
             return metadata
