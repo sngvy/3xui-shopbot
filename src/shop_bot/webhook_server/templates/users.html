@@ -355,7 +355,8 @@
       bmBal.textContent = balance;
       bmForm.action = `{{ url_for('adjust_balance_route', user_id=0) }}`.replace('/0/', `/${uid}/`);
       bmCount.textContent = refs.length;
-      bmList.innerHTML = refs.map(r => `<li>#${r.telegram_id} — @${(r.username||'N/A')} · ${r.registration_date}</li>`).join('');
+      const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+      bmList.innerHTML = refs.map(r => `<li>#${esc(r.telegram_id)} — @${esc(r.username || 'N/A')} · ${esc(r.registration_date)}</li>`).join('');
 
       // Проставляем знак и ставим курсор в конец
       try {
