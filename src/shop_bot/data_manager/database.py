@@ -4,6 +4,7 @@ import calendar
 import html
 import json
 import logging
+import math
 import re
 import sqlite3
 import threading
@@ -17,6 +18,17 @@ PROJECT_ROOT = Path("/app/project")
 DB_FILE = PROJECT_ROOT / "users.db"
 
 keys_in_transition = set()
+
+
+def _finite(value) -> bool:
+    """True для конечного числа; NaN, inf и не-числа дают False. SQLite молча
+    превращает NaN в NULL при записи (стирая баланс), а inf сохраняет как есть
+    (после чего любая проверка "хватает ли денег" проходит для любой суммы) —
+    обе функции баланса ниже отклоняют такие значения ещё до UPDATE."""
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
 
 SETTINGS_CACHE = {}
 
@@ -2181,6 +2193,9 @@ def register_user_if_not_exists(telegram_id: int, username: str, referrer_id) ->
 
 def add_to_referral_balance(user_id: int, amount: float):
     """Прибавляет сумму к реферальному балансу пользователя (одна из веток учёта)."""
+    if not _finite(amount):
+        logging.error(f"Отклонена нечисловая сумма реферального баланса для {user_id}: {amount!r}")
+        return
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -2195,6 +2210,9 @@ def add_to_referral_balance(user_id: int, amount: float):
 
 def set_referral_balance(user_id: int, value: float):
     """Устанавливает точное значение реферального баланса пользователя (одна из веток учёта)."""
+    if not _finite(value):
+        logging.error(f"Отклонено нечисловое значение реферального баланса для {user_id}: {value!r}")
+        return
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -2209,6 +2227,9 @@ def set_referral_balance(user_id: int, value: float):
 
 def set_referral_balance_all(user_id: int, value: float):
     """Устанавливает точное значение общего реферального баланса пользователя."""
+    if not _finite(value):
+        logging.error(f"Отклонено нечисловое значение общего реферального баланса для {user_id}: {value!r}")
+        return
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -2265,6 +2286,9 @@ def get_balance(user_id: int) -> float:
 
 def adjust_user_balance(user_id: int, delta: float) -> bool:
     """Скорректировать баланс пользователя на указанную дельту (может быть отрицательной)."""
+    if not _finite(delta):
+        logging.error(f"Отклонена нечисловая дельта баланса для {user_id}: {delta!r}")
+        return False
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -2281,6 +2305,9 @@ def adjust_user_balance(user_id: int, delta: float) -> bool:
 
 def set_balance(user_id: int, value: float) -> bool:
     """Устанавливает точное значение основного баланса пользователя."""
+    if not _finite(value):
+        logging.error(f"Отклонено нечисловое значение баланса для {user_id}: {value!r}")
+        return False
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -2294,6 +2321,9 @@ def set_balance(user_id: int, value: float) -> bool:
 
 def add_to_balance(user_id: int, amount: float) -> bool:
     """Прибавляет (или вычитает, при отрицательном amount) сумму к основному балансу пользователя."""
+    if not _finite(amount):
+        logging.error(f"Отклонена нечисловая сумма баланса для {user_id}: {amount!r}")
+        return False
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -2346,6 +2376,9 @@ def credit_referral_reward(user_id: int, amount: float) -> bool:
 
 def deduct_from_balance(user_id: int, amount: float) -> bool:
     """Атомарное списание с основного баланса при достаточности средств."""
+    if not _finite(amount):
+        logging.error(f"Отклонено списание с нечисловой суммой для {user_id}: {amount!r}")
+        return False
     if amount <= 0:
         return True
     try:
@@ -2371,6 +2404,9 @@ def deduct_from_balance(user_id: int, amount: float) -> bool:
 
 def deduct_from_referral_balance(user_id: int, amount: float) -> bool:
     """Атомарное списание с реферального баланса при достаточности средств."""
+    if not _finite(amount):
+        logging.error(f"Отклонено списание реферального баланса с нечисловой суммой для {user_id}: {amount!r}")
+        return False
     if amount <= 0:
         return True
     try:
