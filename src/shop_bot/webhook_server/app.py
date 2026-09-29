@@ -7,6 +7,7 @@ import hmac
 import html as html_escape
 import json
 import logging
+import math
 import os
 import secrets
 import threading
@@ -735,6 +736,8 @@ def create_webhook_app(bot_controller_instance):
     def adjust_balance_route(user_id: int):
         try:
             delta = float(request.form.get("delta", "0") or "0")
+            if not math.isfinite(delta):
+                raise ValueError("delta must be finite")
         except ValueError:
             # AJAX?
             wants_json = (
