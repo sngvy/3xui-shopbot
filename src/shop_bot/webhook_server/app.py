@@ -2071,9 +2071,9 @@ def create_webhook_app(bot_controller_instance):
             ok = False
             if existing:
                 # Разрешаем только файлы внутри BACKUPS_DIR
-                base = backup_manager.BACKUPS_DIR
+                base = backup_manager.BACKUPS_DIR.resolve()
                 candidate = (base / existing).resolve()
-                if str(candidate).startswith(str(base.resolve())) and os.path.isfile(candidate):
+                if candidate.is_relative_to(base) and candidate.is_file():
                     ok = backup_manager.restore_from_file(candidate)
                 else:
                     flash("Выбранный бэкап не найден.", "danger")
