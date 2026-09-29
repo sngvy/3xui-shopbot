@@ -30,6 +30,25 @@ def _finite(value) -> bool:
     except (TypeError, ValueError):
         return False
 
+
+# Отображаемое имя пользователя берётся из профиля Telegram (username или, если его
+# нет, full_name) — его задаёт сам пользователь, и в нём допустимы любые символы.
+# Имя попадает в админ-панель и в HTML-сообщения бота, поэтому опасные для HTML
+# символы заменяются визуально похожими, а управляющие и bidi-символы удаляются.
+# Настоящие @username ([A-Za-z0-9_]) этим не затрагиваются.
+_DISPLAY_NAME_TRANS = str.maketrans(
+    {"<": "\u2039", ">": "\u203a", '"': "\u201d", "'": "\u2019", "&": "\uff06", "`": "\u02bc"}
+)
+_DISPLAY_NAME_STRIP_RE = re.compile("[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def clean_display_name(value):
+    """Очищает отображаемое имя пользователя перед сохранением в БД."""
+    if value is None:
+        return None
+    cleaned = _DISPLAY_NAME_STRIP_RE.sub("", str(value)).translate(_DISPLAY_NAME_TRANS).strip()
+    return cleaned[:128]
+
 SETTINGS_CACHE = {}
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{4,32}")
@@ -2141,6 +2160,7 @@ def register_user_if_not_exists(telegram_id: int, username: str, referrer_id) ->
     Возвращает True, если пользователь абсолютно новый, и False, если он уже существовал.
     """
     is_new_user = False
+    username = clean_display_name(username)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
