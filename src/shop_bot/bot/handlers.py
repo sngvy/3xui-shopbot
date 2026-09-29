@@ -3313,8 +3313,32 @@ def get_user_router() -> Router:
     @user_router.callback_query(F.data.startswith("show_qr_"))
     @registration_required
     async def show_qr_handler(callback: types.CallbackQuery):
-        await callback.answer("⏳ Генерирую QR-код...", show_alert=False)
+        """Первый шаг: спрашиваем, под какой клиент нужен QR — Happ/INCY, Clash
+        или устаревшие (v2RayTun/v2rayNG) ждут разный вариант ссылки на подписку
+        (/sub/, /clash/, /json/ соответственно), один и тот же QR не для всех
+        одинаково полезен."""
+        await callback.answer()
         key_id = int(callback.data.split("_")[2])
+        await callback.message.answer(
+            "📱 <b>Выберите клиент:</b>",
+            reply_markup=keyboards.create_qr_client_keyboard(key_id),
+            parse_mode="HTML",
+        )
+
+    @user_router.callback_query(F.data.startswith("qr_client_"))
+    @registration_required
+    async def qr_pick_client_handler(callback: types.CallbackQuery):
+        await callback.answer("⏳ Генерирую QR-код...", show_alert=False)
+        try:
+            _, _, fmt, key_id_str = callback.data.split("_", 3)
+            key_id = int(key_id_str)
+        except (ValueError, IndexError):
+            return
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
         # -------------------------------------------------------------------------
         # 1. Асинхронное получение данных ключа из базы данных
@@ -3329,10 +3353,17 @@ def get_user_router() -> Router:
             # -------------------------------------------------------------------------
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details["connection_string"]:
-                await callback.answer("❌ Не удалось сгенерировать QR-код", show_alert=False)
+                await callback.message.answer("❌ Не удалось сгенерировать QR-код")
                 return
 
             connection_string = details["connection_string"]
+            # "sub" — Happ/INCY, кодируем как раньше, без изменений строки подключения
+            if fmt == "clash":
+                qr_target = connection_string.replace("/sub/", "/clash/")
+            elif fmt == "json":
+                qr_target = connection_string.replace("/sub/", "/json/")
+            else:
+                qr_target = connection_string
 
             # -------------------------------------------------------------------------
             # 3. Вынесение генерации графики QR-кода в пул потоков (Thread Pool)
@@ -3345,7 +3376,7 @@ def get_user_router() -> Router:
                 return bio.getvalue()
 
             # Запускаем тяжелый рендеринг изображения без блокировки Event Loop
-            qr_bytes = await asyncio.to_thread(_generate_qr_sync, connection_string)
+            qr_bytes = await asyncio.to_thread(_generate_qr_sync, qr_target)
             qr_code_file = BufferedInputFile(qr_bytes, filename="vpn_qr.png")
 
             # -------------------------------------------------------------------------
@@ -3354,7 +3385,7 @@ def get_user_router() -> Router:
             await callback.message.answer_photo(photo=qr_code_file)
 
         except Exception as e:
-            logger.error(f"Ошибка при отображении QR-кода для ключа {key_id}: {e}", exc_info=True)
+            logger.error(f"Ошибка при отображении QR-кода (клиент={fmt}) для ключа {key_id}: {e}", exc_info=True)
 
     @user_router.callback_query(F.data.startswith("howto_vless_"))
     @registration_required
