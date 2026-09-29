@@ -260,6 +260,25 @@ def create_webhook_app(bot_controller_instance):
         "SHOPBOT_COOKIE_SECURE", "1"
     ).strip().lower() not in ("0", "false", "no")
 
+    # Страницы, которые Telegram открывает как Mini App (в том числе внутри iframe
+    # в Telegram Web) — для них запрет встраивания не ставим, чтобы ничего не сломать.
+    _EMBEDDABLE_PATHS = ("/speed", "/mon", "/redir")
+
+    @flask_app.after_request
+    def _security_headers(response):
+        headers = response.headers
+        headers.setdefault("X-Content-Type-Options", "nosniff")
+        # same-origin: панель использует request.referrer для возврата на страницу
+        headers.setdefault("Referrer-Policy", "same-origin")
+        if request.is_secure:
+            headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+        if request.path not in _EMBEDDABLE_PATHS:
+            headers.setdefault("X-Frame-Options", "DENY")
+            headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+            if request.endpoint != "static":
+                headers.setdefault("Cache-Control", "no-store")
+        return response
+
     # CSRF защита для всех POST форм в панели; вебхуки будут исключены
     csrf = CSRFProtect()
     csrf.init_app(flask_app)
