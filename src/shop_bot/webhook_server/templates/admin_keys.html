@@ -349,6 +349,10 @@
       }
       inboundEl.value = (opt && opt.getAttribute('data-inbound')) ? opt.getAttribute('data-inbound') : '—';
     }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    }
+
     async function loadPlansAndRestore() {
       if (!hostSel || !planSel) return;
       const host = hostSel.value;
@@ -361,7 +365,7 @@
         const items = (d && d.ok && d.items) ? d.items : [];
         const saved = (JSON.parse(localStorage.getItem('admin_keys_form')||'{}')||{}).plan_select;
         // Важно: value должен быть уникальным -> используем plan_id, а months/price кладём в data-атрибуты
-        planSel.innerHTML = '<option value="">— Не выбран —</option>' + items.map(p => `<option value="${p.plan_id}" data-months="${p.months}" data-price="${p.price||0}">${p.plan_name} (${p.months} мес.) — ${Number(p.price||0).toFixed(0)} RUB</option>`).join('');
+        planSel.innerHTML = '<option value="">— Не выбран —</option>' + items.map(p => `<option value="${p.plan_id}" data-months="${p.months}" data-price="${p.price||0}">${escapeHtml(p.plan_name)} (${p.months} мес.) — ${Number(p.price||0).toFixed(0)} RUB</option>`).join('');
         planSel.disabled = false;
         // восстановим выбранный тариф, если есть
         if (saved) {
@@ -415,7 +419,13 @@
           const item = document.createElement('div');
           item.className='soft-select-item';
           const username = u.username ? '@'+String(u.username) : '—';
-          item.innerHTML = `<div style="font-weight:600">${u.telegram_id}</div><div style="opacity:.75">${username}</div>`;
+          const idLine = document.createElement('div');
+          idLine.style.fontWeight = '600';
+          idLine.textContent = String(u.telegram_id);
+          const nameLine = document.createElement('div');
+          nameLine.style.opacity = '.75';
+          nameLine.textContent = username;
+          item.append(idLine, nameLine);
           item.onclick = async ()=>{
             input.value = String(u.telegram_id);
             close();
