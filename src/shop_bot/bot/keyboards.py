@@ -1332,6 +1332,19 @@ def create_xkeen_core_keyboard(key_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def create_qr_client_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора клиента перед генерацией QR — разным приложениям нужен
+    QR с разным вариантом ссылки на подписку (/sub/, /clash/, /json/), а не
+    один и тот же формат на все случаи."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="☢️ Happ/INCY", callback_data=f"qr_client_sub_{key_id}")
+    builder.button(text="🐱 Clash (FlClashX/FlClash)", callback_data=f"qr_client_clash_{key_id}")
+    builder.button(text="🗿 Устаревшие (v2RayTun/v2rayNG)", callback_data=f"qr_client_json_{key_id}")
+    builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
+    builder.adjust(1, 1, 1, 1)
+    return builder.as_markup()
+
+
 def create_howto_vless_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру выбора платформы для общей инструкции по подключению VLESS."""
     builder = InlineKeyboardBuilder()
