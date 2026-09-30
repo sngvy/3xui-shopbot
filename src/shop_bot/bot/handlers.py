@@ -1259,7 +1259,7 @@ def get_user_router() -> Router:
                 photo=qr_file,
                 caption=(
                     f"💎 <b>Оплата через TON Connect</b>\n\n"
-                    f"<b>Сумма к оплате:</b> {price_ton} TON\n\n"
+                    f"💰 <b>Сумма к оплате:</b> {price_ton} TON\n\n"
                     f"⬇️ Нажмите кнопку ниже, чтобы открыть кошелёк и подтвердить перевод\n\n"
                     f"⏳ После оплаты подтверждение приходит автоматически — обычно "
                     f"это занимает 1-3 минуты. Как только оно придёт, бот сам пришлёт "
@@ -1289,9 +1289,9 @@ def get_user_router() -> Router:
             total_ref_earned = 0.0
         text = (
             "🤝 <b>Реферальная программа</b>\n\n"
-            f"<b>Ваша реферальная ссылка:</b>\n<code>{referral_link}</code>\n\n"
-            f"<b>Приглашено пользователей:</b> {referral_count}\n"
-            f"<b>Заработано по рефералке:</b> {total_ref_earned:.2f} ₽"
+            f"🔗 <b>Ваша реферальная ссылка:</b>\n<code>{referral_link}</code>\n\n"
+            f"🤝 <b>Приглашено пользователей:</b> {referral_count}\n"
+            f"💰 <b>Заработано по рефералке:</b> {total_ref_earned:.2f} ₽"
         )
 
         builder = InlineKeyboardBuilder()
@@ -3801,8 +3801,8 @@ def get_user_router() -> Router:
 
                 message_text = (
                     f"🎉 <b>Как приглашенному пользователю, на вашу первую покупку предоставляется скидка {discount_percentage_str}%!</b>\n\n"
-                    f"<b>Старая цена:</b> <s>{price:.2f} ₽</s>\n"
-                    f"<b>Новая цена:</b> {final_price:.2f} ₽\n\n"
+                    f"🏷️ <b>Старая цена:</b> <s>{price:.2f} ₽</s>\n"
+                    f"💰 <b>Новая цена:</b> {final_price:.2f} ₽\n\n"
                 ) + CHOOSE_PAYMENT_METHOD_MESSAGE
 
         # Промокод (если уже применён)
@@ -3823,7 +3823,7 @@ def get_user_router() -> Router:
                 if final_price < Decimal("0"):
                     final_price = Decimal("0.00")
                 # Добавим описание скидки промокода
-                promo_line = f"Промокод {promo_code}: "
+                promo_line = f"🏷️ <b>Промокод {promo_code}:</b> "
                 if promo_percent:
                     promo_line += f"скидка {Decimal(str(promo_percent)):.0f}%\n"
                 elif promo_amount:
@@ -3832,8 +3832,8 @@ def get_user_router() -> Router:
                     promo_line += "применён\n"
                 message_text = (
                     f"{promo_line}"
-                    f"<b>Старая цена:</b> <s>{price:.2f} ₽</s>\n"
-                    f"<b>Новая цена:</b> {final_price:.2f} ₽\n\n"
+                    f"🏷️ <b>Старая цена:</b> <s>{price:.2f} ₽</s>\n"
+                    f"💰 <b>Новая цена:</b> {final_price:.2f} ₽\n\n"
                 ) + message_text
             except Exception:
                 pass
@@ -4426,7 +4426,7 @@ def get_user_router() -> Router:
                 photo=qr_file,
                 caption=(
                     f"💎 <b>Оплата через TON Connect</b>\n\n"
-                    f"<b>Сумма к оплате:</b> {price_ton} TON\n\n"
+                    f"💰 <b>Сумма к оплате:</b> {price_ton} TON\n\n"
                     f"✅ <b>Способ 1 (на телефоне):</b> Нажмите кнопку 'Открыть кошелек' ниже.\n"
                     f"✅ <b>Способ 2 (на компьютере):</b> Отсканируйте QR-код кошельком.\n\n"
                     f"После подключения кошелька подтвердите транзакцию.\n\n"
@@ -5220,9 +5220,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                         await bot.send_message(
                             chat_id=referrer_id,
                             text=(
-                                "💰 <b>Вам начислено реферальное вознаграждение!</b>\n\n"
-                                f"<b>Пользователь:</b> {referrer_username} (ID: {user_id})\n"
-                                f"<b>Сумма:</b> {float(reward):.2f} ₽"
+                                "💸 <b>Вам начислено реферальное вознаграждение!</b>\n\n"
+                                f"👤 <b>Пользователь:</b> {referrer_username} (ID: {user_id})\n"
+                                f"💰 <b>Сумма:</b> {float(reward):.2f} ₽"
                             ),
                             parse_mode="HTML",
                         )

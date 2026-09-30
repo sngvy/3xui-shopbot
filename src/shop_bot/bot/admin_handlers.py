@@ -223,16 +223,16 @@ def get_admin_router() -> Router:
 
         text = (
             "📊 <b>Панель Администратора</b>\n\n"
-            "<b>За сегодня:</b>\n"
-            f"👥 Новых пользователей: {today_new}\n"
-            f"💰 Доход: {today_income:.2f} ₽\n"
-            f"🔑 Выдано подписок: {today_keys}\n\n"
-            "<b>За все время:</b>\n"
-            f"👥 Всего пользователей: {total_users}\n"
-            f"💰 Общий доход: {total_income:.2f} ₽\n"
-            f"🔑 Всего подписок: {total_keys}\n\n"
-            "<b>Состояние подписок:</b>\n"
-            f"✅ Активных: {active_keys}"
+            "📅 <b>За сегодня:</b>\n"
+            f"👥 <b>Новых пользователей:</b> {today_new}\n"
+            f"💰 <b>Доход:</b> {today_income:.2f} ₽\n"
+            f"🔑 <b>Выдано подписок:</b> {today_keys}\n\n"
+            "♾️ <b>За все время:</b>\n"
+            f"👥 <b>Всего пользователей:</b> {total_users}\n"
+            f"💰 <b>Общий доход:</b> {total_income:.2f} ₽\n"
+            f"🔑 <b>Всего подписок:</b> {total_keys}\n\n"
+            "🔓 <b>Состояние подписок:</b>\n"
+            f"✅ <b>Активных:</b> {active_keys}"
         )
         keyboard = keyboards.create_admin_menu_keyboard()
         if edit_message:
@@ -1565,11 +1565,11 @@ def get_admin_router() -> Router:
         desc = data.get("description") or "—"
         text = (
             "🎟 <b>Сводка промокода</b>\n\n"
-            f"<b>Код:</b> <code>{code}</code>\n"
-            f"<b>Скидка:</b> {disc_txt}\n"
-            f"<b>Лимиты:</b> {limits_txt}\n"
-            f"<b>Даты:</b> {dates_txt}\n"
-            f"<b>Описание:</b> {html_escape.escape(desc) if desc != '—' else '—'}\n\n"
+            f"🏷️ <b>Код:</b> <code>{code}</code>\n"
+            f"💸 <b>Скидка:</b> {disc_txt}\n"
+            f"🔢 <b>Лимиты:</b> {limits_txt}\n"
+            f"📅 <b>Даты:</b> {dates_txt}\n"
+            f"📝 <b>Описание:</b> {html_escape.escape(desc) if desc != '—' else '—'}\n\n"
             "Подтвердите создание"
         )
         kb = keyboards.create_admin_promo_confirm_keyboard()
@@ -1880,8 +1880,8 @@ def get_admin_router() -> Router:
         )
         text = (
             f"🤝 <b>Рефералы пользователя {user_id}</b>\n\n"
-            f"<b>Всего приглашено:</b> {ref_count}\n"
-            f"<b>Заработано по рефералке (всего):</b> {total_ref_earned:.2f} ₽\n\n"
+            f"🤝 <b>Всего приглашено:</b> {ref_count}\n"
+            f"💰 <b>Заработано по рефералке (всего):</b> {total_ref_earned:.2f} ₽\n\n"
             + ("\n".join(lines) if lines else "Пока нет рефералов")
             + more_suffix
         )
