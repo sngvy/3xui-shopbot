@@ -5339,11 +5339,11 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                             plan_name = plan.get("plan_name", "Unknown") if plan else "Unknown"
                             admins = list(get_admin_ids() or [])
                             if should_deactivate:
-                                status_line = "<b>Статус:</b> деактивирован"
+                                status_line = "🔒 <b>Статус:</b> деактивирован"
                                 if reason_lines:
                                     status_line += " (" + ", ".join(reason_lines) + ")"
                             else:
-                                status_line = "<b>Статус:</b> активен"
+                                status_line = "✅ <b>Статус:</b> активен"
                                 if limit_total:
                                     status_line += (
                                         f" (использовано {used_total_now} из {limit_total})"
@@ -5352,9 +5352,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                                     status_line += f" (использовано {used_total_now})"
                             text = (
                                 "🎟️ <b>Промокод использован</b>\n\n"
-                                f"<b>Код:</b> {promo_code_used}\n"
-                                f"<b>Пользователь:</b> {user_id}\n"
-                                f"<b>Тариф:</b> {plan_name} ({months} мес.)\n"
+                                f"🏷️ <b>Код:</b> {promo_code_used}\n"
+                                f"👤 <b>Пользователь:</b> {user_id}\n"
+                                f"📦 <b>Тариф:</b> {plan_name} ({months} мес.)\n"
                                 f"{status_line}"
                             )
                             for aid in admins:
