@@ -1182,7 +1182,7 @@ def get_support_router() -> Router:
                             )
                             + f"🧾 <b>Тикет:</b> № {ticket_id}\n"
                             f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: {message.from_user.id})\n"
-                            f"Тема: {_h(subj_display)} — от @{_h(message.from_user.username or message.from_user.full_name)} (ID: {message.from_user.id})"
+                            f"ℹ️ <b>Тема:</b> {_h(subj_display)}"
                         )
                         await bot.send_message(
                             chat_id=chat_id,
