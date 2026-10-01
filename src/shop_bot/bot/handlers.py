@@ -4466,7 +4466,28 @@ def get_user_router() -> Router:
 
         # Пытаемся списать средства с основного баланса
         if not deduct_from_balance(user_id, price):
-            await callback.answer("❌ Недостаточно средств на основном балансе", show_alert=False)
+            await callback.answer()
+            current_balance = float(await asyncio.to_thread(get_balance, user_id))
+            # Минимум 10 ₽ — тот же порог, что topup_amount_input проверяет
+            # для суммы, введённой текстом; кнопка генерируется сервером, а
+            # не пользователем, но должна уважать то же ограничение, иначе
+            # получится предложить пополнение на сумму меньше минимальной.
+            missing = max(round(price - current_balance, 2), 10.0)
+            missing_str = f"{missing:.2f}"
+
+            builder = InlineKeyboardBuilder()
+            builder.button(
+                text=f"💳 Пополнить на {missing_str} ₽",
+                callback_data=f"topup_missing_{missing_str}",
+            )
+            builder.adjust(1)
+            await callback.message.answer(
+                "❌ <b>Недостаточно средств на балансе</b>\n\n"
+                f"💰 <b>Баланс:</b> {current_balance:.2f} ₽\n"
+                f"💵 <b>Не хватает:</b> {missing_str} ₽",
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML",
+            )
             return
 
         metadata = {
@@ -4488,6 +4509,28 @@ def get_user_router() -> Router:
 
         await state.clear()
         await process_successful_payment(bot, metadata)
+
+    @user_router.callback_query(F.data.startswith("topup_missing_"))
+    async def topup_missing_amount_handler(callback: types.CallbackQuery, state: FSMContext):
+        """Кнопка «Пополнить на N ₽» из уведомления о нехватке средств —
+        сразу ведёт на выбор способа оплаты с уже подставленной точной
+        недостающей суммой, без общего меню пополнения и выбора суммы вручную."""
+        await callback.answer()
+        try:
+            amount = Decimal(callback.data.removeprefix("topup_missing_"))
+        except Exception:
+            await callback.message.answer(
+                "❌ Не удалось определить сумму. Откройте пополнение из главного меню"
+            )
+            return
+        final_amount = amount.quantize(Decimal("0.01"))
+        await _show_topup_payment_methods(
+            callback.bot,
+            callback.message.chat.id,
+            callback.message.message_id,
+            state,
+            final_amount,
+        )
 
     # Telegram Payments: подтверждаем pre_checkout
     @user_router.pre_checkout_query()
