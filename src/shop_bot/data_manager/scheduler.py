@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from icmplib import async_ping
 
@@ -2207,6 +2208,196 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
         logger.info("Scheduler: Проверка аномалий трафика завершена. Ничего не обнаружено.")
 
 
+async def execute_broadcast(
+    bot: Bot,
+    segment: str,
+    source_chat_id: int,
+    source_message_id: int,
+    button_text: str | None = None,
+    button_url: str | None = None,
+    promo_discount: float | None = None,
+) -> dict:
+    """Рассылает сообщение всем пользователям сегмента, копируя его из
+    source_chat_id/source_message_id (тот же механизм copy_message, что и у
+    немедленной рассылки). Общая реализация для обоих путей: немедленного
+    (confirm_broadcast_handler в admin_handlers.py) и отложенного
+    (_maybe_send_scheduled_broadcasts ниже), чтобы логика ретраев/бана/
+    личных промокодов не могла разойтись между ними.
+
+    Возвращает словарь со счётчиками для итогового отчёта админу.
+    """
+    final_keyboard = None
+    if button_text and button_url:
+        builder = InlineKeyboardBuilder()
+        builder.button(text=button_text, url=button_url)
+        final_keyboard = builder.as_markup()
+
+    users = await asyncio.to_thread(database.get_users_by_segment, segment)
+    logger.info(f"Рассылка (сегмент '{segment}'): начинаем перебор {len(users)} пользователей")
+
+    sent_count = 0
+    failed_count = 0
+    banned_count = 0
+    blocked_by_user = 0
+    promo_failed_count = 0
+
+    for user in users:
+        user_id = user["telegram_id"]
+        if user.get("is_banned"):
+            banned_count += 1
+            continue
+
+        personal_code = None
+        if promo_discount:
+            personal_code = f"PROMO{user_id}{secrets.token_hex(2).upper()}"
+            try:
+                created = await asyncio.to_thread(
+                    database.create_promo_code,
+                    personal_code,
+                    discount_percent=float(promo_discount),
+                    usage_limit_total=1,
+                    usage_limit_per_user=1,
+                    description=f"Персональный промокод из рассылки для {user_id}",
+                )
+                if not created:
+                    personal_code = None
+                    promo_failed_count += 1
+            except Exception as e:
+                logger.error(f"Не удалось создать персональный промокод для {user_id}: {e}")
+                personal_code = None
+                promo_failed_count += 1
+
+        try:
+            await bot.copy_message(
+                chat_id=user_id,
+                from_chat_id=source_chat_id,
+                message_id=source_message_id,
+                reply_markup=final_keyboard,
+            )
+            if personal_code:
+                try:
+                    await bot.send_message(
+                        user_id,
+                        f"🎁 <b>Ваш персональный промокод:</b> <code>{personal_code}</code>\n\n"
+                        f"Скидка {promo_discount:.0f}%, действует один раз — только для вас",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+            sent_count += 1
+            await asyncio.sleep(0.05)
+
+        except TelegramRetryAfter as e:
+            logger.warning(f"Рейтлимит рассылки! Спим {e.retry_after} сек.")
+            await asyncio.sleep(e.retry_after)
+            try:
+                await bot.copy_message(
+                    chat_id=user_id,
+                    from_chat_id=source_chat_id,
+                    message_id=source_message_id,
+                    reply_markup=final_keyboard,
+                )
+                if personal_code:
+                    try:
+                        await bot.send_message(
+                            user_id,
+                            f"🎁 <b>Ваш персональный промокод:</b> <code>{personal_code}</code>\n\n"
+                            f"Скидка {promo_discount:.0f}%, действует один раз — только для вас",
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
+                sent_count += 1
+            except Exception as internal_e:
+                failed_count += 1
+                logger.error(f"Повторная отправка пользователю {user_id} не удалась: {internal_e}")
+
+        except TelegramForbiddenError:
+            blocked_by_user += 1
+            logger.info(f"Пользователь {user_id} заблокировал бота")
+
+        except Exception as e:
+            failed_count += 1
+            logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
+
+    return {
+        "sent": sent_count,
+        "failed": failed_count,
+        "banned": banned_count,
+        "blocked_by_user": blocked_by_user,
+        "promo_failed": promo_failed_count if promo_discount else None,
+    }
+
+
+def format_broadcast_summary(result: dict) -> str:
+    """Та же сводка, что показывается админу после немедленной рассылки —
+    используется и после отложенной, чтобы текст отчёта не расходился."""
+    lines = [
+        "✅ <b>Рассылка завершена!</b>\n\n",
+        f"👍 <b>Отправлено:</b> {result['sent']}",
+        f"👎 <b>Не удалось отправить:</b> {result['failed']}",
+        f"🚫 <b>Пропущено (забанены):</b> {result['banned']}",
+        f"🗑️ <b>Пропущено (забанили):</b> {result['blocked_by_user']}",
+    ]
+    if result.get("promo_failed") is not None:
+        lines.append(f"🎁 <b>Не удалось создать промокод:</b> {result['promo_failed']}")
+    return "\n".join(lines)
+
+
+async def _maybe_send_scheduled_broadcasts(bot: Bot):
+    """Раз в цикл планировщика проверяет отложенные рассылки, чьё время уже
+    наступило, и отправляет их — тем же execute_broadcast, что и немедленная
+    рассылка из админки. Админу, создавшему рассылку, присылается тот же
+    итоговый отчёт, что он увидел бы при немедленной отправке."""
+    due = await asyncio.to_thread(database.get_due_scheduled_broadcasts)
+    if not due:
+        return
+
+    for item in due:
+        broadcast_id = item["id"]
+        try:
+            result = await execute_broadcast(
+                bot,
+                segment=item["segment"],
+                source_chat_id=item["source_chat_id"],
+                source_message_id=item["source_message_id"],
+                button_text=item.get("button_text"),
+                button_url=item.get("button_url"),
+                promo_discount=item.get("promo_discount"),
+            )
+            summary = format_broadcast_summary(result)
+            await asyncio.to_thread(
+                database.mark_scheduled_broadcast_done, broadcast_id, "sent", summary
+            )
+            logger.info(f"Отложенная рассылка №{broadcast_id} отправлена: {summary!r}")
+
+            notify_text = (
+                f"📅 <b>Отложенная рассылка №{broadcast_id} отправлена</b>\n"
+                f"🗂️ <b>Сегмент:</b> {item['segment_label']}\n\n" + summary
+            )
+            created_by = item.get("created_by")
+            if created_by:
+                try:
+                    await bot.send_message(created_by, notify_text, parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Отложенная рассылка №{broadcast_id} завершилась ошибкой: {e}", exc_info=True)
+            await asyncio.to_thread(
+                database.mark_scheduled_broadcast_done, broadcast_id, "failed", str(e)
+            )
+            created_by = item.get("created_by")
+            if created_by:
+                try:
+                    await bot.send_message(
+                        created_by,
+                        f"❌ <b>Отложенная рассылка №{broadcast_id} не отправлена</b>\n\n{e}",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+
+
 async def periodic_subscription_check(bot_controller: BotController):
     """Главный бесконечный цикл фонового планировщика (запускается один раз при старте бота)."""
     logger.info("Scheduler: Планировщик фоновых задач запущен.")
@@ -2225,6 +2416,7 @@ async def periodic_subscription_check(bot_controller: BotController):
                     await process_auto_renewals(bot)
                     await check_expiring_subscriptions(bot)
                     await check_traffic_anomalies(bot, host_sessions)
+                    await _maybe_send_scheduled_broadcasts(bot)
                 else:
                     logger.warning(
                         "Scheduler: Бот помечен как запущенный, но экземпляр недоступен."
