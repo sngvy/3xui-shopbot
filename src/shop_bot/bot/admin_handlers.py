@@ -41,7 +41,9 @@ from shop_bot.data_manager.database import (  # Promo API
     add_new_key,
     add_to_balance,
     ban_user,
+    cancel_scheduled_broadcast,
     create_promo_code,
+    create_scheduled_broadcast,
     deduct_from_balance,
     delete_all_promo_codes,
     delete_key_by_email,
@@ -54,6 +56,7 @@ from shop_bot.data_manager.database import (  # Promo API
     get_keys_for_host,
     get_keys_for_user,
     get_latest_transactions,
+    get_pending_scheduled_broadcasts,
     get_promo_code,
     get_referral_balance_all,
     get_referrals_for_user,
@@ -103,6 +106,8 @@ class Broadcast(StatesGroup):
     waiting_for_promo_option = State()
     waiting_for_promo_discount = State()
     waiting_for_confirmation = State()
+    waiting_for_schedule_choice = State()
+    waiting_for_schedule_custom_time = State()
 
 
 def format_dt_for_display(raw) -> str:
@@ -4163,120 +4168,182 @@ def get_admin_router() -> Router:
         segment = data.get("segment", "all")
         promo_discount = data.get("promo_discount")
 
-        final_keyboard = None
-        if button_text and button_url:
-            builder = InlineKeyboardBuilder()
-            builder.button(text=button_text, url=button_url)
-            final_keyboard = builder.as_markup()
-
         await state.clear()
 
-        users = await asyncio.to_thread(get_users_by_segment, segment)
-        logger.info(f"Рассылка (сегмент '{segment}'): начинаем перебор {len(users)} пользователей")
+        # Общая с отложенной рассылкой реализация — см. execute_broadcast в
+        # scheduler.py. Локальный импорт — тот же приём, что уже используется
+        # в этом файле (см. анализ WL-трафика), чтобы не плодить циклический
+        # импорт между admin_handlers.py и scheduler.py на уровне модуля.
+        from shop_bot.data_manager.scheduler import execute_broadcast, format_broadcast_summary
 
-        sent_count = 0
-        failed_count = 0
-        banned_count = 0
-        blocked_by_user = 0
-        promo_failed_count = 0
-
-        for user in users:
-            user_id = user["telegram_id"]
-            if user.get("is_banned"):
-                banned_count += 1
-                continue
-
-            # Личный одноразовый промокод — генерируем непосредственно перед
-            # отправкой, чтобы не плодить лишние коды для тех, кому рассылка
-            # так и не дойдёт (например, юзер уже заблокировал бота)
-            personal_code = None
-            if promo_discount:
-                personal_code = f"PROMO{user_id}{secrets.token_hex(2).upper()}"
-                try:
-                    created = await asyncio.to_thread(
-                        create_promo_code,
-                        personal_code,
-                        discount_percent=float(promo_discount),
-                        usage_limit_total=1,
-                        usage_limit_per_user=1,
-                        description=f"Персональный промокод из рассылки для {user_id}",
-                    )
-                    if not created:
-                        personal_code = None
-                        promo_failed_count += 1
-                except Exception as e:
-                    logger.error(f"Не удалось создать персональный промокод для {user_id}: {e}")
-                    personal_code = None
-                    promo_failed_count += 1
-
-            try:
-                await bot.copy_message(
-                    chat_id=user_id,
-                    from_chat_id=original_message.chat.id,
-                    message_id=original_message.message_id,
-                    reply_markup=final_keyboard,
-                )
-                if personal_code:
-                    try:
-                        await bot.send_message(
-                            user_id,
-                            f"🎁 <b>Ваш персональный промокод: <code>{personal_code}</code></b>\n\n"
-                            f"Скидка {promo_discount:.0f}%, действует один раз — только для вас",
-                            parse_mode="HTML",
-                        )
-                    except Exception:
-                        pass
-                sent_count += 1
-                await asyncio.sleep(0.05)
-
-            except TelegramRetryAfter as e:
-                logger.warning(f"Рейтлимит рассылки! Спим {e.retry_after} сек.")
-                await asyncio.sleep(e.retry_after)
-
-                # Повторная попытка с собственным try/except
-                try:
-                    await bot.copy_message(
-                        chat_id=user_id,
-                        from_chat_id=original_message.chat.id,
-                        message_id=original_message.message_id,
-                        reply_markup=final_keyboard,
-                    )
-                    if personal_code:
-                        try:
-                            await bot.send_message(
-                                user_id,
-                                f"🎁 <b>Ваш персональный промокод: <code>{personal_code}</code></b>\n\n"
-                                f"Скидка {promo_discount:.0f}%, действует один раз — только для вас",
-                                parse_mode="HTML",
-                            )
-                        except Exception:
-                            pass
-                    sent_count += 1
-                except Exception as internal_e:
-                    failed_count += 1
-                    logger.error(
-                        f"Повторная отправка пользователю {user_id} не удалась: {internal_e}"
-                    )
-
-            except TelegramForbiddenError:
-                blocked_by_user += 1
-                logger.info(f"Пользователь {user_id} заблокировал бота")
-
-            except Exception as e:
-                failed_count += 1
-                logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
-
-        summary_lines = [
-            "✅ <b>Рассылка завершена!</b>\n",
-            f"👍 <b>Отправлено:</b> {sent_count}",
-            f"👎 <b>Не удалось отправить:</b> {failed_count}",
-            f"🚫 <b>Пропущено (забанены):</b> {banned_count}",
-            f"🗑️ <b>Пропущено (забанили):</b> {blocked_by_user}",
-        ]
-        if promo_discount:
-            summary_lines.append(f"🎁 <b>Не удалось создать промокод:</b> {promo_failed_count}")
-        await callback.message.answer("\n".join(summary_lines), parse_mode="HTML")
+        result = await execute_broadcast(
+            bot,
+            segment=segment,
+            source_chat_id=original_message.chat.id,
+            source_message_id=original_message.message_id,
+            button_text=button_text,
+            button_url=button_url,
+            promo_discount=promo_discount,
+        )
+        await callback.message.answer(format_broadcast_summary(result), parse_mode="HTML")
         await show_admin_menu(callback.message)
+
+    @admin_router.callback_query(Broadcast.waiting_for_confirmation, F.data == "schedule_broadcast")
+    async def schedule_broadcast_handler(callback: types.CallbackQuery, state: FSMContext):
+        await callback.answer()
+        await state.set_state(Broadcast.waiting_for_schedule_choice)
+        await callback.message.answer(
+            "📅 <b>Когда отправить рассылку?</b>",
+            reply_markup=keyboards.create_broadcast_schedule_presets_keyboard(),
+            parse_mode="HTML",
+        )
+
+    async def _save_scheduled_broadcast(message: types.Message, state: FSMContext, scheduled_at: datetime):
+        """Общий хвост для всех способов выбора времени (пресет/своё) —
+        достаёт черновик рассылки из FSM-состояния и кладёт в БД."""
+        data = await state.get_data()
+        message_json = data.get("message_to_send")
+        original_message = types.Message.model_validate_json(message_json)
+
+        broadcast_id = await asyncio.to_thread(
+            create_scheduled_broadcast,
+            created_by=message.chat.id,
+            scheduled_at=scheduled_at,
+            source_chat_id=original_message.chat.id,
+            source_message_id=original_message.message_id,
+            segment=data.get("segment", "all"),
+            segment_label=data.get("segment_label", "всем пользователям"),
+            button_text=data.get("button_text"),
+            button_url=data.get("button_url"),
+            promo_discount=data.get("promo_discount"),
+        )
+        await state.clear()
+
+        if broadcast_id is None:
+            await message.answer("❌ Не удалось сохранить отложенную рассылку. Попробуйте ещё раз")
+            return
+
+        await message.answer(
+            f"📅 <b>Рассылка №{broadcast_id} запланирована</b>\n"
+            f"🕒 <b>Отправка:</b> {format_dt_for_display(scheduled_at)}",
+            parse_mode="HTML",
+        )
+        await show_admin_menu(message)
+
+    @admin_router.callback_query(
+        Broadcast.waiting_for_schedule_choice, F.data.startswith("broadcast_sched_preset_")
+    )
+    async def broadcast_schedule_preset_handler(callback: types.CallbackQuery, state: FSMContext):
+        preset = callback.data.removeprefix("broadcast_sched_preset_")
+
+        if preset == "custom":
+            await callback.answer()
+            await state.set_state(Broadcast.waiting_for_schedule_custom_time)
+            await callback.message.answer(
+                "✏️ Введите дату и время отправки в формате <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n"
+                "Например: <code>05.11.2026 09:30</code>\n\n"
+                "Время — по часовому поясу сервера.",
+                reply_markup=keyboards.create_broadcast_cancel_keyboard(),
+                parse_mode="HTML",
+            )
+            return
+
+        now = datetime.now()
+        if preset == "1h":
+            scheduled_at = now + timedelta(hours=1)
+        elif preset == "3h":
+            scheduled_at = now + timedelta(hours=3)
+        elif preset == "tomorrow10":
+            scheduled_at = (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        elif preset == "tomorrow20":
+            scheduled_at = (now + timedelta(days=1)).replace(hour=20, minute=0, second=0, microsecond=0)
+        else:
+            await callback.answer("❌ Неизвестный вариант времени", show_alert=True)
+            return
+
+        await callback.answer()
+        await _save_scheduled_broadcast(callback.message, state, scheduled_at)
+
+    @admin_router.message(Broadcast.waiting_for_schedule_custom_time)
+    async def broadcast_schedule_custom_time_received(message: types.Message, state: FSMContext):
+        raw = (message.text or "").strip()
+        try:
+            scheduled_at = datetime.strptime(raw, "%d.%m.%Y %H:%M")
+        except ValueError:
+            await message.answer(
+                "❌ Не получилось разобрать дату. Формат: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>, "
+                "например <code>05.11.2026 09:30</code>",
+                parse_mode="HTML",
+            )
+            return
+
+        if scheduled_at <= datetime.now():
+            await message.answer("❌ Это время уже в прошлом. Введите дату и время в будущем")
+            return
+        if scheduled_at > datetime.now() + timedelta(days=90):
+            await message.answer("❌ Слишком далеко вперёд — максимум 90 дней")
+            return
+
+        await _save_scheduled_broadcast(message, state, scheduled_at)
+
+    @admin_router.callback_query(F.data == "view_scheduled_broadcasts")
+    async def view_scheduled_broadcasts_handler(callback: types.CallbackQuery):
+        await callback.answer()
+        items = await asyncio.to_thread(get_pending_scheduled_broadcasts)
+        if not items:
+            await callback.message.answer("📭 Нет запланированных рассылок")
+            return
+
+        display_items = []
+        lines = ["📅 <b>Запланированные рассылки:</b>\n"]
+        for item in items:
+            display_time = format_dt_for_display(item["scheduled_at"])
+            display_items.append({**item, "scheduled_at_display": display_time})
+            promo_note = f", промокод {item['promo_discount']:.0f}%" if item.get("promo_discount") else ""
+            lines.append(
+                f"№{item['id']} — {display_time} — {item['segment_label']}{promo_note}"
+            )
+
+        await callback.message.answer(
+            "\n".join(lines),
+            reply_markup=keyboards.create_scheduled_broadcast_list_keyboard(display_items),
+            parse_mode="HTML",
+        )
+
+    @admin_router.callback_query(F.data.startswith("cancel_sched_broadcast_"))
+    async def cancel_scheduled_broadcast_handler(callback: types.CallbackQuery):
+        try:
+            broadcast_id = int(callback.data.removeprefix("cancel_sched_broadcast_"))
+        except ValueError:
+            await callback.answer("❌ Некорректный номер рассылки", show_alert=False)
+            return
+
+        cancelled = await asyncio.to_thread(cancel_scheduled_broadcast, broadcast_id)
+        if cancelled:
+            await callback.answer(f"✅ Рассылка №{broadcast_id} отменена")
+        else:
+            await callback.answer("⚠️ Рассылка уже отправлена или отменена", show_alert=False)
+
+        # Обновляем список на месте
+        items = await asyncio.to_thread(get_pending_scheduled_broadcasts)
+        if not items:
+            await safe_edit_text(callback, "📭 Нет запланированных рассылок", reply_markup=None)
+            return
+        display_items = []
+        lines = ["📅 <b>Запланированные рассылки:</b>\n"]
+        for item in items:
+            display_time = format_dt_for_display(item["scheduled_at"])
+            display_items.append({**item, "scheduled_at_display": display_time})
+            promo_note = f", промокод {item['promo_discount']:.0f}%" if item.get("promo_discount") else ""
+            lines.append(
+                f"№{item['id']} — {display_time} — {item['segment_label']}{promo_note}"
+            )
+        await safe_edit_text(
+            callback,
+            "\n".join(lines),
+            reply_markup=keyboards.create_scheduled_broadcast_list_keyboard(display_items),
+            parse_mode="HTML",
+        )
 
     @admin_router.callback_query(StateFilter(Broadcast), F.data == "cancel_broadcast")
     async def cancel_broadcast_handler(callback: types.CallbackQuery, state: FSMContext):
