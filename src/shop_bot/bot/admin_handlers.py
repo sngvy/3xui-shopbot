@@ -4258,7 +4258,7 @@ def get_admin_router() -> Router:
         elif preset == "tomorrow20":
             scheduled_at = (now + timedelta(days=1)).replace(hour=20, minute=0, second=0, microsecond=0)
         else:
-            await callback.answer("❌ Неизвестный вариант времени", show_alert=True)
+            await callback.answer("❌ Неизвестный вариант времени", show_alert=False)
             return
 
         await callback.answer()
