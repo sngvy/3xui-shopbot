@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import ssl
+import threading
 import uuid
 import zipfile
 from datetime import datetime, timedelta
@@ -152,6 +153,35 @@ def is_valid_email(email: str) -> bool:
     return re.match(pattern, email) is not None
 
 
+# -------------------------------------------------------------------------
+# Кэш открытых HTTP/1.1 keep-alive соединений для fetch_via_https, по одному
+# на (host, port). threading.Lock(), а не asyncio.Lock() — fetch_via_https
+# выполняется в пуле ОС-потоков через asyncio.to_thread, не в event loop'е.
+# -------------------------------------------------------------------------
+_https_connection_cache: dict[tuple[str, int], http.client.HTTPSConnection] = {}
+_https_connection_cache_lock = threading.Lock()
+
+
+def _get_cached_https_connection(key: tuple[str, int]) -> http.client.HTTPSConnection | None:
+    with _https_connection_cache_lock:
+        return _https_connection_cache.get(key)
+
+
+def _store_cached_https_connection(key: tuple[str, int], conn: http.client.HTTPSConnection) -> None:
+    with _https_connection_cache_lock:
+        _https_connection_cache[key] = conn
+
+
+def _discard_cached_https_connection(key: tuple[str, int]) -> None:
+    with _https_connection_cache_lock:
+        conn = _https_connection_cache.pop(key, None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 async def fetch_via_https(url: str, timeout: float = 15.0) -> tuple[int, bytes]:
     """Скачивает url строго по HTTPS через http.client, без aiohttp/curl.
 
@@ -180,28 +210,54 @@ async def fetch_via_https(url: str, timeout: float = 15.0) -> tuple[int, bytes]:
     Возвращает (http_status, тело_ответа_как_bytes). Поднимает ValueError,
     если url не https, и любые сетевые/TLS-исключения — как есть, вызывающий
     код сам решает, как их обрабатывать/логировать.
+
+    Переиспользует уже открытое HTTP/1.1 keep-alive соединение к тому же
+    (host, port), если оно есть в кэше — вместо нового TCP+TLS хендшейка на
+    каждый вызов. Это даёт эффект там, где один и тот же сервер подписки
+    опрашивается несколько раз подряд в рамках одного действия пользователя
+    (например, флоу выбора страны для XKeen/Podkop: подписка скачивается на
+    шаге показа списка стран, и затем ещё раз на шаге после выбора страны).
+    Если закэшированное соединение оказалось закрыто (сервер отключил по
+    таймауту простоя, сеть моргнула) — это не ошибка вызова, а ожидаемое
+    поведение для долгоживущих соединений: соединение тихо выбрасывается и
+    запрос повторяется один раз с нуля, ровно как если бы кэша не было.
     """
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
         raise ValueError(f"Ожидался https URL, получено: {url}")
 
+    path = parsed.path or "/"
+    if parsed.query:
+        path += f"?{parsed.query}"
+    conn_key = (parsed.hostname, parsed.port or 443)
+
+    def _do_request(conn: http.client.HTTPSConnection) -> tuple[int, bytes]:
+        conn.request("GET", path, headers={"Host": parsed.hostname})
+        resp = conn.getresponse()
+        return resp.status, resp.read()
+
     def _fetch() -> tuple[int, bytes]:
+        cached = _get_cached_https_connection(conn_key)
+        if cached is not None:
+            try:
+                return _do_request(cached)
+            except Exception:
+                _discard_cached_https_connection(conn_key)
+
         ssl_context = ssl.create_default_context()
         conn = http.client.HTTPSConnection(
             parsed.hostname,
-            parsed.port or 443,
+            conn_key[1],
             timeout=timeout,
             context=ssl_context,
         )
         try:
-            path = parsed.path or "/"
-            if parsed.query:
-                path += f"?{parsed.query}"
-            conn.request("GET", path, headers={"Host": parsed.hostname})
-            resp = conn.getresponse()
-            return resp.status, resp.read()
-        finally:
+            result = _do_request(conn)
+        except Exception:
             conn.close()
+            raise
+        _store_cached_https_connection(conn_key, conn)
+        return result
 
     return await asyncio.to_thread(_fetch)
 
