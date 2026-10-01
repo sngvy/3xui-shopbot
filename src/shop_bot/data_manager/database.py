@@ -231,6 +231,24 @@ def initialize_db():
                 )
             """)
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_purchases (
+                    user_id INTEGER PRIMARY KEY,
+                    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    plan_id INTEGER,
+                    months INTEGER,
+                    price REAL NOT NULL,
+                    action TEXT NOT NULL,
+                    key_id INTEGER,
+                    host_name TEXT,
+                    customer_email TEXT,
+                    promo_code TEXT,
+                    promo_discount_percent REAL,
+                    promo_discount_amount REAL,
+                    chat_id INTEGER,
+                    message_id INTEGER
+                )
+            """)
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS bot_settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
@@ -3318,6 +3336,80 @@ def cancel_scheduled_broadcast(broadcast_id: int) -> bool:
     except sqlite3.Error as e:
         logging.error(f"Не удалось отменить отложенную рассылку {broadcast_id}: {e}")
         return False
+
+
+def save_pending_purchase(
+    user_id: int,
+    price: float,
+    action: str,
+    plan_id: int | None = None,
+    months: int | None = None,
+    key_id: int | None = None,
+    host_name: str | None = None,
+    customer_email: str | None = None,
+    promo_code: str | None = None,
+    promo_discount_percent: float | None = None,
+    promo_discount_amount: float | None = None,
+    chat_id: int | None = None,
+    message_id: int | None = None,
+) -> bool:
+    """Сохраняет «незавершённую покупку» — нужна, чтобы после пополнения
+    баланса на недостающую сумму (см. topup_missing_ в handlers.py) можно
+    было автоматически завершить именно эту покупку, а не просто зачислить
+    деньги. По одной записи на пользователя — новая покупка перезаписывает
+    старую (INSERT OR REPLACE), прежняя попытка считается неактуальной."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO pending_purchases
+                    (user_id, created_at, plan_id, months, price, action, key_id,
+                     host_name, customer_email, promo_code, promo_discount_percent,
+                     promo_discount_amount, chat_id, message_id)
+                VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id, plan_id, months, price, action, key_id, host_name,
+                    customer_email, promo_code, promo_discount_percent,
+                    promo_discount_amount, chat_id, message_id,
+                ),
+            )
+            conn.commit()
+            return True
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось сохранить незавершённую покупку для {user_id}: {e}")
+        return False
+
+
+def get_pending_purchase(user_id: int, max_age_minutes: int = 60) -> dict | None:
+    """Незавершённая покупка пользователя, если она не старше max_age_minutes.
+    Специально не удаляет устаревшую запись сама — это сделает следующий
+    save_pending_purchase (перезапишет) или clear_pending_purchase (явно)."""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM pending_purchases WHERE user_id = ? "
+                "AND created_at >= datetime('now','localtime',?)",
+                (user_id, f"-{int(max_age_minutes)} minutes"),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить незавершённую покупку для {user_id}: {e}")
+        return None
+
+
+def clear_pending_purchase(user_id: int):
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM pending_purchases WHERE user_id = ?", (user_id,))
+            conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось удалить незавершённую покупку для {user_id}: {e}")
 
 
 def get_users_paginated(
