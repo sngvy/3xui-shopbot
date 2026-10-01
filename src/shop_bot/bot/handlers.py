@@ -52,6 +52,7 @@ from shop_bot.data_manager.database import (
     add_support_message,
     add_to_balance,
     check_promo_code_available,
+    clear_pending_purchase,
     create_pending_transaction,
     credit_referral_reward,
     deduct_from_balance,
@@ -63,6 +64,7 @@ from shop_bot.data_manager.database import (
     get_key_by_email,
     get_key_by_id,
     get_next_key_number,
+    get_pending_purchase,
     get_plan_by_id,
     get_plans_for_host,
     get_referral_balance_all,
@@ -77,6 +79,7 @@ from shop_bot.data_manager.database import (
     log_transaction,
     redeem_promo_code,
     register_user_if_not_exists,
+    save_pending_purchase,
     set_key_auto_renew,
     set_key_last_plan,
     set_referral_start_bonus_received,
@@ -4475,6 +4478,28 @@ def get_user_router() -> Router:
             missing = max(round(price - current_balance, 2), 10.0)
             missing_str = f"{missing:.2f}"
 
+            # Запоминаем саму покупку (не только сумму) — если пополнение
+            # придёт через вебхук платёжки (ЮKassa/CryptoBot/TON), к этому
+            # моменту текущая FSM-сессия уже не существует, поэтому состояние
+            # покупки живёт в БД, а не в state. См. обработку action == "top_up"
+            # в process_successful_payment — она и завершает эту покупку сама.
+            await asyncio.to_thread(
+                save_pending_purchase,
+                user_id=user_id,
+                price=price,
+                action=data.get("action"),
+                plan_id=data.get("plan_id"),
+                months=months,
+                key_id=data.get("key_id"),
+                host_name=data.get("host_name"),
+                customer_email=data.get("customer_email"),
+                promo_code=data.get("promo_code"),
+                promo_discount_percent=data.get("promo_discount_percent"),
+                promo_discount_amount=data.get("promo_discount_amount"),
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+            )
+
             builder = InlineKeyboardBuilder()
             builder.button(
                 text=f"💳 Пополнить на {missing_str} ₽",
@@ -4484,7 +4509,9 @@ def get_user_router() -> Router:
             await callback.message.answer(
                 "❌ <b>Недостаточно средств на балансе</b>\n\n"
                 f"💰 <b>Баланс:</b> {current_balance:.2f} ₽\n"
-                f"💵 <b>Не хватает:</b> {missing_str} ₽",
+                f"💵 <b>Не хватает:</b> {missing_str} ₽\n\n"
+                "После пополнения покупка завершится автоматически — "
+                "возвращаться и покупать заново не нужно",
                 reply_markup=builder.as_markup(),
                 parse_mode="HTML",
             )
@@ -5051,6 +5078,48 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                 )
         except Exception:
             pass
+
+        # Если под это пополнение есть отложенная покупка (кнопка «Пополнить
+        # на N ₽» из pay_with_main_balance_handler) — пробуем завершить её
+        # сразу же, не дожидаясь, пока пользователь вернётся в бота сам.
+        # Намеренно вне try/except уведомления выше: падение одного не должно
+        # маскировать падение другого под одним общим except.
+        if ok:
+            try:
+                pending = await asyncio.to_thread(get_pending_purchase, user_id)
+                if pending:
+                    # Удаляем сразу, а не после успеха, чтобы при сбое ниже
+                    # не пытаться повторно списать за ту же покупку при
+                    # следующем, не связанном с ней пополнении.
+                    await asyncio.to_thread(clear_pending_purchase, user_id)
+                    fresh_balance = float(await asyncio.to_thread(get_balance, user_id))
+                    pending_price = float(pending["price"])
+                    if fresh_balance >= pending_price and await asyncio.to_thread(
+                        deduct_from_balance, user_id, pending_price
+                    ):
+                        auto_metadata = {
+                            "user_id": user_id,
+                            "months": pending.get("months") or 0,
+                            "price": pending_price,
+                            "action": pending.get("action"),
+                            "key_id": pending.get("key_id"),
+                            "host_name": pending.get("host_name"),
+                            "plan_id": pending.get("plan_id"),
+                            "customer_email": pending.get("customer_email"),
+                            "payment_method": "Balance",
+                            "promo_code": pending.get("promo_code"),
+                            "promo_discount_percent": pending.get("promo_discount_percent"),
+                            "promo_discount_amount": pending.get("promo_discount_amount"),
+                            "chat_id": pending.get("chat_id"),
+                            "message_id": pending.get("message_id"),
+                        }
+                        await process_successful_payment(bot, auto_metadata)
+            except Exception as e:
+                logger.error(
+                    f"Не удалось автоматически завершить отложенную покупку для {user_id}: {e}",
+                    exc_info=True,
+                )
+
         # Админ-уведомление о пополнении (по возможности)
         try:
             admins = [u for u in (get_all_users() or []) if is_admin(u.get("telegram_id") or 0)]
