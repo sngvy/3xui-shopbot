@@ -214,6 +214,23 @@ def initialize_db():
                 )
             """)
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scheduled_broadcasts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_by INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    scheduled_at TIMESTAMP NOT NULL,
+                    source_chat_id INTEGER NOT NULL,
+                    source_message_id INTEGER NOT NULL,
+                    segment TEXT NOT NULL,
+                    segment_label TEXT NOT NULL,
+                    button_text TEXT,
+                    button_url TEXT,
+                    promo_discount REAL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    result_summary TEXT
+                )
+            """)
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS bot_settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
@@ -3180,6 +3197,127 @@ def get_users_by_segment(segment: str) -> list[dict]:
     except sqlite3.Error as e:
         logging.error(f"Не удалось получить пользователей по сегменту '{segment}': {e}")
         return []
+
+
+def create_scheduled_broadcast(
+    created_by: int,
+    scheduled_at,
+    source_chat_id: int,
+    source_message_id: int,
+    segment: str,
+    segment_label: str,
+    button_text: str | None = None,
+    button_url: str | None = None,
+    promo_discount: float | None = None,
+) -> int | None:
+    """Сохраняет отложенную рассылку. scheduled_at — datetime в локальном времени
+    сервера (том же, что и остальные даты в БД — см. datetime('now','localtime')
+    во всей схеме). Возвращает id записи или None при ошибке."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO scheduled_broadcasts
+                    (created_by, scheduled_at, source_chat_id, source_message_id,
+                     segment, segment_label, button_text, button_url, promo_discount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_by,
+                    scheduled_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    source_chat_id,
+                    source_message_id,
+                    segment,
+                    segment_label,
+                    button_text,
+                    button_url,
+                    promo_discount,
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось создать отложенную рассылку: {e}")
+        return None
+
+
+def get_due_scheduled_broadcasts() -> list[dict]:
+    """Отложенные рассылки, время которых уже наступило (status='pending',
+    scheduled_at <= текущее локальное время) — забирает планировщик раз в цикл."""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM scheduled_broadcasts "
+                "WHERE status = 'pending' AND scheduled_at <= datetime('now','localtime') "
+                "ORDER BY scheduled_at ASC"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить отложенные рассылки к отправке: {e}")
+        return []
+
+
+def get_pending_scheduled_broadcasts() -> list[dict]:
+    """Все ещё не отправленные отложенные рассылки, включая те, чьё время
+    ещё не наступило — для экрана «Запланированные рассылки» в админке."""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM scheduled_broadcasts WHERE status = 'pending' ORDER BY scheduled_at ASC"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить список отложенных рассылок: {e}")
+        return []
+
+
+def get_scheduled_broadcast_by_id(broadcast_id: int) -> dict | None:
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM scheduled_broadcasts WHERE id = ?", (broadcast_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить отложенную рассылку {broadcast_id}: {e}")
+        return None
+
+
+def mark_scheduled_broadcast_done(broadcast_id: int, status: str, result_summary: str | None = None):
+    """status: 'sent' | 'failed' — после попытки выполнения планировщиком."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE scheduled_broadcasts SET status = ?, result_summary = ? WHERE id = ?",
+                (status, result_summary, broadcast_id),
+            )
+            conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось обновить статус отложенной рассылки {broadcast_id}: {e}")
+
+
+def cancel_scheduled_broadcast(broadcast_id: int) -> bool:
+    """Отменяет рассылку, только если она ещё не была отправлена (status='pending').
+    True, если реально отменена этим вызовом; False — уже отправлена/отменена/не найдена."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE scheduled_broadcasts SET status = 'cancelled' WHERE id = ? AND status = 'pending'",
+                (broadcast_id,),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось отменить отложенную рассылку {broadcast_id}: {e}")
+        return False
 
 
 def get_users_paginated(
