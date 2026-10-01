@@ -602,6 +602,7 @@ def create_broadcast_segment_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="💤 Платили раньше", callback_data="broadcast_segment_paid_no_active")
     builder.button(text="🛒 Ни разу не покупали", callback_data="broadcast_segment_never_purchased")
     builder.button(text="⏳ День до продления", callback_data="broadcast_segment_expiring_1_day")
+    builder.button(text="📅 Запланированные рассылки", callback_data="view_scheduled_broadcasts")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
     builder.adjust(1)
     return builder.as_markup()
@@ -630,9 +631,37 @@ def create_broadcast_options_keyboard() -> InlineKeyboardMarkup:
 def create_broadcast_confirmation_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру финального подтверждения запуска рассылки."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Отправить всем", callback_data="confirm_broadcast")
+    builder.button(text="✅ Отправить сейчас", callback_data="confirm_broadcast")
+    builder.button(text="📅 Отложить", callback_data="schedule_broadcast")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
-    builder.adjust(2)
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def create_broadcast_schedule_presets_keyboard() -> InlineKeyboardMarkup:
+    """Быстрые пресеты времени отправки отложенной рассылки + свой вариант."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🕐 Через 1 час", callback_data="broadcast_sched_preset_1h")
+    builder.button(text="🕒 Через 3 часа", callback_data="broadcast_sched_preset_3h")
+    builder.button(text="🌅 Завтра в 10:00", callback_data="broadcast_sched_preset_tomorrow10")
+    builder.button(text="🌙 Завтра в 20:00", callback_data="broadcast_sched_preset_tomorrow20")
+    builder.button(text="✏️ Своё время", callback_data="broadcast_sched_preset_custom")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def create_scheduled_broadcast_list_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
+    """Список отложенных рассылок, ожидающих отправки, с кнопкой отмены на
+    каждую. items — записи из get_pending_scheduled_broadcasts()."""
+    builder = InlineKeyboardBuilder()
+    for item in items:
+        builder.button(
+            text=f"❌ Отменить №{item['id']} ({item['scheduled_at_display']})",
+            callback_data=f"cancel_sched_broadcast_{item['id']}",
+        )
+    builder.button(text="⬅️ Назад", callback_data="start_broadcast")
+    builder.adjust(1)
     return builder.as_markup()
 
 
