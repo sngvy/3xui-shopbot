@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -288,6 +289,75 @@ def _resolve_hysteria_update(
 # --- Синхронные вспомогательные функции ---
 
 
+# -------------------------------------------------------------------------
+# Кэш авторизованных сессий py3xui.Api, по одной на хост.
+#
+# api.login() сохраняет cookie-сессию и сам объект Api рассчитан на повторное
+# использование для последующих запросов (так и описано в документации
+# py3xui) — но весь код ниже раньше создавал новый Api() и логинился заново
+# на КАЖДУЮ операцию, включая такие частые, как "показать детали ключа"
+# (буквально при каждом открытии пользователем меню своего ключа) или
+# "сколько сейчас онлайн" (опрашивается для /mon). Каждый такой повторный
+# логин — лишний сетевой round-trip к удалённому VPS до того, как вообще
+# дойдёт до самой операции.
+#
+# TTL кэша (_SESSION_CACHE_TTL_SECONDS) намеренно взят заметно меньше
+# серверного sessionMaxAge 3x-ui (по умолчанию 360 минут, но админ хоста мог
+# выставить и меньше) — это не попытка синхронизироваться с реальным
+# временем жизни сессии на панели, а подстраховка на случай расхождения.
+#
+# Инвалидация — не проактивный ретрай с повтором всей операции (риск
+# задвоить побочный эффект, если сбой случится уже после частичного
+# выполнения — например, клиент на панели создан, а следующий шаг упал),
+# а самоисцеление: при любой ошибке внутри функции, использовавшей
+# закэшированную сессию, эта запись удаляется из кэша в уже существующем
+# except-блоке той же функции. Сама операция в моменте всё равно завершится
+# с ошибкой (как и раньше при любом сбое панели) и вернёт None/False
+# вызывающему коду — но СЛЕДУЮЩИЙ вызов (не этот же) гарантированно получит
+# свежий логин, а не будет повторно биться в ту же протухшую сессию до
+# истечения TTL.
+#
+# threading.Lock(), а не asyncio.Lock() — все функции этого модуля вызываются
+# из handlers.py/scheduler.py через asyncio.to_thread, то есть реально
+# выполняются в пуле ОС-потоков, а не просто чередующихся корутинах.
+# -------------------------------------------------------------------------
+_session_cache: dict[str, tuple[Api, float]] = {}
+_session_cache_lock = threading.Lock()
+_SESSION_CACHE_TTL_SECONDS = 25 * 60
+
+
+def _session_cache_key(host_url: str, username: str) -> str:
+    return f"{host_url}:{username}"
+
+
+def _get_cached_api(host_url: str, username: str) -> Api | None:
+    key = _session_cache_key(host_url, username)
+    with _session_cache_lock:
+        entry = _session_cache.get(key)
+        if entry is None:
+            return None
+        api, logged_in_at = entry
+        if time.monotonic() - logged_in_at > _SESSION_CACHE_TTL_SECONDS:
+            _session_cache.pop(key, None)
+            return None
+        return api
+
+
+def _store_cached_api(host_url: str, username: str, api: Api) -> None:
+    key = _session_cache_key(host_url, username)
+    with _session_cache_lock:
+        _session_cache[key] = (api, time.monotonic())
+
+
+def invalidate_cached_api(host_url: str, username: str) -> None:
+    """Удаляет закэшированную сессию хоста — вызывать из except-блока функции,
+    где операция с закэшированным api провалилась (см. комментарий к кэшу
+    выше). Следующий вызов _login_only для этого хоста сделает свежий логин."""
+    key = _session_cache_key(host_url, username)
+    with _session_cache_lock:
+        _session_cache.pop(key, None)
+
+
 def login_to_host(
     host_url: str, username: str, password: str, inbound_id: int
 ) -> tuple[Api | None, Inbound | None]:
@@ -316,15 +386,18 @@ def login_to_host(
     • При ошибке авторизации или отсутствии inbound'а всегда возвращается (None, None)
     • Логирование ошибок включает полный стек вызовов (exc_info=True)
     • Функция синхронная (блокирующий HTTP). Вызывать из async-кода только через asyncio.to_thread
+    • Логин переиспользуется через тот же кэш сессий, что и _login_only/
+      login_and_get_inbounds (см. комментарий к _session_cache) —
+      api.inbound.get_list() при этом выполняется заново при каждом вызове,
+      кэшируется только сама сессия, не список инбаундов
     """
     try:
         # -------------------------------------------------------------------------
-        # 1. Инициализация объекта API и попытка авторизации
+        # 1. Авторизация (переиспользует кэш сессий, см. _login_only)
         # -------------------------------------------------------------------------
-        api = Api(host=host_url, username=username, password=password)
-
-        # Выполняем вход. Если credentials неверные → выбросит исключение
-        api.login()
+        api = _login_only(host_url, username, password)
+        if api is None:
+            return None, None
 
         # -------------------------------------------------------------------------
         # 2. Получение полного списка inbound'ов с панели
@@ -361,6 +434,8 @@ def login_to_host(
         # -------------------------------------------------------------------------
         # 5. Обработка всех возможных ошибок
         # -------------------------------------------------------------------------
+        # Самоисцеление кэша сессий — см. комментарий в _rename_client_email_on_host_sync.
+        invalidate_cached_api(host_url, username)
         logger.error(
             f"Не удалось авторизоваться или получить inbound на хосте '{host_url}': {e}",
             exc_info=True,
@@ -385,10 +460,20 @@ def login_and_get_inbounds(
     тяжёлых запросов на сервер за цикл.
 
     Возвращает: api, master_inbound, all_inbounds или None, None, None при ошибке.
+
+    Логин переиспользуется через тот же кэш сессий, что и _login_only (см.
+    комментарий к _session_cache) — раньше эта функция делала свой
+    отдельный Api()+login() в обход кэша, и именно её вызывает scheduler.py
+    на каждый хост каждый цикл, то есть кэш для пользовательских действий
+    никогда не был "прогрет" фоновой синхронизацией. api.inbound.get_list()
+    при этом выполняется заново при каждом вызове, как и раньше — кэшируется
+    только сессия логина, не сами данные инбаундов (они обязаны быть
+    актуальными на момент вызова).
     """
     try:
-        api = Api(host=host_url, username=username, password=password)
-        api.login()
+        api = _login_only(host_url, username, password)
+        if api is None:
+            return None, None, None
 
         inbounds: List[Inbound] = api.inbound.get_list()
         if not inbounds:
@@ -406,6 +491,8 @@ def login_and_get_inbounds(
         return api, target_inbound, inbounds
 
     except Exception as e:
+        # Самоисцеление кэша сессий — см. комментарий в _rename_client_email_on_host_sync.
+        invalidate_cached_api(host_url, username)
         logger.error(
             f"Не удалось авторизоваться или получить inbound'ы на хосте '{host_url}': {e}",
             exc_info=True,
@@ -425,10 +512,18 @@ def _login_only(host_url: str, username: str, password: str) -> Api | None:
     либо вообще обходятся без него (get_by_email). Использование этой
     функции вместо login_to_host убирает один лишний "тяжёлый" запрос
     к панели на каждый такой вызов.
+
+    Переиспользует уже залогиненную сессию из кэша (см. комментарий к
+    _session_cache выше), если она ещё не старше _SESSION_CACHE_TTL_SECONDS —
+    вместо полного api.login() на каждый вызов.
     """
+    cached = _get_cached_api(host_url, username)
+    if cached is not None:
+        return cached
     try:
         api = Api(host=host_url, username=username, password=password)
         api.login()
+        _store_cached_api(host_url, username, api)
         return api
     except Exception as e:
         logger.error(f"Не удалось авторизоваться на хосте '{host_url}': {e}", exc_info=True)
@@ -1451,6 +1546,11 @@ def _rename_client_email_on_host_sync(
         logger.info(f"Клиент на хосте {host_name} переименован: {old_email} -> {new_email}")
         return True
     except Exception as e:
+        # Самоисцеление кэша сессий (см. комментарий к _session_cache): если
+        # api.client.update здесь упал из-за протухшей закэшированной
+        # сессии — следующий вызов на этом хосте получит свежий логин,
+        # а не будет повторно биться в ту же мёртвую сессию до истечения TTL.
+        invalidate_cached_api(host_data["host_url"], host_data["host_username"])
         logger.error(
             f"Ошибка при переименовании {old_email} -> {new_email} на хосте {host_name}: {e}",
             exc_info=True,
@@ -1965,6 +2065,8 @@ def _delete_client_on_host_sync(host_data: dict, host_name: str, client_email: s
         return True
 
     except Exception as e:
+        # Самоисцеление кэша сессий — см. комментарий в _rename_client_email_on_host_sync.
+        invalidate_cached_api(host_data["host_url"], host_data["host_username"])
         logger.error(
             f"Критическая ошибка при удалении клиента {client_email} на хосте {host_name}: {e}",
             exc_info=True,
@@ -2098,6 +2200,8 @@ def get_realtime_online_count(host_data: dict) -> int:
         return sum(1 for email in online_list if str(email).lower().endswith(f"@{EMAIL_DOMAIN}"))
 
     except Exception as e:
+        # Самоисцеление кэша сессий — см. комментарий в _rename_client_email_on_host_sync.
+        invalidate_cached_api(host_data["host_url"], host_data["host_username"])
         logger.error(f"Ошибка сбора онлайна на {host_data.get('host_name')}: {e}")
         return 0
 
