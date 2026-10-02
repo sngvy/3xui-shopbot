@@ -2528,7 +2528,7 @@ def get_top_referrers(limit: int = 20) -> list[dict]:
             cursor = conn.cursor()
             # LEFT JOIN + GROUP BY вместо коррелированного подзапроса — раньше
             # подсчёт рефералов (SELECT COUNT(*) ... WHERE referred_by = u.telegram_id)
-            # выполнялся отдельным сканированием users на КАЖДУЮ строку
+            # выполнялся отдельным сканированием users на каждую строку
             # результата; теперь один проход с группировкой, да ещё и с
             # пользой от idx_users_referred_by на стороне referred_by.
             cursor.execute(
