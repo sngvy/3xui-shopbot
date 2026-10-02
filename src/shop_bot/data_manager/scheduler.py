@@ -100,6 +100,40 @@ TRAFFIC_THRESHOLD_MB = 6000  # Порог объема за интервал в 
 SPEED_THRESHOLD_MBPS = 110.0  # Порог скорости (стабильная полка для детекта провода)
 STRIKE_THRESHOLD = 3  # Кол-во проверок подряд для подтверждения аномалии
 
+# Множитель пауз шедулера между мутациями панели.
+try:
+    _PANEL_PAUSE_FACTOR = max(0.0, float(os.environ.get("XUI_SCHEDULER_PAUSE_FACTOR", "0.2")))
+except ValueError:
+    _PANEL_PAUSE_FACTOR = 0.2
+
+
+async def _panel_pause(seconds: float) -> None:
+    """Пауза между мутациями панели с учётом XUI_SCHEDULER_PAUSE_FACTOR."""
+    delay = seconds * _PANEL_PAUSE_FACTOR
+    if delay > 0:
+        await asyncio.sleep(delay)
+
+
+class _YieldToPurchase(Exception):
+    """Шедулер прерывает проход по хосту, потому что пользовательская операция
+    (покупка/продление/удаление) ждёт host_lock. Не ошибка: незавершённая работа
+    безопасно (все мутации идемпотентны) доделывается в следующем цикле."""
+
+
+def _check_yield(host_name: str) -> None:
+    """Вызывается на границах итераций под host_lock. Если покупка ждёт лок этого
+    хоста, выбрасывает _YieldToPurchase; `async with host_lock` в _sync_single_host
+    при выходе отдаёт лок ожидающему (asyncio.Lock — честная очередь FIFO).
+
+    Прерываем, а не продолжаем после паузы, намеренно: за время покупки снимок
+    all_inbounds, на котором работает проход, устаревает, и дальнейшие решения по
+    нему могли бы дать Duplicate email. Хэш состояния/время полной сверки при
+    прерывании не обновляются, поэтому следующий цикл повторит проход заново — на
+    уже синхронизированных ключах это быстрые no-op без панельных запросов.
+    """
+    if xui_api.purchase_waiting(host_name):
+        raise _YieldToPurchase()
+
 
 def format_time_left(hours: int) -> str:
     """Форматирует количество часов в человекочитаемую строку ('N дней'/'N часов')."""
@@ -156,13 +190,11 @@ async def send_subscription_notification(
         logger.error(f"Scheduler: Ошибка отправки уведомления пользователю {user_id}: {e}")
 
 
-def _cleanup_notified_users(all_db_keys: list[dict]):
+def _cleanup_notified_users(active_key_ids: set[int]):
     if not notified_users:
         return
 
     logger.debug("Scheduler: Очищаю кэш уведомлений...")
-
-    active_key_ids = {key["key_id"] for key in all_db_keys}
 
     users_to_check = list(notified_users.keys())
 
@@ -298,11 +330,16 @@ async def check_expiring_subscriptions(bot: Bot):
     """Проверяет все ключи на скорое истечение и рассылает уведомления пользователям."""
     logger.debug("Scheduler: Проверяю истекающие подписки...")
     current_time = datetime.now()
-    all_keys = await asyncio.to_thread(database.get_all_keys)
+    # Раньше каждые вытаскивались и разбирались все ключи.
+    # Теперь для чистки кэша уведомлений нужны только key_id.
+    active_key_ids = await asyncio.to_thread(database.get_all_key_ids)
+    _cleanup_notified_users(active_key_ids)
 
-    _cleanup_notified_users(all_keys)
+    expiring_keys = await asyncio.to_thread(
+        database.get_keys_expiring_within, max(NOTIFY_BEFORE_HOURS)
+    )
 
-    for key in all_keys:
+    for key in expiring_keys:
         try:
             expiry_date = datetime.fromisoformat(key["expiry_date"])
             time_left = expiry_date - current_time
@@ -394,7 +431,7 @@ async def _delete_key_everywhere(api, all_inbounds: list, host_name: str, key_ro
         is_hysteria_ib = xui_api.is_hysteria_protocol(getattr(ib, "protocol", ""))
 
         for target_client in targets_to_delete:
-            deleted_ok = await asyncio.to_thread(
+            deleted_ok = await xui_api.run_in_xui_pool(
                 xui_api.delete_client_robust,
                 api,
                 ib.id,
@@ -402,7 +439,7 @@ async def _delete_key_everywhere(api, all_inbounds: list, host_name: str, key_ro
                 uuid_,
                 is_hysteria_ib,
             )
-            await asyncio.sleep(1.0)
+            await _panel_pause(1.0)
             if not deleted_ok:
                 all_deletes_ok = False
                 logger.warning(
@@ -446,6 +483,7 @@ async def _cleanup_expired_keys_for_host(
     processed_count = 0
 
     for tg_id, user_keys in user_keys_map.items():
+        _check_yield(host_name)
         if processed_count >= MAX_EXPIRED_KEYS_PER_CYCLE:
             break
 
@@ -486,7 +524,7 @@ async def _cleanup_expired_keys_for_host(
                 logger.warning(f"Не удалось уведомить {tg_id} о просрочке: {notify_err}")
 
     if deleted_any:
-        return await asyncio.to_thread(api.inbound.get_list)
+        return await xui_api.run_in_xui_pool(api.inbound.get_list)
     return all_inbounds
 
 
@@ -514,7 +552,7 @@ async def _sweep_orphaned_clients_for_host(api, host_name: str) -> int:
     вызывается редко — см. ORPHAN_SWEEP_INTERVAL_SECONDS.
     """
     try:
-        all_inbounds = await asyncio.to_thread(api.inbound.get_list)
+        all_inbounds = await xui_api.run_in_xui_pool(api.inbound.get_list)
     except Exception as e:
         logger.error(f"[{host_name}] Сверка сирот: не удалось получить список инбаундов: {e}")
         return 0
@@ -550,10 +588,10 @@ async def _sweep_orphaned_clients_for_host(api, host_name: str) -> int:
             if email in xui_api.emails_in_transition:
                 continue
 
-            deleted_ok = await asyncio.to_thread(
+            deleted_ok = await xui_api.run_in_xui_pool(
                 xui_api.delete_client_robust, api, ib.id, c, None, is_hysteria_ib
             )
-            await asyncio.sleep(1.0)
+            await _panel_pause(1.0)
             if deleted_ok:
                 deleted_count += 1
                 logger.info(
@@ -607,10 +645,10 @@ async def _restore_missing_master(
                 continue
             if found_orphan is None:
                 found_orphan = c
-            deleted_ok = await asyncio.to_thread(
+            deleted_ok = await xui_api.run_in_xui_pool(
                 xui_api.delete_client_robust, api, ib.id, c, client_uuid, is_hysteria_ib
             )
-            await asyncio.sleep(1.0)
+            await _panel_pause(1.0)
             if not deleted_ok:
                 logger.warning(
                     f"[{host_name}] Не удалось удалить мусорный клиент {c.email} (UUID {client_uuid}) на inbound {ib.id}"
@@ -618,7 +656,7 @@ async def _restore_missing_master(
             if c.email in globally_taken_emails:
                 globally_taken_emails.discard(c.email)
 
-    await asyncio.sleep(0.5)
+    await _panel_pause(0.5)
 
     saved_sub_id = getattr(found_orphan, "sub_id", "") if found_orphan else ""
 
@@ -636,11 +674,11 @@ async def _restore_missing_master(
     try:
         if xui_api.is_hysteria_protocol(getattr(master_inbound, "protocol", "")):
             wrapped = xui_api.HysteriaClientWrapper(new_master, client_uuid)
-            await asyncio.to_thread(api.client.add, master_inbound.id, [wrapped])
+            await xui_api.run_in_xui_pool(api.client.add, master_inbound.id, [wrapped])
         else:
-            await asyncio.to_thread(api.client.add, master_inbound.id, [new_master])
+            await xui_api.run_in_xui_pool(api.client.add, master_inbound.id, [new_master])
         logger.info(f"[{host_name}] Мастер {client_email} успешно восстановлен")
-        await asyncio.sleep(0.5)
+        await _panel_pause(0.5)
         globally_taken_emails.add(client_email)
         return new_master
     except Exception as e:
@@ -753,7 +791,7 @@ async def _sync_clones_for_host(
         c.email for ib in all_inbounds for c in (ib.settings.clients or []) if c.email
     }
 
-    full_master = await asyncio.to_thread(api.inbound.get_by_id, master_inbound.id)
+    full_master = await xui_api.run_in_xui_pool(api.inbound.get_by_id, master_inbound.id)
     master_clients_map = {str(c.id): c for c in (full_master.settings.clients or [])}
 
     total_affected_records = 0
@@ -770,6 +808,7 @@ async def _sync_clones_for_host(
     pending_creates: dict[int, list[tuple]] = defaultdict(list)
 
     for db_key in keys_in_db:
+        _check_yield(host_name)
         client_uuid = db_key["xui_client_uuid"]
         client_email = db_key["key_email"]
         tg_id = db_key.get("user_id")
@@ -1004,12 +1043,12 @@ async def _sync_clones_for_host(
                                 client_uuid,
                             )
                             wrapped_master = xui_api.HysteriaClientWrapper(server_client, new_auth)
-                            await asyncio.to_thread(
+                            await xui_api.run_in_xui_pool(
                                 api.client.update, update_identifier, wrapped_master
                             )
                         else:
-                            await asyncio.to_thread(api.client.update, client_uuid, server_client)
-                        await asyncio.sleep(0.5)
+                            await xui_api.run_in_xui_pool(api.client.update, client_uuid, server_client)
+                        await _panel_pause(0.5)
 
                         db_ok = await asyncio.to_thread(
                             database.update_key_email,
@@ -1112,12 +1151,12 @@ async def _sync_clones_for_host(
                             client_email.strip().lower(), master_inbound.id, client_uuid
                         )
                         wrapped_master = xui_api.HysteriaClientWrapper(server_client, new_auth)
-                        await asyncio.to_thread(
+                        await xui_api.run_in_xui_pool(
                             api.client.update, update_identifier, wrapped_master
                         )
                     else:
-                        await asyncio.to_thread(api.client.update, client_uuid, server_client)
-                    await asyncio.sleep(0.5)
+                        await xui_api.run_in_xui_pool(api.client.update, client_uuid, server_client)
+                    await _panel_pause(0.5)
 
                     # Верификация: X-UI на некоторых версиях панели отвечает
                     # success:true даже если clientId/auth в URL не нашёлся —
@@ -1129,7 +1168,7 @@ async def _sync_clones_for_host(
                     # нечему: prefix.split('@')[1] после первого "успеха"
                     # больше не matches ни один LEGACY_EMAIL_DOMAINS, и этот
                     # блок для такого ключа больше никогда не запускается.
-                    verify_inbound = await asyncio.to_thread(
+                    verify_inbound = await xui_api.run_in_xui_pool(
                         api.inbound.get_by_id, master_inbound.id
                     )
                     verify_clients = (
@@ -1212,10 +1251,10 @@ async def _sync_clones_for_host(
                         client_email.strip().lower(), master_inbound.id, client_uuid
                     )
                     wrapped_master = xui_api.HysteriaClientWrapper(server_client, new_auth)
-                    await asyncio.to_thread(api.client.update, update_identifier, wrapped_master)
+                    await xui_api.run_in_xui_pool(api.client.update, update_identifier, wrapped_master)
                 else:
-                    await asyncio.to_thread(api.client.update, client_uuid, server_client)
-                await asyncio.sleep(0.5)
+                    await xui_api.run_in_xui_pool(api.client.update, client_uuid, server_client)
+                await _panel_pause(0.5)
                 action = "отключён (is_banned)" if is_banned else "включён (снятие бана)"
                 logger.info(f"[{host_name}] Мастер {client_email} {action}")
             except Exception as e:
@@ -1278,10 +1317,10 @@ async def _sync_clones_for_host(
                         to_delete.append(c)
 
             for c in to_delete:
-                deleted_ok = await asyncio.to_thread(
+                deleted_ok = await xui_api.run_in_xui_pool(
                     xui_api.delete_client_robust, api, ib.id, c, client_uuid, is_hysteria_ib
                 )
-                await asyncio.sleep(1.0)
+                await _panel_pause(1.0)
                 if deleted_ok:
                     if c.email in globally_taken_emails:
                         globally_taken_emails.discard(c.email)
@@ -1351,12 +1390,12 @@ async def _sync_clones_for_host(
                                 current_clone_email, ib.id, client_uuid
                             )
                             wrapped_update = xui_api.HysteriaClientWrapper(correct_clone, new_auth)
-                            await asyncio.to_thread(
+                            await xui_api.run_in_xui_pool(
                                 api.client.update, update_identifier, wrapped_update
                             )
                         else:
-                            await asyncio.to_thread(api.client.update, client_uuid, correct_clone)
-                        await asyncio.sleep(0.5)
+                            await xui_api.run_in_xui_pool(api.client.update, client_uuid, correct_clone)
+                        await _panel_pause(0.5)
 
                         # Bookkeeping мутируем только после подтверждённого успеха
                         # API-вызова (строки выше не бросили исключение) — если
@@ -1535,10 +1574,10 @@ async def _sync_clones_for_host(
                             current_clone_email, ib.id, client_uuid
                         )
                         wrapped_retry = xui_api.HysteriaClientWrapper(retry_clone, new_auth)
-                        await asyncio.to_thread(api.client.update, update_identifier, wrapped_retry)
+                        await xui_api.run_in_xui_pool(api.client.update, update_identifier, wrapped_retry)
                     else:
-                        await asyncio.to_thread(api.client.update, client_uuid, retry_clone)
-                    await asyncio.sleep(0.5)
+                        await xui_api.run_in_xui_pool(api.client.update, client_uuid, retry_clone)
+                    await _panel_pause(0.5)
                     globally_taken_emails.discard(current_clone_email)
                     globally_taken_emails.add(canonical_email)
                     logger.info(
@@ -1589,8 +1628,8 @@ async def _sync_clones_for_host(
                 clients_payload.append(client_obj)
 
         try:
-            await asyncio.to_thread(api.client.add, ib_id, clients_payload)
-            await asyncio.sleep(0.5)
+            await xui_api.run_in_xui_pool(api.client.add, ib_id, clients_payload)
+            await _panel_pause(0.5)
             total_clones_created += len(items)
             emails_created = ", ".join(c.email for c, _ in items)
             logger.info(
@@ -1643,7 +1682,7 @@ async def _sync_clones_for_host(
                             globally_taken_emails.add(client_obj.email)
                             continue
 
-                        ib_obj_live = await asyncio.to_thread(api.inbound.get_by_id, ib_id)
+                        ib_obj_live = await xui_api.run_in_xui_pool(api.inbound.get_by_id, ib_id)
                         is_hysteria_check = xui_api.is_hysteria_protocol(
                             getattr(ib_obj_live, "protocol", "") if ib_obj_live else ""
                         )
@@ -1675,7 +1714,7 @@ async def _sync_clones_for_host(
                             globally_taken_emails.discard(client_obj.email)
                             continue
 
-                        deleted_ok = await asyncio.to_thread(
+                        deleted_ok = await xui_api.run_in_xui_pool(
                             xui_api.delete_client_robust,
                             api,
                             ib_id,
@@ -1695,14 +1734,14 @@ async def _sync_clones_for_host(
                             globally_taken_emails.discard(client_obj.email)
                             continue
 
-                        await asyncio.sleep(0.5)
+                        await _panel_pause(0.5)
                         single_payload = (
                             xui_api.HysteriaClientWrapper(client_obj, client_obj.id)
                             if is_hysteria_ib
                             else client_obj
                         )
-                        await asyncio.to_thread(api.client.add, ib_id, [single_payload])
-                        await asyncio.sleep(0.5)
+                        await xui_api.run_in_xui_pool(api.client.add, ib_id, [single_payload])
+                        await _panel_pause(0.5)
                         total_clones_created += 1
                     except Exception as inner_e:
                         # Не удалось создать даже поштучно — слот на самом деле
@@ -1791,6 +1830,7 @@ async def _sync_grace_inbound_for_host(
     grace_clients = grace_inbound.settings.clients if grace_inbound.settings else []
 
     for db_key in keys_in_db:
+        _check_yield(host_name)
         if db_key.get("key_id") in keys_in_transition:
             continue
 
@@ -1857,10 +1897,10 @@ async def _sync_grace_inbound_for_host(
                     if grace_is_hysteria
                     else [new_grace_client]
                 )
-                await asyncio.to_thread(
+                await xui_api.run_in_xui_pool(
                     xui_api.add_client_robust, api, grace_inbound.id, payload, grace_email
                 )
-                await asyncio.sleep(0.5)
+                await _panel_pause(0.5)
                 logger.info(
                     f"[{host_name}] {client_email}: подписка истекла — создан grace-клиент "
                     f"на '{GRACE_INBOUND_REMARK}' (доступ к Telegram, {GRACE_INBOUND_TOTAL_GB_BYTES} байт)"
@@ -1882,10 +1922,10 @@ async def _sync_grace_inbound_for_host(
                             client_uuid,
                         )
                         wrapped_grace = xui_api.HysteriaClientWrapper(grace_client, new_auth)
-                        await asyncio.to_thread(api.client.update, update_identifier, wrapped_grace)
+                        await xui_api.run_in_xui_pool(api.client.update, update_identifier, wrapped_grace)
                     else:
-                        await asyncio.to_thread(api.client.update, client_uuid, grace_client)
-                    await asyncio.sleep(0.5)
+                        await xui_api.run_in_xui_pool(api.client.update, client_uuid, grace_client)
+                    await _panel_pause(0.5)
                     action = (
                         "включён (истекла, окно до удаления)"
                         if desired_grace_enable
@@ -1896,6 +1936,42 @@ async def _sync_grace_inbound_for_host(
                     logger.warning(
                         f"[{host_name}] Не удалось изменить enable grace-клиента {grace_email}: {e}"
                     )
+
+
+async def _refresh_sub_token_cache(host_name: str, master_inbound, keys_in_db: list[dict]) -> None:
+    """Сверяет закэшированные в vpn_keys.sub_token с тем, что реально лежит на панели.
+
+    Данные берутся из уже полученного снимка мастер-инбаунда — ни одного
+    дополнительного запроса к панели. Заполняет кэш для старых ключей
+    (первый проход после деплоя) и лечит расхождения, если subId поменяли
+    на панели вручную. Ключи, которые прямо сейчас продлеваются/переносятся,
+    пропускаются.
+    """
+    try:
+        clients = (
+            master_inbound.settings.clients
+            if master_inbound and master_inbound.settings and master_inbound.settings.clients
+            else []
+        )
+        panel_tokens = {
+            str(c.id): str(c.sub_id)
+            for c in clients
+            if getattr(c, "id", None) and getattr(c, "sub_id", None)
+        }
+        pairs: list[tuple[str, int]] = []
+        for k in keys_in_db:
+            if k["key_id"] in keys_in_transition:
+                continue
+            if str(k.get("key_email") or "").strip().lower() in xui_api.emails_in_transition:
+                continue
+            token = panel_tokens.get(str(k.get("xui_client_uuid")))
+            if token and token != (k.get("sub_token") or ""):
+                pairs.append((token, k["key_id"]))
+        if pairs:
+            saved = await asyncio.to_thread(database.set_key_sub_tokens_bulk, pairs)
+            logger.info(f"[{host_name}] Кэш sub_token обновлён для ключей: {saved}")
+    except Exception as e:
+        logger.warning(f"[{host_name}] Не удалось обновить кэш sub_token: {e}")
 
 
 async def _sync_single_host(
@@ -1916,7 +1992,7 @@ async def _sync_single_host(
     logger.debug(f"[{host_name}] Начало обработки хоста")
 
     try:
-        api, master_inbound, all_inbounds = await asyncio.to_thread(
+        api, master_inbound, all_inbounds = await xui_api.run_in_xui_pool(
             xui_api.login_and_get_inbounds,
             host["host_url"],
             host["host_username"],
@@ -1928,6 +2004,9 @@ async def _sync_single_host(
             return None
 
         keys_in_db = await asyncio.to_thread(database.get_keys_for_host, host_name)
+
+        # Read-only: подтягиваем subId с панели в БД по уже имеющемуся снимку
+        await _refresh_sub_token_cache(host_name, master_inbound, keys_in_db)
 
         # -------------------------------------------------------------------------
         # Весь мутирующий блок (чистка просроченных + полная сверка клонов) —
@@ -1953,13 +2032,14 @@ async def _sync_single_host(
                 # Сирот удаляли напрямую по свежему get_list() внутри сверки —
                 # если что-то реально снесли, наш all_inbounds устарел, и
                 # следующая за нами сверка клонов должна это увидеть.
-                all_inbounds = await asyncio.to_thread(api.inbound.get_list)
+                all_inbounds = await xui_api.run_in_xui_pool(api.inbound.get_list)
 
             # Grace-доступ к Telegram — безусловно, на каждом проходе
             # шедулера (не по хэшу и не раз в FULL_RECONCILE_INTERVAL_SECONDS,
             # как полная сверка клонов ниже). all_inbounds на этот момент —
             # самые свежие (учитывает возможное обновление чисткой/сиротами
             # выше в этом же блоке).
+            _check_yield(host_name)
             await _sync_grace_inbound_for_host(
                 bot, host_name, api, all_inbounds, keys_in_db, banned_map, now
             )
@@ -1994,6 +2074,15 @@ async def _sync_single_host(
                     f"[{host_name}] Состояние не изменилось с прошлой сверки — пропуск полной сверки клонов"
                 )
 
+        return (api, all_inbounds)
+
+    except _YieldToPurchase:
+        # Лок уже отдан (вышли из `async with host_lock`). Хэш состояния и время
+        # полной сверки не обновлены — следующий цикл доделает проход.
+        logger.info(
+            f"[{host_name}] Проход шедулера прерван: покупка/продление ждёт host_lock. "
+            f"Остаток будет доделан в следующем цикле."
+        )
         return (api, all_inbounds)
 
     except Exception as e:
@@ -2097,7 +2186,7 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
             else:
                 # Хоста не было в свежем снимке этого цикла (например, ошибка
                 # sync_keys_with_panels для него) — логинимся отдельно
-                _api, _master_ib, all_inbounds_raw = await asyncio.to_thread(
+                _api, _master_ib, all_inbounds_raw = await xui_api.run_in_xui_pool(
                     xui_api.login_and_get_inbounds,
                     host["host_url"],
                     host["host_username"],
