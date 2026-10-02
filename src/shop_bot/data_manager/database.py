@@ -289,6 +289,17 @@ def initialize_db():
                     updated_at TIMESTAMP DEFAULT (datetime('now','localtime'))
                 )
             """)
+            # "Мои обращения" фильтрует по (user_id, status), список админа —
+            # по status с сортировкой по updated_at; без индексов оба раньше
+            # сканировали всю таблицу support_tickets целиком на каждый показ.
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_tickets_user_status "
+                "ON support_tickets(user_id, status)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_tickets_status_updated "
+                "ON support_tickets(status, updated_at DESC)"
+            )
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS support_messages (
                     message_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -950,6 +961,12 @@ def run_migration():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_users_reg_date ON users(registration_date)"
+            )
+            # get_referrals_for_user фильтрует по referred_by, а get_top_referrers
+            # считает рефералов через JOIN по этому же столбцу — без индекса
+            # оба раньше были полным сканированием users на каждый вызов.
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by)"
             )
             conn.commit()
             logging.info(" -> Индексы для 'users' созданы/проверены.")
@@ -2509,15 +2526,22 @@ def get_top_referrers(limit: int = 20) -> list[dict]:
         with get_db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            # LEFT JOIN + GROUP BY вместо коррелированного подзапроса — раньше
+            # подсчёт рефералов (SELECT COUNT(*) ... WHERE referred_by = u.telegram_id)
+            # выполнялся отдельным сканированием users на КАЖДУЮ строку
+            # результата; теперь один проход с группировкой, да ещё и с
+            # пользой от idx_users_referred_by на стороне referred_by.
             cursor.execute(
                 """
                 SELECT
                     u.telegram_id AS telegram_id,
                     u.username AS username,
                     u.referral_balance_all AS referral_balance_all,
-                    (SELECT COUNT(*) FROM users r WHERE r.referred_by = u.telegram_id) AS referral_count
+                    COUNT(r.telegram_id) AS referral_count
                 FROM users u
+                LEFT JOIN users r ON r.referred_by = u.telegram_id
                 WHERE u.referral_balance_all > 0
+                GROUP BY u.telegram_id, u.username, u.referral_balance_all
                 ORDER BY u.referral_balance_all DESC
                 LIMIT ?
                 """,
@@ -2852,6 +2876,12 @@ def add_new_key(
 ):
     """Создаёт новую запись о ключе (подписке) в БД."""
     try:
+        # Нормализуем так же, как это уже делают update_key_host и
+        # update_key_host_and_info — иначе host_name мог попасть в vpn_keys
+        # с чужеродными пробелами/BOM, и такой ключ переставал находиться
+        # запросами вроде get_keys_for_host, которые сравнивают по точному
+        # нормализованному имени.
+        host_name = normalize_host_name(host_name)
         with get_db_connection() as conn:
             cursor = conn.cursor()
             expiry_date = datetime.fromtimestamp(expiry_timestamp_ms / 1000)
@@ -3052,13 +3082,21 @@ def get_next_key_number(user_id: int) -> int:
 
 
 def get_keys_for_host(host_name: str) -> list[dict]:
-    """Возвращает список ключей, привязанных к конкретному хосту."""
+    """Возвращает список ключей, привязанных к конкретному хосту.
+
+    Без TRIM() вокруг host_name в запросе — на этой таблице (в отличие от
+    xui_hosts/plans, где строк всего по числу хостов) она реально отключала
+    бы idx_vpn_keys_host_name на таблице, которая может быть на порядки
+    крупнее. Безопасно только потому, что все пути записи host_name в
+    vpn_keys (add_new_key, update_key_host, update_key_host_and_info)
+    теперь сами нормализуют значение перед INSERT/UPDATE.
+    """
     try:
         host_name = normalize_host_name(host_name)
         with get_db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM vpn_keys WHERE TRIM(host_name) = TRIM(?)", (host_name,))
+            cursor.execute("SELECT * FROM vpn_keys WHERE host_name = ?", (host_name,))
             keys = cursor.fetchall()
             return [dict(key) for key in keys]
     except sqlite3.Error as e:
