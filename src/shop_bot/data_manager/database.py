@@ -132,6 +132,9 @@ def get_db_connection() -> sqlite3.Connection:
     return conn
 
 
+_ASCII_LOWER = {c: c + 32 for c in range(ord("A"), ord("Z") + 1)}
+
+
 def normalize_host_name(name: str | None) -> str:
     """Нормализует имя хоста: убирает пробелы по краям, очищает от BOM и нормализует Unicode-формат, сохраняя целостность эмодзи."""
     if not name:
@@ -514,6 +517,19 @@ def initialize_db():
 
             # Дополнительные индексы для ускорения работы БД
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_vpn_keys_user_id ON vpn_keys(user_id);")
+
+            # Индексы-выражения. Запросы ниже обязаны использовать ровно то же выражение,
+            # иначе SQLite индекс не применит:
+            # • get_keys_by_base_prefix ищет по диапазону lower(key_email) (LIKE с
+            #   регистронезависимым сравнением по обычному бинарному индексу не работал);
+            # • get_keys_expiring_within — по datetime(expiry_date), которое заодно
+            #   нормализует разные текстовые форматы даты ('YYYY-MM-DD HH:MM:SS[.ffffff]', ISO с 'T').
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vpn_keys_email_lower ON vpn_keys(lower(key_email));"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vpn_keys_expiry_dt ON vpn_keys(datetime(expiry_date));"
+            )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_transactions_payment_id ON transactions(payment_id);"
             )
@@ -1199,6 +1215,14 @@ def run_migration():
                 # get_keys_due_for_auto_renewal), а не падать на constraint
                 cursor.execute("ALTER TABLE vpn_keys ADD COLUMN last_plan_id INTEGER")
                 logging.info(" -> Добавлен столбец 'last_plan_id' в 'vpn_keys'.")
+            if "sub_token" not in vk_cols:
+                # Кэш subId мастер-клиента с панели. Позволяет собирать ссылку подписки
+                # локально, без запросов к панели (см. xui_api.get_key_details_from_host).
+                # Источник истины — панель: шедулер сверяет и подтягивает значение
+                # (scheduler._refresh_sub_token_cache), а при смене uuid/хоста оно
+                # сбрасывается (update_key_info/update_key_host/...).
+                cursor.execute("ALTER TABLE vpn_keys ADD COLUMN sub_token TEXT")
+                logging.info(" -> Добавлен столбец 'sub_token' в 'vpn_keys'.")
             conn.commit()
         except sqlite3.Error as e:
             logging.error(f"Не удалось мигрировать 'vpn_keys': {e}")
@@ -1870,6 +1894,43 @@ def get_admin_stats() -> dict:
     return stats
 
 
+def get_all_key_ids() -> set[int]:
+    """Возвращает множество key_id всех ключей (лёгкая выборка без остальных колонок)."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT key_id FROM vpn_keys")
+            return {row[0] for row in cursor.fetchall()}
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить идентификаторы ключей: {e}")
+        return set()
+
+
+def get_keys_expiring_within(hours: float) -> list[dict]:
+    """Ключи, истекающие в ближайшие `hours` часов (key_id, user_id, expiry_date).
+
+    Грубый предфильтр для рассылки уведомлений: границы расширены на минуту в обе
+    стороны, точную проверку по часам вызывающий код делает сам. Сравнение через
+    datetime(expiry_date) — использует idx_vpn_keys_expiry_dt и не зависит от
+    формата записи даты. Ключи с пустой/нечитаемой датой в выборку не попадают.
+    """
+    try:
+        now = datetime.now()
+        lower = (now - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+        upper = (now + timedelta(hours=hours, minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT key_id, user_id, expiry_date FROM vpn_keys "
+                "WHERE datetime(expiry_date) > ? AND datetime(expiry_date) <= ?",
+                (lower, upper),
+            )
+            return [dict(zip(("key_id", "user_id", "expiry_date"), row)) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить истекающие ключи: {e}")
+        return []
+
+
 def get_all_keys() -> list[dict]:
     """Возвращает список всех ключей всех пользователей."""
     try:
@@ -1938,7 +1999,9 @@ def update_key_host(key_id: int, new_host_name: str) -> bool:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE vpn_keys SET host_name = ? WHERE key_id = ?",
+                "UPDATE vpn_keys SET "
+                "sub_token = CASE WHEN host_name != ?1 THEN NULL ELSE sub_token END, "
+                "host_name = ?1 WHERE key_id = ?2",
                 (normalize_host_name(new_host_name), key_id),
             )
             conn.commit()
@@ -2956,12 +3019,20 @@ def get_keys_by_base_prefix(base_prefix: str) -> list[dict]:
         with get_db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # LIKE даёт грубый предфильтр (base_prefix + что угодно), точное
-            # совпадение (сам base_prefix или base_prefix_N) проверяем в Python,
-            # чтобы не зацепить, например, 'vol_chokeother' как ложное совпадение
+            # Грубый предфильтр по диапазону lower(key_email) (использует
+            # idx_vpn_keys_email_lower), точное совпадение (сам base_prefix или
+            # base_prefix_N) проверяем в Python, чтобы не зацепить, например,
+            # 'vol_chokeother'. Раньше был LIKE: он не использовал индекс (полный скан
+            # таблицы), а '_' и '%' в слаге работали как подстановочные символы.
+            # Регистр сравнивается так же, как у LIKE (ASCII), так что выборка прежняя.
+            # lower() в SQLite приводит к нижнему регистру только ASCII — делаем так же
+            # (str.lower() в Python сложил бы ещё и кириллицу и разошёлся бы с индексом)
+            lo = base_prefix.translate(_ASCII_LOWER)
+            hi = lo + "\U0010ffff"
             cursor.execute(
-                "SELECT * FROM vpn_keys WHERE key_email LIKE ? ORDER BY created_date ASC",
-                (f"{base_prefix}%",),
+                "SELECT * FROM vpn_keys WHERE lower(key_email) >= ? AND lower(key_email) < ? "
+                "ORDER BY created_date ASC",
+                (lo, hi),
             )
             rows = [dict(r) for r in cursor.fetchall()]
     except sqlite3.Error as e:
@@ -2979,12 +3050,52 @@ def update_key_info(key_id: int, new_xui_uuid: str, new_expiry_ms: int):
             cursor = conn.cursor()
             expiry_date = datetime.fromtimestamp(new_expiry_ms / 1000)
             cursor.execute(
-                "UPDATE vpn_keys SET xui_client_uuid = ?, expiry_date = ? WHERE key_id = ?",
+                "UPDATE vpn_keys SET "
+                "sub_token = CASE WHEN xui_client_uuid != ?1 THEN NULL ELSE sub_token END, "
+                "xui_client_uuid = ?1, expiry_date = ?2 WHERE key_id = ?3",
                 (new_xui_uuid, expiry_date, key_id),
             )
             conn.commit()
     except sqlite3.Error as e:
         logging.error(f"Не удалось обновить ключ {key_id}: {e}")
+
+
+def set_key_sub_token_by_email(key_email: str, sub_token: str) -> bool:
+    """Сохраняет токен подписки (subId) мастер-клиента для ключа с данным key_email.
+
+    Для ещё не записанного в БД ключа (первая покупка: add_new_key вызывается
+    позже) UPDATE ничего не затронет — токен подтянется лениво при первом
+    открытии ключа или шедулером.
+    """
+    if not key_email or not sub_token:
+        return False
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE vpn_keys SET sub_token = ? WHERE key_email = ? "
+                "AND (sub_token IS NULL OR sub_token != ?)",
+                (sub_token, key_email, sub_token),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось сохранить sub_token для {key_email}: {e}")
+        return False
+
+
+def set_key_sub_tokens_bulk(pairs: list[tuple[str, int]]) -> int:
+    """Пакетно проставляет sub_token: pairs = [(sub_token, key_id), ...]. Возвращает число пар."""
+    if not pairs:
+        return 0
+    try:
+        with get_db_connection() as conn:
+            conn.executemany("UPDATE vpn_keys SET sub_token = ? WHERE key_id = ?", pairs)
+            conn.commit()
+        return len(pairs)
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось пакетно обновить sub_token: {e}")
+        return 0
 
 
 def set_key_auto_renew(key_id: int, enabled: bool) -> bool:
@@ -3067,7 +3178,10 @@ def update_key_host_and_info(
             cursor = conn.cursor()
             expiry_date = datetime.fromtimestamp(new_expiry_ms / 1000)
             cursor.execute(
-                "UPDATE vpn_keys SET host_name = ?, xui_client_uuid = ?, expiry_date = ? WHERE key_id = ?",
+                "UPDATE vpn_keys SET "
+                "sub_token = CASE WHEN host_name != ?1 OR xui_client_uuid != ?2 "
+                "THEN NULL ELSE sub_token END, "
+                "host_name = ?1, xui_client_uuid = ?2, expiry_date = ?3 WHERE key_id = ?4",
                 (new_host_name, new_xui_uuid, expiry_date, key_id),
             )
             conn.commit()
@@ -3126,7 +3240,9 @@ def update_key_status_from_server(key_email: str, xui_client_data):
             if xui_client_data:
                 expiry_date = datetime.fromtimestamp(xui_client_data.expiry_time / 1000)
                 cursor.execute(
-                    "UPDATE vpn_keys SET xui_client_uuid = ?, expiry_date = ? WHERE key_email = ?",
+                    "UPDATE vpn_keys SET "
+                    "sub_token = CASE WHEN xui_client_uuid != ?1 THEN NULL ELSE sub_token END, "
+                    "xui_client_uuid = ?1, expiry_date = ?2 WHERE key_email = ?3",
                     (xui_client_data.id, expiry_date, key_email),
                 )
             else:
