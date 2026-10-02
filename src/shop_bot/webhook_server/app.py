@@ -284,6 +284,38 @@ def create_webhook_app(bot_controller_instance):
     csrf = CSRFProtect()
     csrf.init_app(flask_app)
 
+    def _run_coro_in_main_loop(coro, timeout: float = 60.0):
+        """Безопасная замена asyncio.run() внутри Flask-хендлеров панели.
+
+        Запускает корутину в основном event loop'е бота (EVENT_LOOP уже
+        сохраняется в конфиге приложения — им же пользуются платёжные
+        вебхуки через _schedule_payment), а не создаёт новый loop в потоке
+        Flask, как делал asyncio.run().
+
+        Почему это критично: _host_locks в xui_api.py — это asyncio.Lock,
+        создаваемые и используемые основным loop'ом бота/шедулера.
+        asyncio.run() в потоке Flask создаёт совершенно другой loop; если
+        шедулер в этот момент держит лок нужного хоста (а _sync_single_host
+        держит его на весь проход синхронизации, не на отдельную мутацию),
+        ожидание lock.acquire() в чужом loop'е зависает навсегда —
+        acquire() внутри create_or_update_key_on_host вызывается без
+        собственного таймаута. Поток Flask-воркера замирает до рестарта
+        бота. Воспроизведено эмпирически на изолированном примере.
+
+        Если EVENT_LOOP недоступен (бот ещё не запущен) — поднимает
+        RuntimeError вместо тихого отката на asyncio.run(), который и был
+        источником бага: пусть вызывающий код обработает это как обычную
+        ошибку (purpose-built except уже есть почти везде, где это
+        вызывается), а не тихо создаёт новый loop с тем же риском.
+        """
+        loop = current_app.config.get("EVENT_LOOP")
+        if not loop or not loop.is_running():
+            raise RuntimeError(
+                "Цикл событий бота (EVENT_LOOP) недоступен — бот не запущен или ещё не инициализирован"
+            )
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result(timeout=timeout)
+
     # Страница спидтеста как Telegram Mini App (см. USE_WEBAPP_SPEEDTEST в
     # keyboards.py) — speed.html.
     @flask_app.route("/speed")
@@ -777,9 +809,8 @@ def create_webhook_app(bot_controller_instance):
                     else:
                         # Fallback, если по какой-то причине нет общего цикла (не рекомендуется, но лучше чем молча не отправить)
                         logger.warning(
-                            "Цикл событий (EVENT_LOOP) не запущен; использую резервный asyncio.run для уведомления о балансе"
+                            "Цикл событий (EVENT_LOOP) недоступен — уведомление о балансе не отправлено"
                         )
-                        asyncio.run(bot.send_message(chat_id=user_id, text=text))
                 else:
                     logger.warning(
                         "Экземпляр бота отсутствует; не могу отправить уведомление о балансе"
@@ -862,10 +893,11 @@ def create_webhook_app(bot_controller_instance):
         # 1) Создать/обновить клиента на XUI-хосте
         result = None
         try:
-            result = asyncio.run(
+            result = _run_coro_in_main_loop(
                 xui_api.create_or_update_key_on_host(
                     host_name, key_email, expiry_timestamp_ms=expiry_ms or None
-                )
+                ),
+                timeout=90.0,
             )
         except Exception as e:
             logger.error(f"Не удалось создать/обновить ключ на хосте: {e}")
@@ -979,15 +1011,7 @@ def create_webhook_app(bot_controller_instance):
                         loop,
                     )
                 else:
-                    asyncio.run(
-                        bot.send_message(
-                            chat_id=user_id,
-                            text=text,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
-                            reply_markup=kb,
-                        )
-                    )
+                    logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
         except Exception as e:
             logger.warning(f"Не удалось уведомить пользователя о новом ключе: {e}")
         return redirect(request.referrer or url_for("admin_keys_page"))
@@ -1011,10 +1035,11 @@ def create_webhook_app(bot_controller_instance):
             xui_uuid = str(uuid.uuid4())
 
         try:
-            result = asyncio.run(
+            result = _run_coro_in_main_loop(
                 xui_api.create_or_update_key_on_host(
                     host_name, key_email, expiry_timestamp_ms=expiry_ms or None
-                )
+                ),
+                timeout=90.0,
             )
         except Exception as e:
             result = None
@@ -1122,15 +1147,7 @@ def create_webhook_app(bot_controller_instance):
                         loop,
                     )
                 else:
-                    asyncio.run(
-                        bot.send_message(
-                            chat_id=user_id,
-                            text=text,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
-                            reply_markup=kb,
-                        )
-                    )
+                    logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
         except Exception as e:
             logger.warning(f"Не удалось уведомить пользователя (ajax): {e}")
 
@@ -1197,10 +1214,11 @@ def create_webhook_app(bot_controller_instance):
             xui_uuid = str(uuid.uuid4())
 
         try:
-            result = asyncio.run(
+            result = _run_coro_in_main_loop(
                 xui_api.create_or_update_key_on_host(
                     host_name, key_email, expiry_timestamp_ms=expiry_ms or None
-                )
+                ),
+                timeout=90.0,
             )
         except Exception as e:
             result = None
@@ -1313,15 +1331,7 @@ def create_webhook_app(bot_controller_instance):
                             loop,
                         )
                     else:
-                        asyncio.run(
-                            bot.send_message(
-                                chat_id=user_id,
-                                text=text,
-                                parse_mode="HTML",
-                                disable_web_page_preview=True,
-                                reply_markup=kb,
-                            )
-                        )
+                        logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
             except Exception as notify_err:
                 logger.warning(f"Не удалось уведомить пользователя (standalone ajax): {notify_err}")
 
@@ -1371,7 +1381,9 @@ def create_webhook_app(bot_controller_instance):
             key = get_key_by_id(key_id)
             if key:
                 try:
-                    asyncio.run(xui_api.delete_client_on_host(key["host_name"], key["key_email"]))
+                    _run_coro_in_main_loop(
+                        xui_api.delete_client_on_host(key["host_name"], key["key_email"]), timeout=60.0
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -1416,12 +1428,13 @@ def create_webhook_app(bot_controller_instance):
 
             # 1) Применяем новый срок на 3xui (чтобы дата в панели совпадала с реальной)
             try:
-                result = asyncio.run(
+                result = _run_coro_in_main_loop(
                     xui_api.create_or_update_key_on_host(
                         host_name=key.get("host_name"),
                         email=key.get("key_email"),
                         expiry_timestamp_ms=new_ms,
-                    )
+                    ),
+                    timeout=90.0,
                 )
             except Exception as e:
                 logger.error(
@@ -1458,7 +1471,7 @@ def create_webhook_app(bot_controller_instance):
                             bot.send_message(chat_id=user_id, text=text), loop
                         )
                     elif bot:
-                        asyncio.run(bot.send_message(chat_id=user_id, text=text))
+                        logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
             except Exception:
                 pass
 
@@ -1499,8 +1512,9 @@ def create_webhook_app(bot_controller_instance):
             # Истёкший — пробуем удалить на сервере и в БД, уведомляем пользователя
             try:
                 try:
-                    asyncio.run(
-                        xui_api.delete_client_on_host(k.get("host_name"), k.get("key_email"))
+                    _run_coro_in_main_loop(
+                        xui_api.delete_client_on_host(k.get("host_name"), k.get("key_email")),
+                        timeout=60.0,
                     )
                 except Exception:
                     pass
@@ -1520,7 +1534,7 @@ def create_webhook_app(bot_controller_instance):
                             bot.send_message(chat_id=k.get("user_id"), text=text), loop
                         )
                     else:
-                        asyncio.run(bot.send_message(chat_id=k.get("user_id"), text=text))
+                        logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
                 except Exception:
                     pass
             except Exception:
@@ -1578,12 +1592,18 @@ def create_webhook_app(bot_controller_instance):
         method = (request.form.get("method") or "").strip().lower()
         try:
             if method == "ssh":
-                res = asyncio.run(speedtest_runner.run_and_store_ssh_speedtest(host_name))
+                res = _run_coro_in_main_loop(
+                    speedtest_runner.run_and_store_ssh_speedtest(host_name), timeout=150.0
+                )
             elif method == "net":
-                res = asyncio.run(speedtest_runner.run_and_store_net_probe(host_name))
+                res = _run_coro_in_main_loop(
+                    speedtest_runner.run_and_store_net_probe(host_name), timeout=150.0
+                )
             else:
                 # Both
-                res = asyncio.run(speedtest_runner.run_both_for_host(host_name))
+                res = _run_coro_in_main_loop(
+                    speedtest_runner.run_both_for_host(host_name), timeout=150.0
+                )
         except Exception as e:
             res = {"ok": False, "error": str(e)}
         wants_json = (
@@ -1630,7 +1650,7 @@ def create_webhook_app(bot_controller_instance):
             if not name:
                 continue
             try:
-                res = asyncio.run(speedtest_runner.run_both_for_host(name))
+                res = _run_coro_in_main_loop(speedtest_runner.run_both_for_host(name), timeout=150.0)
                 if res and res.get("ok"):
                     ok_count += 1
                 else:
@@ -1669,7 +1689,9 @@ def create_webhook_app(bot_controller_instance):
     def auto_install_speedtest_route(host_name: str):
         # Supports both HTML form and AJAX
         try:
-            res = asyncio.run(speedtest_runner.auto_install_speedtest_on_host(host_name))
+            res = _run_coro_in_main_loop(
+                speedtest_runner.auto_install_speedtest_on_host(host_name), timeout=150.0
+            )
         except Exception as e:
             res = {"ok": False, "log": str(e)}
         wants_json = (
@@ -2293,9 +2315,7 @@ def create_webhook_app(bot_controller_instance):
                         loop,
                     )
                 else:
-                    asyncio.run(
-                        bot.send_message(chat_id=user_id, text=text, reply_markup=kb.as_markup())
-                    )
+                    logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
         except Exception as e:
             logger.warning(f"Не удалось отправить уведомление о бане пользователю {user_id}: {e}")
         return redirect(url_for("users_page"))
@@ -2319,9 +2339,7 @@ def create_webhook_app(bot_controller_instance):
                         loop,
                     )
                 else:
-                    asyncio.run(
-                        bot.send_message(chat_id=user_id, text=text, reply_markup=kb.as_markup())
-                    )
+                    logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
         except Exception as e:
             logger.warning(
                 f"Не удалось отправить уведомление о разбане пользователю {user_id}: {e}"
@@ -2336,7 +2354,9 @@ def create_webhook_app(bot_controller_instance):
         total = len(keys_to_revoke)
 
         for key in keys_to_revoke:
-            result = asyncio.run(xui_api.delete_client_on_host(key["host_name"], key["key_email"]))
+            result = _run_coro_in_main_loop(
+                xui_api.delete_client_on_host(key["host_name"], key["key_email"]), timeout=60.0
+            )
             if result:
                 success_count += 1
 
@@ -2358,7 +2378,7 @@ def create_webhook_app(bot_controller_instance):
                         bot.send_message(chat_id=user_id, text=text), loop
                     )
                 else:
-                    asyncio.run(bot.send_message(chat_id=user_id, text=text))
+                    logger.warning("Цикл событий (EVENT_LOOP) недоступен — уведомление не отправлено")
         except Exception:
             pass
 
