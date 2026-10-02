@@ -1,6 +1,7 @@
 """Интеграция с панелью 3x-ui: создание, обновление, синхронизация и клонирование клиентов."""
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import secrets
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Dict, List
 from urllib.parse import urlparse
@@ -16,9 +18,58 @@ from urllib.parse import urlparse
 from dateutil.relativedelta import relativedelta
 from py3xui import Api, Client, Inbound
 
-from shop_bot.data_manager.database import get_host, get_key_by_email, get_setting
+from shop_bot.data_manager.database import (
+    get_host,
+    get_key_by_email,
+    get_setting,
+    set_key_sub_token_by_email,
+)
+from shop_bot.modules import xui_http
 
 logger = logging.getLogger(__name__)
+
+# Общий пул HTTP-соединений для py3xui (keep-alive) — до первого Api()
+xui_http.install()
+
+# -------------------------------------------------------------------------
+# Отдельный пул потоков для блокирующих обращений к панелям.
+#
+# Раньше все обращения к панелям шли через asyncio.to_thread, то есть в тот же
+# дефолтный executor (min(32, CPU+4) потоков — на 1–2 vCPU всего 5–6), что и
+# короткие обращения к SQLite из хендлеров. Несколько долгих репликаций
+# (десятки последовательных addClient/updateClient) забивали пул целиком, и
+# даже get_host/get_user ждали своей очереди. Теперь панельные вызовы живут
+# в своём пуле, а дефолтный остаётся для БД.
+# Размер — через XUI_POOL_SIZE (по умолчанию 16: потоки в основном ждут сеть).
+# -------------------------------------------------------------------------
+try:
+    _XUI_POOL_SIZE = max(2, int(os.environ.get("XUI_POOL_SIZE", "16")))
+except ValueError:
+    _XUI_POOL_SIZE = 16
+_xui_executor = ThreadPoolExecutor(max_workers=_XUI_POOL_SIZE, thread_name_prefix="xui")
+
+
+async def run_in_xui_pool(fn, *args, **kwargs):
+    """Аналог asyncio.to_thread, но в выделенном пуле потоков для панелей 3X-UI."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_xui_executor, functools.partial(fn, *args, **kwargs))
+
+
+# Пауза между последовательными мутациями панели при репликации/удалении клонов.
+# Раньше была зашита time.sleep(0.3)/(0.2) после каждого клона (при десятке
+# инбаундов — несколько секунд чистого сна на покупку). Пустые ответы панели после
+# рестарта xray уже покрывают call_with_retry и add_client_robust, поэтому по
+# умолчанию пауза отключена. Если на каком-то хосте снова пойдут пустые ответы —
+# верните через env, например XUI_REPLICATION_PAUSE=0.3, без правки кода.
+try:
+    _REPLICATION_PAUSE = max(0.0, float(os.environ.get("XUI_REPLICATION_PAUSE", "0")))
+except ValueError:
+    _REPLICATION_PAUSE = 0.0
+
+
+def _replication_pause() -> None:
+    if _REPLICATION_PAUSE:
+        time.sleep(_REPLICATION_PAUSE)
 
 emails_in_transition: set[str] = set()
 
@@ -170,6 +221,27 @@ def add_client_robust(
 # -------------------------------------------------------------------------
 _host_locks: dict[str, asyncio.Lock] = {}
 _host_locks_guard = asyncio.Lock()
+
+# Сколько пользовательских операций (покупка/продление/удаление) прямо сейчас ждут
+# host_lock этого хоста. Шедулер держит лок на весь проход синхронизации, и раньше
+# покупка просто стояла в очереди до его конца. Теперь шедулер между ключами
+# спрашивает purchase_waiting() и, если кто-то ждёт, сам отдаёт лок и продолжает
+# в следующем цикле (см. scheduler._check_yield).
+_lock_waiters: dict[str, int] = {}
+
+
+def purchase_waiting(host_name: str) -> bool:
+    """True, если пользовательская операция ждёт host_lock этого хоста."""
+    return _lock_waiters.get(host_name, 0) > 0
+
+
+async def _acquire_host_lock_counted(host_name: str, host_lock: asyncio.Lock) -> None:
+    """host_lock.acquire() с учётом ожидающих — счётчик гарантированно снимается даже при отмене."""
+    _lock_waiters[host_name] = _lock_waiters.get(host_name, 0) + 1
+    try:
+        await host_lock.acquire()
+    finally:
+        _lock_waiters[host_name] = max(0, _lock_waiters.get(host_name, 1) - 1)
 
 
 async def get_host_lock(host_name: str) -> asyncio.Lock:
@@ -951,9 +1023,18 @@ def update_or_create_client_on_panel(
             if not client_uuid:
                 raise ValueError(f"Существующий клиент {email} не имеет валидного ID/Auth")
 
+            # Раньше здесь был отдельный запрос api.client.get_by_email(email), но он
+            # возвращает запись трафика (client_traffics), а не полные настройки
+            # клиента, поэтому в объекте могли отсутствовать subId/limitIp/tgId/flow,
+            # которые затем терялись при updateClient (панель заменяет клиента
+            # целиком). existing_client уже есть в снимке all_inbounds — это полные
+            # настройки из инбаунда, и ровно так же обновляются клоны ниже. Копия, чтобы
+            # не мутировать снимок, которым пользуется вызывающий код.
+            # Для updateClient py3xui берёт inboundId из самого клиента, а в настройках
+            # инбаунда его нет — проставляем явно.
+            client_for_update = existing_client.model_copy()
+            client_for_update.inbound_id = current_inbound.id
             # Важный фикс: API часто требует именно строковый UUID в поле id
-            # Поэтому загружаем объект по email и принудительно устанавливаем строковый id
-            client_for_update = api.client.get_by_email(email)
             client_for_update.id = client_uuid
 
             # -------------------------------------------------------------------------
@@ -1182,7 +1263,7 @@ def _create_or_update_key_on_host_sync(
         logger.error(f"Не удалось создать/обновить мастера {final_master_email}")
         return None
 
-    time.sleep(0.3)
+    _replication_pause()
 
     # -------------------------------------------------------------------------
     # 8. Репликация клиента на все инбаунды с меткой
@@ -1349,7 +1430,7 @@ def _create_or_update_key_on_host_sync(
                         client_for_update.email = current_clone_email
                     logger.warning(f"Не удалось обновить клон {current_clone_email}: {e}")
 
-                time.sleep(0.3)
+                _replication_pause()
 
             else:
                 # --- Создание нового клона под каноническим номером ---
@@ -1406,7 +1487,7 @@ def _create_or_update_key_on_host_sync(
                 except Exception as e:
                     logger.warning(f"Не удалось создать клон {sync_email}: {e}")
 
-                time.sleep(0.3)
+                _replication_pause()
 
         total_count = created_count + updated_count
         if total_count == 0:
@@ -1451,6 +1532,7 @@ def _create_or_update_key_on_host_sync(
             sub_token=client_sub_token,
         ),
         "host_name": host_name,
+        "sub_token": client_sub_token,
     }
 
 
@@ -1578,7 +1660,7 @@ async def rename_client_email_on_host(host_name: str, old_email: str, new_email:
     # "в обработке" навсегда — поэтому тоже под try/except.
     try:
         task = asyncio.ensure_future(
-            asyncio.to_thread(
+            run_in_xui_pool(
                 _rename_client_email_on_host_sync,
                 host_data,
                 host_name,
@@ -1679,7 +1761,7 @@ async def create_or_update_key_on_host(
 
     emails_in_transition.add(email_key)
     host_lock = await get_host_lock(host_name)
-    await host_lock.acquire()
+    await _acquire_host_lock_counted(host_name, host_lock)
 
     # -------------------------------------------------------------------------
     # Снятие host_lock/emails_in_transition вынесено в done-callback самой
@@ -1708,7 +1790,7 @@ async def create_or_update_key_on_host(
     # -------------------------------------------------------------------------
     try:
         task = asyncio.ensure_future(
-            asyncio.to_thread(
+            run_in_xui_pool(
                 _create_or_update_key_on_host_sync,
                 host_data,
                 host_name,
@@ -1748,7 +1830,16 @@ async def create_or_update_key_on_host(
         # заранее — это ещё один живой запрос к панели до основной работы,
         # того же рестарта xray, который мы и пытаемся пережить — поэтому
         # просто взят щедрый фиксированный потолок вместо точного расчёта.
-        return await asyncio.wait_for(asyncio.shield(task), timeout=180)
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=180)
+        # Кэшируем subId в БД: ссылка подписки дальше собирается без обращения к панели
+        if result and result.get("sub_token") and result.get("email"):
+            try:
+                await asyncio.to_thread(
+                    set_key_sub_token_by_email, result["email"], result["sub_token"]
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось сохранить sub_token для {result['email']}: {e}")
+        return result
     except asyncio.TimeoutError:
         logger.error(
             f"Таймаут при создании/обновлении ключа {email} на хосте {host_name}. "
@@ -1794,7 +1885,7 @@ def _get_key_details_from_host_sync(
 
     client_sub_token = None
     uuid_to_find = key_data.get("xui_client_uuid")
-    email_to_find = key_data.get("email")
+    email_to_find = key_data.get("key_email") or key_data.get("email")
 
     # -------------------------------------------------------------------------
     # 4. Быстрый путь: точечный запрос клиента по email
@@ -1868,7 +1959,7 @@ def _get_key_details_from_host_sync(
         logger.error(f"Не удалось сформировать ссылку подписки для ключа на хосте {host_name}")
         return None
 
-    return {"connection_string": connection_string}
+    return {"connection_string": connection_string, "sub_token": client_sub_token}
 
 
 async def get_key_details_from_host(key_data: dict) -> dict | None:
@@ -1923,14 +2014,41 @@ async def get_key_details_from_host(key_data: dict) -> dict | None:
         logger.error(f"Сервер '{host_name}' не найден в конфигурации/базе данных")
         return None
 
+    # -------------------------------------------------------------------------
+    # 3. Быстрый путь: токен подписки уже закэширован в БД — ссылка собирается
+    #    локально, без единого запроса к панели. Кэш заполняют: покупка/продление
+    #    (create_or_update_key_on_host), ленивое заполнение ниже и сверка шедулера.
+    # -------------------------------------------------------------------------
+    cached_token = (key_data.get("sub_token") or "").strip()
+    if cached_token and key_data.get("xui_client_uuid"):
+        link = await asyncio.to_thread(
+            get_subscription_link,
+            user_uuid=key_data["xui_client_uuid"],
+            host_url=host_db_data["host_url"],
+            host_name=host_name,
+            sub_token=cached_token,
+        )
+        if link:
+            return {"connection_string": link}
+
     try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(_get_key_details_from_host_sync, key_data, host_name, host_db_data),
+        details = await asyncio.wait_for(
+            run_in_xui_pool(_get_key_details_from_host_sync, key_data, host_name, host_db_data),
             timeout=30,
         )
     except asyncio.TimeoutError:
         logger.error(f"Таймаут при получении деталей ключа на хосте {host_name}")
         return None
+
+    # Ленивое заполнение кэша: следующее открытие этого ключа уже не пойдёт на панель
+    if details and details.get("sub_token") and key_data.get("key_email"):
+        try:
+            await asyncio.to_thread(
+                set_key_sub_token_by_email, key_data["key_email"], details["sub_token"]
+            )
+        except Exception as e:
+            logger.warning(f"Не удалось закэшировать sub_token для {key_data['key_email']}: {e}")
+    return details
 
 
 def _delete_client_on_host_sync(host_data: dict, host_name: str, client_email: str) -> bool:
@@ -2026,7 +2144,7 @@ def _delete_client_on_host_sync(host_data: dict, host_name: str, client_email: s
                         f"Удалён клиент с inbound {inbound.id} "
                         f"(email: {getattr(target_client, 'email', client_email)})"
                     )
-                    time.sleep(0.2)
+                    _replication_pause()
                 else:
                     logger.warning(
                         f"API не смог удалить клиента {getattr(target_client, 'email', client_email)} "
@@ -2121,7 +2239,7 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
 
     emails_in_transition.add(email_key)
     host_lock = await get_host_lock(host_name)
-    await host_lock.acquire()
+    await _acquire_host_lock_counted(host_name, host_lock)
 
     # См. подробный комментарий в create_or_update_key_on_host — та же самая
     # проблема и то же самое решение: снятие host_lock/emails_in_transition
@@ -2134,7 +2252,7 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
     # except.
     try:
         task = asyncio.ensure_future(
-            asyncio.to_thread(_delete_client_on_host_sync, host_data, host_name, client_email)
+            run_in_xui_pool(_delete_client_on_host_sync, host_data, host_name, client_email)
         )
 
         def _release_on_real_completion(_task: asyncio.Task) -> None:
