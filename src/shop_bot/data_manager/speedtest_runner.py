@@ -6,12 +6,18 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 import aiohttp
 import paramiko
 
 from shop_bot.data_manager import database
+
+# Отдельный небольшой пул под SSH (paramiko): замеры и установка speedtest идут
+# минутами, и в дефолтном executor они вытесняли бы короткие вызовы БД и панельные
+# запросы. Размер ограничивает число одновременных SSH-сессий.
+_ssh_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ssh")
 
 logger = logging.getLogger(__name__)
 
@@ -470,7 +476,7 @@ async def ssh_speedtest_for_host(host_row: dict) -> dict:
     try:
         loop = asyncio.get_event_loop()
         out = await loop.run_in_executor(
-            None,
+            _ssh_executor,
             lambda: _retry_sync(
                 _run_ssh_safe,
                 attempts=2,
@@ -772,4 +778,4 @@ async def auto_install_speedtest_on_host(host_name: str) -> dict:
                 pass
 
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _install)
+    return await loop.run_in_executor(_ssh_executor, _install)
