@@ -86,6 +86,7 @@ from shop_bot.modules.xui_api import (
     get_key_details_from_host,
     get_realtime_online_count,
     login_to_host,
+    run_in_xui_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -4408,7 +4409,7 @@ def get_admin_router() -> Router:
         # -------------------------------------------------------------------------
         # 3. Параллельный опрос всех панелей через asyncio.gather
         # -------------------------------------------------------------------------
-        tasks = [asyncio.to_thread(get_realtime_online_count, h) for h in all_hosts]
+        tasks = [run_in_xui_pool(get_realtime_online_count, h) for h in all_hosts]
         online_results = await asyncio.gather(*tasks)
 
         # -------------------------------------------------------------------------
@@ -4481,7 +4482,7 @@ def get_admin_router() -> Router:
 
             try:
                 # Авторизация в xUI панели хоста
-                api, _ = await asyncio.to_thread(
+                api, _ = await run_in_xui_pool(
                     login_to_host,
                     host_url=host["host_url"],
                     username=host["host_username"],
@@ -4494,7 +4495,7 @@ def get_admin_router() -> Router:
                 # Получение списка всех inbound'ов с меткой 🏳️
                 all_inbounds = [
                     ib
-                    for ib in (await asyncio.to_thread(api.inbound.get_list))
+                    for ib in (await run_in_xui_pool(api.inbound.get_list))
                     if hasattr(ib, "remark") and "🏳️" in (ib.remark or "")
                 ]
 
