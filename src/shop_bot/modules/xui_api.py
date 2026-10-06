@@ -141,8 +141,8 @@ def add_client_robust(
     inbound_id: int,
     client_payload: list,
     email_for_check: str,
-    retries: int = 3,
-    base_delay: float = 1.5,
+    retries: int = _CALL_RETRIES,
+    base_delay: float = _CALL_RETRY_DELAY,
 ) -> bool:
     """Надёжное создание клиента через api.client.add — в отличие от простого
     call_with_retry, безопасно для add() конкретно, а не только для
