@@ -19,6 +19,7 @@ from shop_bot.bot.middlewares import (
     ThrottlingMiddleware,
 )
 from shop_bot.data_manager import database
+from shop_bot.env_utils import env_float, env_int
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,13 @@ class BotController:
             # Антифлуд идёт первым: дешёвая проверка в памяти отсекает поток событий
             # до обращений к БД (BanMiddleware читает пользователя на каждом апдейте).
             # Один экземпляр на оба наблюдателя — лимит общий для сообщений и кнопок.
-            throttle = ThrottlingMiddleware(heavy_prefixes=MAIN_BOT_HEAVY_CALLBACKS)
+            throttle = ThrottlingMiddleware(
+                rate=env_float("THROTTLE_RATE", 2.0, 0.1, 100.0),
+                burst=env_int("THROTTLE_BURST", 6, 1, 200),
+                heavy_prefixes=MAIN_BOT_HEAVY_CALLBACKS,
+                heavy_cooldown=env_float("THROTTLE_HEAVY_COOLDOWN", 1.5, 0.0, 60.0),
+                notice_interval=env_float("THROTTLE_NOTICE_INTERVAL", 3.0, 0.0, 300.0),
+            )
             self._dp.message.middleware(throttle)
             self._dp.callback_query.middleware(throttle)
             self._dp.message.middleware(BanMiddleware())
