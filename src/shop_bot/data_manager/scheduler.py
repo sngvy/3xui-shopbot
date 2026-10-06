@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import os
@@ -2255,7 +2256,7 @@ async def sync_keys_with_panels(bot: Bot) -> dict[str, tuple]:
     return host_sessions
 
 
-def format_emails_short(emails, limit: int = 1) -> str:
+def format_emails_short(emails, limit: int = 1, code: bool = False) -> str:
     """Краткая строка с email клиента для сообщений админу.
 
     У одного UUID может быть несколько разных имён (мастер и клоны по разным
@@ -2263,6 +2264,8 @@ def format_emails_short(emails, limit: int = 1) -> str:
     лимит Telegram (message is too long). Показываем первое имя целиком,
     остальные — счётчиком: «vol_choke@snowyservices_bot и ещё 3».
     Используется и в алерте об аномальном трафике, и в отчёте «Потребление WL».
+    code=True — для HTML-сообщений: показанные email экранируются и оборачиваются
+    в <code> (счётчик «и ещё N» остаётся обычным текстом).
     """
     # Первым показываем мастера (без суффикса клона -N), потом клоны по порядку
     uniq = sorted(
@@ -2271,7 +2274,10 @@ def format_emails_short(emails, limit: int = 1) -> str:
     )
     if not uniq:
         return "—"
-    shown = ", ".join(uniq[:limit])
+    if code:
+        shown = ", ".join(f"<code>{html.escape(e)}</code>" for e in uniq[:limit])
+    else:
+        shown = ", ".join(uniq[:limit])
     if len(uniq) > limit:
         shown += f" и ещё {len(uniq) - limit}"
     return shown
@@ -2364,7 +2370,9 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
 
             for c_uuid, data in host_stats.items():
                 current_total = data["total"]
-                display_emails = format_emails_short(data["active_emails"] or data["emails"])
+                _emails_src = data["active_emails"] or data["emails"]
+                display_emails = format_emails_short(_emails_src)
+                display_emails_html = format_emails_short(_emails_src, code=True)
 
                 snapshot_key = f"uuid:{host_name}:{c_uuid}"
 
@@ -2396,8 +2404,8 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                             alert_text = (
                                 f"🚨 <b>Аномальный трафик</b>\n\n"
                                 f"🗺️ <b>Сервер:</b> {host_name}\n"
-                                f"👤 <b>Клиент:</b> {display_emails}\n"
-                                f"🆔 <b>UUID:</b> {c_uuid}\n"
+                                f"👤 <b>Клиент:</b> {display_emails_html}\n"
+                                f"🆔 <b>UUID:</b> <code>{html.escape(str(c_uuid))}</code>\n"
                                 f"📈 <b>Расход:</b> {delta_mb:.2f} МБ\n"
                                 f"🚀 <b>Скорость:</b> {mbps:.1f} Мбит/с\n"
                                 f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин."
