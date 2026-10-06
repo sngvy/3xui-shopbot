@@ -12,6 +12,7 @@ from aiogram.enums import ParseMode
 from shop_bot.bot.middlewares import BanMiddleware, ThrottlingMiddleware
 from shop_bot.data_manager import database
 from shop_bot.data_manager.database import get_admin_ids
+from shop_bot.env_utils import env_float, env_int
 from shop_bot.support_bot.handlers import get_support_router
 
 logger = logging.getLogger(__name__)
@@ -114,7 +115,11 @@ class SupportBotController:
             # Подключаем BanMiddleware, чтобы заблокированные пользователи не писали в поддержку
             # Антифлуд против спама тикетами; burst побольше, чтобы не резать альбом
             # из нескольких фото, который клиент присылает пачкой сообщений.
-            throttle = ThrottlingMiddleware(rate=1.0, burst=10, notice_interval=10.0)
+            throttle = ThrottlingMiddleware(
+                rate=env_float("SUPPORT_THROTTLE_RATE", 1.0, 0.1, 100.0),
+                burst=env_int("SUPPORT_THROTTLE_BURST", 10, 1, 200),
+                notice_interval=env_float("SUPPORT_THROTTLE_NOTICE_INTERVAL", 10.0, 0.0, 300.0),
+            )
             self._dp.message.middleware(throttle)
             self._dp.callback_query.middleware(throttle)
             self._dp.message.middleware(BanMiddleware())
