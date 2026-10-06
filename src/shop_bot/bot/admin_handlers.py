@@ -4718,15 +4718,24 @@ def get_admin_router() -> Router:
         header = "📋 <b>Последние логи контейнера</b>\n\n"
         footer = f"\n🕒 <b>Обновлено:</b> {timestamp}"
 
-        # Высчитываем максимальную длину тела логов с учетом лимитов Telegram (4096 символов)
-        # Оставляем запас в 500 символов под шапку, футер и HTML-теги
-        max_body_length = 4096 - len(header) - len(footer) - 20
+        # Лимит Telegram — 4096 символов на всё сообщение: считаем место под шапку,
+        # футер и теги <pre><code>, остальное отдаём телу логов.
+        max_body_length = 4096 - len(header) - len("<pre><code></code></pre>") - len(footer)
 
         if len(safe_logs) > max_body_length:
-            # Если логи слишком длинные, аккуратно обрезаем их сверху
-            safe_logs = (
-                "... [вывод обрезан из-за лимитов Telegram] ...\n" + safe_logs[-max_body_length:]
-            )
+            # Как и в остальных местах: «…» вместо обрезанной части, но оставляем
+            # самые свежие строки (хвост логов), а не начало. Режем исходный текст,
+            # а не уже экранированный, — чтобы не разорвать HTML-сущность (&amp; и т.п.)
+            # и не оставить незакрытые теги.
+            keep = max_body_length - 1
+            lo, hi = 0, len(raw_logs)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if len(html_escape.escape(raw_logs[-mid:])) <= keep:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            safe_logs = "…" + html_escape.escape(raw_logs[-lo:] if lo else "")
 
         final_text = f"{header}<pre><code>{safe_logs}</code></pre>{footer}"
 
