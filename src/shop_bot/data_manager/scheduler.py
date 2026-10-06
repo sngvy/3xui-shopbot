@@ -107,6 +107,28 @@ except ValueError:
     _PANEL_PAUSE_FACTOR = 0.2
 
 
+def _find_rename_cycle_member(pending: list[dict]) -> dict | None:
+    """Ищет среди застрявших переименований участника замкнутого цикла.
+
+    Элемент item — это клон «current_clone_email -> canonical_email». Цикл
+    образуется, когда целевой номер каждого занят текущим номером следующего и
+    последний ссылается на первого (например, 10->2, 2->4, 4->10): из-за
+    уникальности email такой обмен без временного имени не разрешится никогда.
+    Возвращает любой элемент цикла или None, если циклов нет (застрял по причине
+    постороннего клиента на целевом слоте — тут временное имя не поможет).
+    """
+    by_current = {i["current_clone_email"]: i for i in pending}
+    for start in pending:
+        seen = set()
+        cur = start
+        while cur is not None and cur["current_clone_email"] not in seen:
+            seen.add(cur["current_clone_email"])
+            cur = by_current.get(cur["canonical_email"])
+            if cur is start:
+                return start
+    return None
+
+
 async def _panel_pause(seconds: float) -> None:
     """Пауза между мутациями панели с учётом XUI_SCHEDULER_PAUSE_FACTOR."""
     delay = seconds * _PANEL_PAUSE_FACTOR
@@ -1535,7 +1557,8 @@ async def _sync_clones_for_host(
         # deferred_renames, так что зацикливания не бывает.
         # -------------------------------------------------------------------------
         remaining = deferred_renames
-        for _ in range(len(deferred_renames)):
+        # С запасом: разрыв цикла временным именем добавляет проходы
+        for _ in range(len(deferred_renames) * 2 + 2):
             if not remaining:
                 break
             still_pending = []
@@ -1590,13 +1613,91 @@ async def _sync_clones_for_host(
                         f"{canonical_email} не удался: {e}"
                     )
             if len(still_pending) == len(remaining):
-                # Ни один элемент не продвинулся за целый внутренний проход —
-                # дальше по кругу ходить бессмысленно, останется до
+                # Ни один элемент не продвинулся. Если причина — замкнутый цикл
+                # номеров (A->B, B->C, C->A), разрываем его временным именем:
+                # переименовываем одного участника в «<prefix>-tmp<id инбаунда>»,
+                # его старый номер освобождается, а сам участник затем получает
+                # канонический номер. Если процесс упадёт посередине, временное
+                # имя подхватится следующим прогоном шедулера
+		# (клон ищется по префиксу и sub_id) и починится само.
+                # Отключается через XUI_BREAK_RENAME_CYCLES=0.
+                victim = (
+                    _find_rename_cycle_member(still_pending)
+                    if still_pending
+                    and os.getenv("XUI_BREAK_RENAME_CYCLES", "1").strip() != "0"
+                    else None
+                )
+                if victim is not None:
+                    v_ib = victim["ib"]
+                    v_cur = victim["current_clone_email"]
+                    temp_email = f"{prefix}-tmp{getattr(v_ib, 'id', 0)}@{xui_api.EMAIL_DOMAIN}"
+                    v_clone = next(
+                        (
+                            c
+                            for c in (v_ib.settings.clients or [])
+                            if str(getattr(c, "email", "")).strip().lower() == v_cur
+                        ),
+                        None,
+                    )
+                    if v_clone is not None and temp_email not in globally_taken_emails:
+                        try:
+                            v_clone.enable = victim["desired_clone_enable"]
+                            v_clone.id = client_uuid
+                            v_clone.inbound_id = v_ib.id
+                            v_clone.email = temp_email
+                            if xui_api.is_hysteria_protocol(getattr(v_ib, "protocol", "")):
+                                upd_id, new_auth = resolve_hysteria_update(
+                                    v_cur, v_ib.id, client_uuid
+                                )
+                                await xui_api.run_in_xui_pool(
+                                    api.client.update,
+                                    upd_id,
+                                    xui_api.HysteriaClientWrapper(v_clone, new_auth),
+                                )
+                            else:
+                                await xui_api.run_in_xui_pool(
+                                    api.client.update, client_uuid, v_clone
+                                )
+                            await _panel_pause(0.5)
+                            globally_taken_emails.discard(v_cur)
+                            globally_taken_emails.add(temp_email)
+                            victim["current_clone_email"] = temp_email
+                            logger.info(
+                                f"[{host_name}] Разрыв цикла номеров клонов: {v_cur} -> "
+                                f"{temp_email} (временно, затем -> {victim['canonical_email']})"
+                            )
+                            remaining = still_pending
+                            continue
+                        except Exception as e:
+                            v_clone.email = v_cur
+                            logger.warning(
+                                f"[{host_name}] Не удалось разорвать цикл номеров через "
+                                f"{temp_email}: {e}"
+                            )
+                # Дальше по кругу ходить бессмысленно, останется до
                 # следующего прогона шедулера
                 if still_pending:
+                    # Диагностика: что именно застряло. Если целевые номера занимают
+                    # сами застрявшие клоны (цепочка замкнулась в цикл — «обмен»
+                    # номерами), без временного имени она не разрешится никогда;
+                    # если же целевой номер занят кем-то вне списка — это посторонний
+                    # клиент на панели с таким же email.
+                    pending_current = {i["current_clone_email"] for i in still_pending}
+                    details = []
+                    for i in still_pending[:10]:
+                        holder = (
+                            "занят другим застрявшим клоном (цикл)"
+                            if i["canonical_email"] in pending_current
+                            else "занят посторонним клиентом"
+                        )
+                        details.append(
+                            f"{i['current_clone_email']} -> {i['canonical_email']} "
+                            f"(инбаунд {getattr(i['ib'], 'id', '?')}, {holder})"
+                        )
                     logger.warning(
                         f"[{host_name}] {len(still_pending)} переименований клонов так и "
-                        f"не удалось разрешить в этом проходе — до следующего прогона шедулера."
+                        f"не удалось разрешить в этом проходе — до следующего прогона шедулера. "
+                        f"Застряли: " + "; ".join(details)
                     )
                 break
             remaining = still_pending
