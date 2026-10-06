@@ -1461,7 +1461,7 @@ def create_webhook_app(bot_controller_instance):
                     "🗓️ <b>Срок вашей подписки изменён администратором</b>\n\n"
                     f"🗺️ <b>Сервер:</b> {key.get('host_name')}\n"
                     f"🆔 <b>Email подписки:</b> {key.get('key_email')}\n"
-                    f"🚧 <b>Новая дата истечения:<b> {new_dt_local.strftime('%Y-%m-%d %H:%M')}"
+                    f"🚧 <b>Новая дата истечения:</b> {new_dt_local.strftime('%Y-%m-%d %H:%M')}"
                 )
                 if user_id:
                     bot = _bot_controller.get_bot_instance()
