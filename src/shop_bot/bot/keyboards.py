@@ -249,6 +249,10 @@ def create_main_menu_keyboard(
         style="danger",
     )
     builder.button(
+        text=(get_setting("btn_gift_key") or "🎁 Подарить"),
+        callback_data="buy_gift_key",
+    )
+    builder.button(
         text=(get_setting("btn_top_up") or "➕ Пополнить баланс"),
         callback_data="top_up_start",
         style="danger",
@@ -857,7 +861,12 @@ def create_plans_keyboard(
             text=f"{plan['plan_name']} - {plan['price']:.0f} RUB",
             callback_data=callback_data,
         )
-    back_callback = "manage_keys" if action == "extend" else "buy_new_key"
+    if action == "extend":
+        back_callback = "manage_keys"
+    elif action == "gift":
+        back_callback = "buy_gift_key"
+    else:
+        back_callback = "buy_new_key"
     builder.button(text=(get_setting("btn_back") or "⬅️ Назад"), callback_data=back_callback)
     builder.adjust(1)
     return builder.as_markup()
