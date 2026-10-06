@@ -5,6 +5,7 @@ import logging
 import re
 import signal
 import socket
+import sys
 import threading
 
 socket.setdefaulttimeout(20)
@@ -114,7 +115,14 @@ def main():
     logger = logging.getLogger(__name__)
 
     # ВАЖНО: сначала инициализируем базу данных, чтобы таблицы (включая bot_settings) были созданы
-    database.initialize_db()
+    try:
+        database.verify_db_integrity()
+        database.initialize_db()
+    except database.DatabaseCorruptedError as e:
+        logger.critical(
+            f"База данных повреждена ({e}). Восстановите users.db из бэкапа и перезапустите."
+        )
+        sys.exit(78)
     logger.info("Проверка инициализации базы данных завершена.")
 
     # Импортируем модули, которые косвенно тянут handlers.py, только после инициализации БД
