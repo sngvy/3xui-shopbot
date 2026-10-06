@@ -11,6 +11,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+from shop_bot.bot.ui_utils import UiAnchorMiddleware, edit_or_send, ui_reply
 from shop_bot.data_manager.database import (
     add_support_message,
     ban_user,
@@ -57,6 +58,7 @@ class AdminDialog(StatesGroup):
 def get_support_router() -> Router:
     """Собирает и возвращает Router со всеми обработчиками бота поддержки."""
     router = Router()
+    router.callback_query.middleware(UiAnchorMiddleware())
 
     def _user_main_reply_kb() -> types.ReplyKeyboardMarkup:
         return types.ReplyKeyboardMarkup(
@@ -194,14 +196,9 @@ def get_support_router() -> Router:
         await callback.answer()
         existing = _get_latest_open_ticket(callback.from_user.id)
         if existing:
-            await callback.message.edit_text(
-                f"⚠️ У вас уже есть открытый тикет № {existing['ticket_id']}. Продолжайте переписку в нём. Новый тикет можно создать после закрытия текущего"
-            )
+            await edit_or_send(callback, f"⚠️ У вас уже есть открытый тикет № {existing['ticket_id']}. Продолжайте переписку в нём. Новый тикет можно создать после закрытия текущего")
         else:
-            await callback.message.edit_text(
-                "📝 <b>Кратко опишите тему обращения (например, Проблема с подключением):</b>",
-                parse_mode="HTML",
-            )
+            await edit_or_send(callback, "📝 <b>Кратко опишите тему обращения (например, Проблема с подключением):</b>", parse_mode="HTML")
             await state.set_state(SupportDialog.waiting_for_subject)
 
     @router.message(SupportDialog.waiting_for_subject, F.chat.type == "private")
@@ -218,7 +215,9 @@ def get_support_router() -> Router:
             )
             return
         await state.update_data(subject=subject)
-        await message.answer(
+        await ui_reply(
+            message,
+            state,
             "✉️ <b>Опишите проблему максимально подробно одним сообщением:</b>",
             parse_mode="HTML",
         )
@@ -383,11 +382,7 @@ def get_support_router() -> Router:
                         )
                     ]
                 )
-        await callback.message.edit_text(
-            text,
-            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=rows),
-            parse_mode="HTML",
-        )
+        await edit_or_send(callback, text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="HTML")
 
     @router.callback_query(F.data.startswith("support_view_"))
     async def support_view_ticket_handler(callback: types.CallbackQuery):
@@ -395,7 +390,7 @@ def get_support_router() -> Router:
         ticket_id = int(callback.data.split("_")[-1])
         ticket = get_ticket(ticket_id)
         if not ticket or ticket.get("user_id") != callback.from_user.id:
-            await callback.message.edit_text("🚫 Тикет не найден или доступ запрещён")
+            await edit_or_send(callback, "🚫 Тикет не найден или доступ запрещён")
             return
         messages = get_ticket_messages(ticket_id)
         human_status = "🟢 Открыт" if ticket.get("status") == "open" else "🔒 Закрыт"
@@ -434,11 +429,7 @@ def get_support_router() -> Router:
         buttons.append(
             [types.InlineKeyboardButton(text="⬅️ К списку", callback_data="support_my_tickets")]
         )
-        await callback.message.edit_text(
-            final_text,
-            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
-            parse_mode="HTML",
-        )
+        await edit_or_send(callback, final_text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
 
     @router.callback_query(F.data.startswith("support_reply_"))
     async def support_reply_prompt_handler(callback: types.CallbackQuery, state: FSMContext):
@@ -450,7 +441,7 @@ def get_support_router() -> Router:
             or ticket.get("user_id") != callback.from_user.id
             or ticket.get("status") != "open"
         ):
-            await callback.message.edit_text("⚠️ Нельзя ответить на этот тикет")
+            await edit_or_send(callback, "⚠️ Нельзя ответить на этот тикет")
             return
         await state.update_data(reply_ticket_id=ticket_id)
         # await callback.message.edit_text("✉️ <b>Напишите ваш ответ одним сообщением:</b>", parse_mode="HTML")
@@ -629,10 +620,10 @@ def get_support_router() -> Router:
         ticket_id = int(callback.data.split("_")[-1])
         ticket = get_ticket(ticket_id)
         if not ticket or ticket.get("user_id") != callback.from_user.id:
-            await callback.message.edit_text("🚫 Тикет не найден или доступ запрещён")
+            await edit_or_send(callback, "🚫 Тикет не найден или доступ запрещён")
             return
         if ticket.get("status") == "closed":
-            await callback.message.edit_text("✅ Тикет уже закрыт")
+            await edit_or_send(callback, "✅ Тикет уже закрыт")
             return
         ok = set_ticket_status(ticket_id, "closed")
         if ok:
@@ -666,9 +657,7 @@ def get_support_router() -> Router:
                 logger.warning(
                     f"Не удалось закрыть тему форума для тикета {ticket_id} из бота: {e}"
                 )
-            await callback.message.edit_text(
-                "✅ Тикет закрыт",
-                reply_markup=types.InlineKeyboardMarkup(
+            await edit_or_send(callback, "✅ Тикет закрыт", reply_markup=types.InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
                             types.InlineKeyboardButton(
@@ -676,8 +665,7 @@ def get_support_router() -> Router:
                             )
                         ]
                     ]
-                ),
-            )
+                ))
             try:
                 await callback.message.answer(
                     "🏠 <b>Меню поддержки</b>\n\nВыберите действие:",
@@ -687,7 +675,7 @@ def get_support_router() -> Router:
             except Exception:
                 pass
         else:
-            await callback.message.edit_text("❌ Не удалось закрыть тикет")
+            await edit_or_send(callback, "❌ Не удалось закрыть тикет")
 
     @router.callback_query(F.data.startswith("admin_close_"))
     async def admin_close_ticket(callback: types.CallbackQuery, bot: Bot):
@@ -698,7 +686,7 @@ def get_support_router() -> Router:
             return
         ticket = get_ticket(ticket_id)
         if not ticket:
-            await callback.message.edit_text("Тикет не найден")
+            await edit_or_send(callback, "Тикет не найден")
             return
         forum_chat_id = int(ticket.get("forum_chat_id") or callback.message.chat.id)
         if not await _is_admin(bot, forum_chat_id, callback.from_user.id):
@@ -713,10 +701,7 @@ def get_support_router() -> Router:
             except Exception:
                 pass
             try:
-                await callback.message.edit_text(
-                    f"✅ Тикет № {ticket_id} закрыт",
-                    reply_markup=_admin_actions_kb(ticket_id),
-                )
+                await edit_or_send(callback, f"✅ Тикет № {ticket_id} закрыт", reply_markup=_admin_actions_kb(ticket_id))
             except TelegramBadRequest as e:
                 if "message is not modified" in str(e):
                     await callback.answer("Без изменений", show_alert=False)
@@ -742,7 +727,7 @@ def get_support_router() -> Router:
             return
         ticket = get_ticket(ticket_id)
         if not ticket:
-            await callback.message.edit_text("Тикет не найден")
+            await edit_or_send(callback, "Тикет не найден")
             return
         forum_chat_id = int(ticket.get("forum_chat_id") or callback.message.chat.id)
         if not await _is_admin(bot, forum_chat_id, callback.from_user.id):
@@ -757,10 +742,7 @@ def get_support_router() -> Router:
             except Exception:
                 pass
             try:
-                await callback.message.edit_text(
-                    f"🔓 Тикет № {ticket_id} переоткрыт",
-                    reply_markup=_admin_actions_kb(ticket_id),
-                )
+                await edit_or_send(callback, f"🔓 Тикет № {ticket_id} переоткрыт", reply_markup=_admin_actions_kb(ticket_id))
             except TelegramBadRequest as e:
                 if "message is not modified" in str(e):
                     await callback.answer("Без изменений", show_alert=False)
@@ -786,7 +768,7 @@ def get_support_router() -> Router:
             return
         ticket = get_ticket(ticket_id)
         if not ticket:
-            await callback.message.edit_text("Тикет уже удалён или не найден")
+            await edit_or_send(callback, "Тикет уже удалён или не найден")
             return
         forum_chat_id = int(ticket.get("forum_chat_id") or callback.message.chat.id)
         if not await _is_admin(bot, forum_chat_id, callback.from_user.id):
@@ -807,7 +789,7 @@ def get_support_router() -> Router:
                 pass
         if delete_ticket(ticket_id):
             try:
-                await callback.message.edit_text(f"🗑 Тикет № {ticket_id} удалён")
+                await edit_or_send(callback, f"🗑 Тикет № {ticket_id} удалён")
             except TelegramBadRequest as e:
                 if "message to edit not found" in str(e) or "message is not modified" in str(e):
                     await callback.message.answer(f"🗑 Тикет № {ticket_id} удалён")
