@@ -331,7 +331,7 @@ ADMIN_GROUPS: dict[str, tuple[str, list[tuple[str, str]]]] = {
             ("🏳️ Потребление WL", "admin_wl_traffic_report"),
             ("📋 Логи контейнера", "admin_get_docker_logs"),
             ("⚡ Тест скорости", "admin_speedtest"),
-            ("📊 Мониторинг", "admin_monitor"),
+            ("📈 Метрики серверов", "admin_monitor"),
         ],
     ),
     "finance": (
