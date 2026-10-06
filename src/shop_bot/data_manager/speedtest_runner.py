@@ -13,11 +13,17 @@ import aiohttp
 import paramiko
 
 from shop_bot.data_manager import database
+from shop_bot.env_utils import env_int
+
+# Таймаут SSH-подключения и команд на хостах (метрики, speedtest).
+SSH_TIMEOUT_SECONDS = env_int("SSH_TIMEOUT_SECONDS", 30, 5, 600)
 
 # Отдельный небольшой пул под SSH (paramiko): замеры и установка speedtest идут
 # минутами, и в дефолтном executor они вытесняли бы короткие вызовы БД и панельные
 # запросы. Размер ограничивает число одновременных SSH-сессий.
-_ssh_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ssh")
+_ssh_executor = ThreadPoolExecutor(
+    max_workers=env_int("SSH_POOL_SIZE", 4, 1, 32), thread_name_prefix="ssh"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +297,7 @@ def _run_iperf3_json(
 
 def _ping_ms_via_ssh(ssh: paramiko.SSHClient, host: str) -> float | None:
     """Обычный ICMP-пинг (5 пакетов) с удалённого хоста до iperf3-сервера — iperf3 сам по себе ping не измеряет, для этого используем системный ping."""
-    rc, out, err = _ssh_exec(ssh, f"ping -c 5 -q {host} 2>&1", timeout=30)
+    rc, out, err = _ssh_exec(ssh, f"ping -c 5 -q {host} 2>&1", timeout=SSH_TIMEOUT_SECONDS)
     combined = (out or "") + (err or "")
     # Ищем "rtt min/avg/max/mdev = 0.5/0.6/0.8/0.1 ms"
     m = re.search(r"=\s*[\d.]+/([\d.]+)/[\d.]+", combined)
@@ -310,7 +316,7 @@ def _iperf3_speedtest_sync(ssh: paramiko.SSHClient) -> dict:
     не root и ставить пакеты не может, поэтому авто-установки нет, при
     отсутствии бинаря сразу возвращаем понятную ошибку.
     """
-    rc_chk, out_chk, _ = _ssh_exec(ssh, "command -v iperf3 || echo NO", timeout=30)
+    rc_chk, out_chk, _ = _ssh_exec(ssh, "command -v iperf3 || echo NO", timeout=SSH_TIMEOUT_SECONDS)
     if "NO" in out_chk:
         return {
             "ok": False,
@@ -352,7 +358,7 @@ def _iperf3_speedtest_sync(ssh: paramiko.SSHClient) -> dict:
     jitter_ms = None
 
     def _do_jitter():
-        d, e = _run_iperf3_json(ssh, "-u -b 10M -t 3", timeout=30)
+        d, e = _run_iperf3_json(ssh, "-u -b 10M -t 3", timeout=SSH_TIMEOUT_SECONDS)
         return {"ok": d is not None, "data": d, "error": e}
 
     jitter_res = _retry_sync(_do_jitter, attempts=2, delay=2, label="iperf3 jitter")
@@ -424,7 +430,7 @@ async def ssh_speedtest_for_host(host_row: dict) -> dict:
                 username=ssh_user,
                 password=ssh_password,
                 pkey=pkey,
-                timeout=30,
+                timeout=SSH_TIMEOUT_SECONDS,
             )
         else:
             ssh.connect(
@@ -432,7 +438,7 @@ async def ssh_speedtest_for_host(host_row: dict) -> dict:
                 port=ssh_port,
                 username=ssh_user,
                 password=ssh_password,
-                timeout=30,
+                timeout=SSH_TIMEOUT_SECONDS,
             )
 
         # Prefer Ookla CLI json format
@@ -597,7 +603,7 @@ def _ssh_connect(host_row: dict) -> paramiko.SSHClient:
         username=ssh_user,
         password=ssh_password,
         pkey=pkey,
-        timeout=30,
+        timeout=SSH_TIMEOUT_SECONDS,
     )
     return ssh
 
