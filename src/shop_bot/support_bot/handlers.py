@@ -287,8 +287,8 @@ def get_support_router() -> Router:
                 header = (
                     "🆘 <b>Обращение в поддержку</b>\n\n"
                     f"🧾 <b>Тикет:</b> № {ticket_id}\n"
-                    f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: {user_id})\n"
-                    f"ℹ️ <b>Тема:</b> {_h(subj_display)} — от @{_h(message.from_user.username or message.from_user.full_name)} (ID: {user_id})\n\n"
+                    f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{user_id}</code>)\n"
+                    f"ℹ️ <b>Тема:</b> {_h(subj_display)} — от @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{user_id}</code>)\n\n"
                     f"✉️ <b>Сообщение:</b>\n{_h(message.text or '')}"
                 )
                 await bot.send_message(
@@ -315,9 +315,9 @@ def get_support_router() -> Router:
                 await bot.send_message(
                     chat_id=int(forum_chat_id),
                     text=(
-                        f"🆕 <b>Новое обращение от {_h(username)} (ID: {message.from_user.id}) по тикету № {ticket_id}:</b>"
+                        f"🆕 <b>Новое обращение от {_h(username)}</b> (ID: <code>{message.from_user.id}</code>) <b>по тикету № {ticket_id}:</b>"
                         if created_new
-                        else f"✉️ <b>Новое сообщение по тикету № {ticket_id} от {_h(username)} (ID: {message.from_user.id}):</b>"
+                        else f"✉️ <b>Новое сообщение по тикету № {ticket_id} от {_h(username)}</b> (ID: <code>{message.from_user.id}</code>)<b>:</b>"
                     ),
                     message_thread_id=int(thread_id),
                     parse_mode="HTML",
@@ -351,7 +351,7 @@ def get_support_router() -> Router:
                             (
                                 "🆘 <b>Новое обращение в поддержку</b>\n\n"
                                 f"🧾 <b>Тикет:</b> № {ticket_id}\n"
-                                f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: {user_id})\n"
+                                f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{user_id}</code>)\n"
                                 f"ℹ️ <b>Тема:</b> {_h(subject or '—')}\n\n"
                                 f"✉️ <b>Сообщение:</b>\n{_h(message.text or '')}"
                             ),
@@ -514,8 +514,8 @@ def get_support_router() -> Router:
                         header = (
                             "📌 <b>Тред создан автоматически</b>\n\n"
                             f"🧾 <b>Тикет:</b> № {ticket_id}\n"
-                            f"👤 <b>Пользователь:</b> ID {ticket.get('user_id')}\n"
-                            f"ℹ️ <b>Тема:</b> {_h(subj_display)} — от ID {ticket.get('user_id')}"
+                            f"👤 <b>Пользователь:</b> ID <code>{ticket.get('user_id')}</code>\n"
+                            f"ℹ️ <b>Тема:</b> {_h(subj_display)} — от ID <code>{ticket.get('user_id')}</code>"
                         )
                         await bot.send_message(
                             chat_id=chat_id,
@@ -538,7 +538,7 @@ def get_support_router() -> Router:
 
                 await bot.send_message(
                     chat_id=int(forum_chat_id),
-                    text=f"✉️ <b>Новое сообщение по тикету № {ticket_id} от {_h(username)} (ID: {message.from_user.id}):</b>",
+                    text=f"✉️ <b>Новое сообщение по тикету № {ticket_id} от {_h(username)}</b> (ID: <code>{message.from_user.id}</code>)<b>:</b>",
                     message_thread_id=int(thread_id),
                     parse_mode="HTML",
                 )
@@ -1181,7 +1181,7 @@ def get_support_router() -> Router:
                                 else "📌 <b>Тред создан автоматически</b>\n\n"
                             )
                             + f"🧾 <b>Тикет:</b> № {ticket_id}\n"
-                            f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: {message.from_user.id})\n"
+                            f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{message.from_user.id}</code>)\n"
                             f"ℹ️ <b>Тема:</b> {_h(subj_display)}"
                         )
                         await bot.send_message(
@@ -1224,9 +1224,9 @@ def get_support_router() -> Router:
                 await bot.send_message(
                     chat_id=int(forum_chat_id),
                     text=(
-                        f"🆕 <b>Новое обращение от {_h(username)} (ID: {message.from_user.id}) по тикету № {ticket_id}:</b>"
+                        f"🆕 <b>Новое обращение от {_h(username)}</b> (ID: <code>{message.from_user.id}</code>) <b>по тикету № {ticket_id}:</b>"
                         if created_new
-                        else f"✉️ <b>Новое сообщение по тикету № {ticket_id} от {_h(username)} (ID: {message.from_user.id}):</b>"
+                        else f"✉️ <b>Новое сообщение по тикету № {ticket_id} от {_h(username)}</b> (ID: <code>{message.from_user.id}</code>)<b>:</b>"
                     ),
                     message_thread_id=int(thread_id),
                     parse_mode="HTML",
