@@ -276,6 +276,11 @@ def _force_https(url: str) -> str:
     return url
 
 
+def _is_error_text(text: str | None) -> bool:
+    """Экран ошибки/предупреждения без клавиатуры — тупик, ему нужна кнопка возврата."""
+    return bool(text) and text.lstrip().startswith(("❌", "⚠️", "🚫"))
+
+
 async def delete_and_send(
     message: types.Message,
     text: str,
@@ -296,6 +301,8 @@ async def delete_and_send(
     у бота отняли права) — не падаем, просто отправляем новое сообщение
     без удаления старого.
     """
+    if reply_markup is None and _is_error_text(text):
+        reply_markup = keyboards.create_back_to_main_menu_keyboard()
     chat_id = message.chat.id
     try:
         await message.delete()
@@ -419,6 +426,8 @@ async def safe_edit_text(
     сообщение отправить/отредактировать не удалось вообще никак — в
     этом случае вызывающему коду всё равно нечего сохранять.
     """
+    if reply_markup is None and _is_error_text(text):
+        reply_markup = keyboards.create_back_to_main_menu_keyboard()
     message = callback.message
     if isinstance(message, types.InaccessibleMessage) or message is None:
         return await callback.bot.send_message(
@@ -646,18 +655,18 @@ def get_user_router() -> Router:
             gift_code = command.args[len("gift_") :]
             gift = await asyncio.to_thread(get_gift_subscription, gift_code)
             if not gift:
-                await message.answer("❌ Подарочный код не найден или введён неверно")
+                await message.answer("❌ Подарочный код не найден или введён неверно", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             elif gift["status"] != "pending":
-                await message.answer("❌ Этот подарок уже активирован ранее")
+                await message.answer("❌ Этот подарок уже активирован ранее", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             elif int(gift["created_by"]) == user_id:
-                await message.answer("❌ Нельзя активировать собственный подарок")
+                await message.answer("❌ Нельзя активировать собственный подарок", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             else:
                 claimed = await asyncio.to_thread(claim_gift_subscription, gift_code, user_id)
                 if not claimed:
                     # Кто-то успел активировать тот же код параллельно между
                     # проверкой выше и этим вызовом — честно сообщаем, не
                     # создаём ключ повторно.
-                    await message.answer("❌ Этот подарок уже активирован (опередили на доли секунды)")
+                    await message.answer("❌ Этот подарок уже активирован (опередили на доли секунды)", reply_markup=keyboards.create_back_to_main_menu_keyboard())
                 else:
                     gift_host_name = gift["host_name"]
                     gift_months = int(gift["months"])
@@ -691,7 +700,7 @@ def get_user_router() -> Router:
                             await delete_and_send(
                                 processing_msg,
                                 "❌ Не удалось выдать ключ на сервере. Обратитесь в поддержку — "
-                                f"код подарка: {gift_code}",
+                                f"код подарка: {gift_code}", reply_markup=keyboards.create_back_to_main_menu_keyboard(),
                             )
                         else:
                             new_key_id = add_new_key(
@@ -707,7 +716,7 @@ def get_user_router() -> Router:
                                 f"🗺️ <b>Сервер:</b> {gift_host_name}\n"
                                 f"📅 <b>Срок:</b> {gift_months} мес.\n\n"
                                 "Откройте «🔑 Мои подписки», чтобы получить ссылку для подключения",
-                                parse_mode="HTML",
+                                parse_mode="HTML", reply_markup=keyboards.create_back_to_main_menu_keyboard(),
                             )
                             # Уведомляем дарителя, что подарок забрали
                             try:
@@ -727,7 +736,7 @@ def get_user_router() -> Router:
                         await delete_and_send(
                             processing_msg,
                             "❌ Произошла ошибка при активации подарка. Обратитесь в поддержку — "
-                            f"код подарка: {gift_code}",
+                            f"код подарка: {gift_code}", reply_markup=keyboards.create_back_to_main_menu_keyboard(),
                         )
 
         if user_data and user_data.get("agreed_to_terms"):
@@ -869,20 +878,36 @@ def get_user_router() -> Router:
 
     @user_router.callback_query(F.data == "back_to_main_menu")
     @registration_required
-    async def back_to_main_menu_handler(callback: types.CallbackQuery):
+    async def back_to_main_menu_handler(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
+        # Выход в главное меню всегда сбрасывает незавершённый ввод (FSM)
+        await state.clear()
         await show_main_menu(callback.message, edit_message=True)
+
+    @user_router.callback_query(F.data == "show_more_menu")
+    @registration_required
+    async def show_more_menu_handler(callback: types.CallbackQuery, state: FSMContext):
+        await callback.answer()
+        await state.clear()
+        await safe_edit_text(
+            callback,
+            "➡️ <b>Ещё</b>\n\nДополнительные разделы сервиса:",
+            reply_markup=keyboards.create_more_menu_keyboard(),
+            parse_mode="HTML",
+        )
 
     @user_router.callback_query(F.data == "show_main_menu")
     @registration_required
-    async def show_main_menu_cb(callback: types.CallbackQuery):
+    async def show_main_menu_cb(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
+        await state.clear()
         await show_main_menu(callback.message, edit_message=True)
 
     @user_router.callback_query(F.data == "show_profile")
     @registration_required
-    async def profile_handler_callback(callback: types.CallbackQuery):
+    async def profile_handler_callback(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
+        await state.clear()
         user_id = callback.from_user.id
         user_db_data = await asyncio.to_thread(get_user, user_id)
         user_keys = await asyncio.to_thread(get_user_keys, user_id)
@@ -1085,7 +1110,7 @@ def get_user_router() -> Router:
         data = await state.get_data()
         amount = Decimal(str(data.get("topup_amount", 0)))
         if amount <= 0:
-            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод")
+            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         user_id = callback.from_user.id
@@ -1133,13 +1158,13 @@ def get_user_router() -> Router:
             await safe_edit_text(callback, 
                 "⬇️ <b>Нажмите на кнопку ниже для оплаты:</b>",
                 reply_markup=keyboards.create_payment_keyboard(
-                    payment.confirmation.confirmation_url
+                    payment.confirmation.confirmation_url, back_callback="top_up_start"
                 ),
                 parse_mode="HTML",
             )
         except Exception as e:
             logger.error(f"Не удалось создать платёж пополнения YooKassa: {e}", exc_info=True)
-            await callback.message.answer("❌ Не удалось создать ссылку на оплату")
+            await callback.message.answer("❌ Не удалось создать ссылку на оплату", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
 
     @user_router.callback_query(
@@ -1150,12 +1175,12 @@ def get_user_router() -> Router:
         data = await state.get_data()
         amount = Decimal(str(data.get("topup_amount", 0)))
         if amount <= 0:
-            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод")
+            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         ym_wallet = (get_setting("yoomoney_wallet") or "").strip()
         if not ym_wallet:
-            await delete_and_send(callback.message, "❌ Оплата через ЮMoney временно недоступна")
+            await delete_and_send(callback.message, "❌ Оплата через ЮMoney временно недоступна", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         user_id = callback.from_user.id
@@ -1186,7 +1211,7 @@ def get_user_router() -> Router:
         await safe_edit_text(callback, 
             "⬇️ <b>Нажмите на кнопку ниже для оплаты. После оплаты нажмите 'Проверить оплату':</b>",
             reply_markup=keyboards.create_payment_with_check_keyboard(
-                pay_url, f"check_yoomoney_{payment_id}"
+                pay_url, f"check_yoomoney_{payment_id}", back_callback="top_up_start"
             ),
             parse_mode="HTML",
         )
@@ -1223,7 +1248,7 @@ def get_user_router() -> Router:
         )
         if not md:
             await delete_and_send(callback.message, 
-                "❌ Не удалось завершить транзакцию. Обратитесь в поддержку, если средства списаны"
+                "❌ Не удалось завершить транзакцию. Обратитесь в поддержку, если средства списаны", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
         try:
@@ -1232,7 +1257,7 @@ def get_user_router() -> Router:
             logger.error(f"YooMoney: ошибка в process_successful_payment: {e}", exc_info=True)
             try:
                 await delete_and_send(callback.message, 
-                    "❌ Ошибка при выдаче после оплаты. Напишите в поддержку"
+                    "❌ Ошибка при выдаче после оплаты. Напишите в поддержку", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
             except Exception:
                 pass
@@ -1244,7 +1269,7 @@ def get_user_router() -> Router:
         data = await state.get_data()
         amount_rub = Decimal(str(data.get("topup_amount", 0)))
         if amount_rub <= 0:
-            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод")
+            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         stars_count = _calc_stars_amount(amount_rub.quantize(Decimal("0.01")))
@@ -1279,7 +1304,7 @@ def get_user_router() -> Router:
         except Exception as e:
             logger.error(f"Не удалось отправить счёт на пополнение Stars: {e}")
             await delete_and_send(callback.message, 
-                "❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты"
+                "❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             await state.clear()
             return
@@ -1294,7 +1319,7 @@ def get_user_router() -> Router:
         user_id = callback.from_user.id
         amount = float(data.get("topup_amount", 0))
         if amount <= 0:
-            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод")
+            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         # Сформируем state_data минимально необходимым
@@ -1328,19 +1353,19 @@ def get_user_router() -> Router:
                     "⏳ После оплаты подтверждение приходит автоматически — обычно "
                     "это занимает 1-3 минуты. Как только оно придёт, бот сам пришлёт "
                     "сообщение здесь же",
-                    reply_markup=keyboards.create_payment_keyboard(pay_url),
+                    reply_markup=keyboards.create_payment_keyboard(pay_url, back_callback="top_up_start"),
                     parse_mode="HTML",
                 )
                 await state.clear()
             else:
                 await delete_and_send(callback.message, 
-                    "❌ Не удалось создать счёт. Попробуйте другой способ оплаты"
+                    "❌ Не удалось создать счёт. Попробуйте другой способ оплаты", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 await state.clear()
         except Exception as e:
             logger.error(f"Не удалось создать счёт на пополнение: {e}", exc_info=True)
             await delete_and_send(callback.message, 
-                "❌ Не удалось создать счёт. Попробуйте другой способ оплаты"
+                "❌ Не удалось создать счёт. Попробуйте другой способ оплаты", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             await state.clear()
 
@@ -1353,20 +1378,20 @@ def get_user_router() -> Router:
         user_id = callback.from_user.id
         amount_rub = Decimal(str(data.get("topup_amount", 0)))
         if amount_rub <= 0:
-            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод")
+            await delete_and_send(callback.message, "❌ Некорректная сумма пополнения. Повторите ввод", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
         wallet_address = get_setting("ton_wallet_address")
         if not wallet_address:
-            await delete_and_send(callback.message, "❌ Оплата через TON временно недоступна")
+            await delete_and_send(callback.message, "❌ Оплата через TON временно недоступна", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
         usdt_rub_rate = await get_usdt_rub_rate()
         ton_usdt_rate = await get_ton_usdt_rate()
         if not usdt_rub_rate or not ton_usdt_rate:
-            await delete_and_send(callback.message, "❌ Не удалось получить курс TON. Попробуйте позже")
+            await delete_and_send(callback.message, "❌ Не удалось получить курс TON. Попробуйте позже", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -1420,12 +1445,12 @@ def get_user_router() -> Router:
                     f"сообщение здесь же"
                 ),
                 parse_mode="HTML",
-                reply_markup=keyboards.create_ton_connect_keyboard(connect_url),
+                reply_markup=keyboards.create_ton_connect_keyboard(connect_url, back_callback="top_up_start"),
             )
             await state.clear()
         except Exception as e:
             logger.error(f"Не удалось запустить пополнение через TON Connect: {e}", exc_info=True)
-            await delete_and_send(callback.message, "❌ Не удалось подготовить оплату TON Connect")
+            await delete_and_send(callback.message, "❌ Не удалось подготовить оплату TON Connect", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
 
     @user_router.callback_query(F.data == "show_referral_program")
@@ -1449,7 +1474,7 @@ def get_user_router() -> Router:
         )
 
         builder = InlineKeyboardBuilder()
-        builder.button(text="⬅️ Назад", callback_data="back_to_main_menu")
+        builder.button(text="⬅️ Назад", callback_data="show_more_menu")
         await safe_edit_text(callback, text, reply_markup=builder.as_markup())
 
     @user_router.callback_query(F.data == "show_about")
@@ -1578,7 +1603,7 @@ def get_user_router() -> Router:
                 reply_markup=keyboards.create_support_bot_link_keyboard(support_bot_username),
             )
         else:
-            await message.answer("❌ Контакты поддержки не настроены")
+            await message.answer("❌ Контакты поддержки не настроены", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.message(SupportDialog.waiting_for_message)
     @registration_required
@@ -1595,7 +1620,7 @@ def get_user_router() -> Router:
                 reply_markup=keyboards.create_support_bot_link_keyboard(support_bot_username),
             )
         else:
-            await message.answer("❌ Контакты поддержки не настроены")
+            await message.answer("❌ Контакты поддержки не настроены", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.callback_query(F.data == "support_my_tickets")
     @registration_required
@@ -1661,7 +1686,7 @@ def get_user_router() -> Router:
                 reply_markup=keyboards.create_support_bot_link_keyboard(support_bot_username),
             )
         else:
-            await message.answer("❌ Контакты поддержки не настроены")
+            await message.answer("❌ Контакты поддержки не настроены", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.message(F.is_topic_message)
     async def forum_thread_message_handler(message: types.Message, bot: Bot):
@@ -1759,7 +1784,7 @@ def get_user_router() -> Router:
         hosts = await asyncio.to_thread(get_all_hosts)
         if not hosts:
             await delete_and_send(callback.message, 
-                "❌ В данный момент нет доступных серверов для создания пробной подписки"
+                "❌ В данный момент нет доступных серверов для создания пробной подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
 
@@ -1820,7 +1845,7 @@ def get_user_router() -> Router:
             )
             plans = get_plans_for_host(host_name)
             if not plans:
-                await delete_and_send(callback.message, f"❌ Для сервера {host_name} не настроены тарифы")
+                await delete_and_send(callback.message, f"❌ Для сервера {host_name} не настроены тарифы", reply_markup=keyboards.create_back_to_main_menu_keyboard())
                 return
             await safe_edit_text(callback, 
                 CHOOSE_PLAN_MESSAGE or "Выберите тариф:",
@@ -1838,7 +1863,7 @@ def get_user_router() -> Router:
             )
             plans = get_plans_for_host(host_name)
             if not plans:
-                await delete_and_send(callback.message, f"❌ Для сервера {host_name} не настроены тарифы")
+                await delete_and_send(callback.message, f"❌ Для сервера {host_name} не настроены тарифы", reply_markup=keyboards.create_back_to_main_menu_keyboard())
                 return
             await safe_edit_text(callback, 
                 "📦 <b>Выберите тариф для подарочной подписки:</b>",
@@ -1900,7 +1925,7 @@ def get_user_router() -> Router:
             )
             if not result:
                 await delete_and_send(
-                    message, "❌ Не удалось создать пробную подписку. Ошибка на сервере"
+                    message, "❌ Не удалось создать пробную подписку. Ошибка на сервере", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
 
@@ -1948,7 +1973,7 @@ def get_user_router() -> Router:
                 f"Ошибка при создании пробного ключа для пользователя {user_id} на хосте {host_name}: {e}",
                 exc_info=True,
             )
-            await delete_and_send(message, "❌ Произошла ошибка при создании пробной подписки")
+            await delete_and_send(message, "❌ Произошла ошибка при создании пробной подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.callback_query(F.data.startswith("show_key_"))
     @registration_required
@@ -1959,14 +1984,14 @@ def get_user_router() -> Router:
         key_data = get_key_by_id(key_id_to_show)
 
         if not key_data or key_data["user_id"] != user_id:
-            await delete_and_send(loading_message, "❌ Подписка не найдена")
+            await delete_and_send(loading_message, "❌ Подписка не найдена", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         try:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details["connection_string"]:
                 await delete_and_send(loading_message, 
-                    "❌ Ошибка на сервере. Не удалось получить данные подписки"
+                    "❌ Ошибка на сервере. Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
 
@@ -1988,7 +2013,65 @@ def get_user_router() -> Router:
             )
         except Exception as e:
             logger.error(f"Ошибка при отображении ключа {key_id_to_show}: {e}")
-            await delete_and_send(loading_message, "❌ Произошла ошибка при получении данных подписки")
+            await delete_and_send(loading_message, "❌ Произошла ошибка при получении данных подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
+
+    async def _card_connection_string(callback: types.CallbackQuery, key_data: dict) -> str | None:
+        """Строка подписки для подменю: берём из кнопки Web App карточки,
+        иначе спрашиваем панель (как toggle_auto_renew)."""
+        try:
+            markup = callback.message.reply_markup
+            for row in (markup.inline_keyboard if markup else []):
+                for btn in row:
+                    if btn.web_app and btn.web_app.url:
+                        return btn.web_app.url
+        except Exception:
+            pass
+        try:
+            details = await xui_api.get_key_details_from_host(key_data)
+            return details.get("connection_string") if details else None
+        except Exception as e:
+            logger.debug(f"_card_connection_string: не удалось получить строку подписки: {e}")
+            return None
+
+    async def _key_card_submenu(callback: types.CallbackQuery, builder_name: str):
+        await callback.answer()
+        try:
+            key_id = int(callback.data.split("_")[-1])
+        except (IndexError, ValueError):
+            await callback.answer("❌ Некорректная подписка", show_alert=False)
+            return
+        key_data = await asyncio.to_thread(get_key_by_id, key_id)
+        if not key_data or key_data["user_id"] != callback.from_user.id:
+            await callback.answer("❌ Подписка не найдена", show_alert=False)
+            return
+        if builder_name == "more":
+            markup = keyboards.create_key_more_keyboard(key_id)
+        else:
+            conn = await _card_connection_string(callback, key_data)
+            if builder_name == "connect":
+                markup = keyboards.create_key_connect_keyboard(key_id, conn)
+            else:  # back — главный вид карточки
+                markup = keyboards.create_key_info_keyboard(key_id, conn)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=markup)
+        except TelegramBadRequest as e:
+            if "message is not modified" not in str(e).lower():
+                logger.debug(f"_key_card_submenu: не удалось обновить клавиатуру: {e}")
+
+    @user_router.callback_query(F.data.startswith("key_connect_"))
+    @registration_required
+    async def key_connect_handler(callback: types.CallbackQuery):
+        await _key_card_submenu(callback, "connect")
+
+    @user_router.callback_query(F.data.startswith("key_more_"))
+    @registration_required
+    async def key_more_handler(callback: types.CallbackQuery):
+        await _key_card_submenu(callback, "more")
+
+    @user_router.callback_query(F.data.startswith("key_back_"))
+    @registration_required
+    async def key_back_handler(callback: types.CallbackQuery):
+        await _key_card_submenu(callback, "back")
 
     @user_router.callback_query(F.data.startswith("regen_key_prompt_"))
     @registration_required
@@ -2058,14 +2141,14 @@ def get_user_router() -> Router:
         user_id = callback.from_user.id
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data["user_id"] != user_id:
-            await delete_and_send(callback.message, "❌ Подписка не найдена")
+            await delete_and_send(callback.message, "❌ Подписка не найдена", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         try:
             expiry_dt = datetime.fromisoformat(key_data["expiry_date"])
             expiry_ms = int(expiry_dt.timestamp() * 1000)
         except Exception:
-            await delete_and_send(callback.message, "❌ Не удалось определить срок действия подписки")
+            await delete_and_send(callback.message, "❌ Не удалось определить срок действия подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         host_name = key_data["host_name"]
@@ -2187,13 +2270,13 @@ def get_user_router() -> Router:
         При ошибке сама шлёт сообщение пользователю и возвращает None."""
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return None
         try:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return None
             return details["connection_string"]
@@ -2201,7 +2284,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка получения connection_string для ключа {key_id}: {e}", exc_info=True
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return None
 
     async def _fetch_xkeen_outbounds(connection_string: str) -> list | None:
@@ -2253,7 +2336,7 @@ def get_user_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except ValueError:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         await callback.message.answer(
@@ -2270,7 +2353,7 @@ def get_user_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except ValueError:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         try:
@@ -2291,7 +2374,7 @@ def get_user_router() -> Router:
             outbounds = None
 
         if not outbounds:
-            await callback.message.answer("❌ Нет доступных серверов для XKeen")
+            await callback.message.answer("❌ Нет доступных серверов для XKeen", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         countries = list(
@@ -2312,7 +2395,7 @@ def get_user_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except ValueError:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         try:
@@ -2332,11 +2415,11 @@ def get_user_router() -> Router:
                 f"Ошибка получения Clash/Mihomo-конфигурации для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить конфигурацию")
+            await callback.message.answer("❌ Не удалось получить конфигурацию", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         if status != 200 or not raw_body:
-            await callback.message.answer("❌ Сервер подписки временно недоступен")
+            await callback.message.answer("❌ Сервер подписки временно недоступен", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         document = BufferedInputFile(file=raw_body, filename="config.yaml")
@@ -2351,7 +2434,7 @@ def get_user_router() -> Router:
             )
         except Exception as send_err:
             logger.error(f"Ошибка отправки Mihomo-конфигурации для ключа {key_id}: {send_err}")
-            await callback.message.answer("❌ Не удалось отправить файл. Попробуйте позже")
+            await callback.message.answer("❌ Не удалось отправить файл. Попробуйте позже", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.callback_query(F.data.startswith("xkeen_pick_"))
     async def xkeen_pick_country_handler(callback: types.CallbackQuery):
@@ -2360,7 +2443,7 @@ def get_user_router() -> Router:
             _, _, key_id_str, idx_str = callback.data.split("_", 3)
             key_id, idx = int(key_id_str), int(idx_str)
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный запрос")
+            await callback.message.answer("❌ Некорректный запрос", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         try:
@@ -2381,14 +2464,14 @@ def get_user_router() -> Router:
             outbounds = None
 
         if not outbounds:
-            await callback.message.answer("❌ Нет доступных серверов для XKeen")
+            await callback.message.answer("❌ Нет доступных серверов для XKeen", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         countries = list(
             dict.fromkeys(_extract_city_label(ob.get("remarks", "Default")) for ob in outbounds)
         )
         if idx < 0 or idx >= len(countries):
-            await callback.message.answer("❌ Список серверов изменился, повторите запрос заново")
+            await callback.message.answer("❌ Список серверов изменился, повторите запрос заново", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
         target_country = countries[idx]
 
@@ -2428,7 +2511,7 @@ def get_user_router() -> Router:
                 continue
 
         if file_counter == 0:
-            await callback.message.answer(f"❌ Не нашлось файлов для {target_country}")
+            await callback.message.answer(f"❌ Не нашлось файлов для {target_country}", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     # =========================================================================
     # Ключи для Podkop: сначала выбор страны, ключ присылается только для неё
@@ -2439,7 +2522,7 @@ def get_user_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         connection_string = await _get_connection_string(callback, key_id)
@@ -2453,13 +2536,13 @@ def get_user_router() -> Router:
             links = None
 
         if not links:
-            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         podkop_links = [l for l in links if _is_podkop_link(l)]
         countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in podkop_links) if c))
         if not countries:
-            await callback.message.answer("❌ Ключей для Podkop не найдено")
+            await callback.message.answer("❌ Ключей для Podkop не найдено", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         await callback.message.answer(
@@ -2475,7 +2558,7 @@ def get_user_router() -> Router:
             _, _, key_id_str, idx_str = callback.data.split("_", 3)
             key_id, idx = int(key_id_str), int(idx_str)
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный запрос")
+            await callback.message.answer("❌ Некорректный запрос", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         try:
@@ -2494,13 +2577,13 @@ def get_user_router() -> Router:
             links = None
 
         if not links:
-            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         podkop_links = [l for l in links if _is_podkop_link(l)]
         countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in podkop_links) if c))
         if idx < 0 or idx >= len(countries):
-            await callback.message.answer("❌ Список стран изменился, повторите запрос заново")
+            await callback.message.answer("❌ Список стран изменился, повторите запрос заново", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
         target_country = countries[idx]
 
@@ -2537,7 +2620,7 @@ def get_user_router() -> Router:
                 continue
 
         if file_counter == 0:
-            await callback.message.answer(f"❌ Не нашлось ключей Podkop для {target_country}")
+            await callback.message.answer(f"❌ Не нашлось ключей Podkop для {target_country}", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     # =========================================================================
     # Все ключи: сначала выбор страны, ключи присылаются только для неё
@@ -2548,7 +2631,7 @@ def get_user_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         connection_string = await _get_connection_string(callback, key_id)
@@ -2562,12 +2645,12 @@ def get_user_router() -> Router:
             links = None
 
         if not links:
-            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in links) if c))
         if not countries:
-            await callback.message.answer("❌ Ключей не найдено")
+            await callback.message.answer("❌ Ключей не найдено", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         await callback.message.answer(
@@ -2583,7 +2666,7 @@ def get_user_router() -> Router:
             _, _, key_id_str, idx_str = callback.data.split("_", 3)
             key_id, idx = int(key_id_str), int(idx_str)
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный запрос")
+            await callback.message.answer("❌ Некорректный запрос", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         connection_string = await _get_connection_string(callback, key_id)
@@ -2597,12 +2680,12 @@ def get_user_router() -> Router:
             links = None
 
         if not links:
-            await callback.message.answer("❌ В подписке не найдено ни одного ключа")
+            await callback.message.answer("❌ В подписке не найдено ни одного ключа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         countries = list(dict.fromkeys(c for c in (_link_city_label(l) for l in links) if c))
         if idx < 0 or idx >= len(countries):
-            await callback.message.answer("❌ Список стран изменился, повторите запрос заново")
+            await callback.message.answer("❌ Список стран изменился, повторите запрос заново", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
         target_country = countries[idx]
 
@@ -2635,7 +2718,7 @@ def get_user_router() -> Router:
                 continue
 
         if file_counter == 0:
-            await callback.message.answer(f"❌ Не нашлось ключей для {target_country}")
+            await callback.message.answer(f"❌ Не нашлось ключей для {target_country}", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.callback_query(F.data.startswith("add_to_happ_"))
     async def add_to_happ_handler(callback: types.CallbackQuery):
@@ -2669,7 +2752,7 @@ def get_user_router() -> Router:
             # Ожидаемый формат: add_to_happ_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2677,7 +2760,7 @@ def get_user_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2687,7 +2770,7 @@ def get_user_router() -> Router:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
             connection_string = details["connection_string"]
@@ -2696,7 +2779,7 @@ def get_user_router() -> Router:
                 f"Ошибка при получении subscription link для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2732,7 +2815,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
             )
-            await callback.message.answer("❌ Не удалось отправить ссылку")
+            await callback.message.answer("❌ Не удалось отправить ссылку", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
         # -------------------------------------------------------------------------
         # 7. Сообщение отправлено (без итогового сообщения)
@@ -2776,7 +2859,7 @@ def get_user_router() -> Router:
             # Ожидаемый формат: add_to_flclashx_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2784,7 +2867,7 @@ def get_user_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2794,7 +2877,7 @@ def get_user_router() -> Router:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
             connection_string = details["connection_string"]
@@ -2803,7 +2886,7 @@ def get_user_router() -> Router:
                 f"Ошибка при получении subscription link для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2840,7 +2923,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
             )
-            await callback.message.answer("❌ Не удалось отправить ссылку")
+            await callback.message.answer("❌ Не удалось отправить ссылку", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
         # -------------------------------------------------------------------------
         # 7. Сообщение отправлено (без итогового сообщения)
@@ -2880,7 +2963,7 @@ def get_user_router() -> Router:
             # Ожидаемый формат: add_to_v2raytun_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2888,7 +2971,7 @@ def get_user_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2898,7 +2981,7 @@ def get_user_router() -> Router:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
             connection_string = details["connection_string"]
@@ -2907,7 +2990,7 @@ def get_user_router() -> Router:
                 f"Ошибка при получении subscription link для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2945,7 +3028,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
             )
-            await callback.message.answer("❌ Не удалось отправить ссылку")
+            await callback.message.answer("❌ Не удалось отправить ссылку", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
         # -------------------------------------------------------------------------
         # 7. Сообщение отправлено (без итогового сообщения)
@@ -2985,7 +3068,7 @@ def get_user_router() -> Router:
             # Ожидаемый формат: add_to_incy_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2993,7 +3076,7 @@ def get_user_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3003,7 +3086,7 @@ def get_user_router() -> Router:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
             connection_string = details["connection_string"]
@@ -3012,7 +3095,7 @@ def get_user_router() -> Router:
                 f"Ошибка при получении subscription link для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3048,7 +3131,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
             )
-            await callback.message.answer("❌ Не удалось отправить ссылку")
+            await callback.message.answer("❌ Не удалось отправить ссылку", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
         # -------------------------------------------------------------------------
         # 7. Сообщение отправлено (без итогового сообщения)
@@ -3088,7 +3171,7 @@ def get_user_router() -> Router:
             # Ожидаемый формат: add_to_v2rayng_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3096,7 +3179,7 @@ def get_user_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3106,7 +3189,7 @@ def get_user_router() -> Router:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
             connection_string = details["connection_string"]
@@ -3115,7 +3198,7 @@ def get_user_router() -> Router:
                 f"Ошибка при получении subscription link для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3153,7 +3236,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
             )
-            await callback.message.answer("❌ Не удалось отправить ссылку")
+            await callback.message.answer("❌ Не удалось отправить ссылку", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
         # -------------------------------------------------------------------------
         # 7. Сообщение отправлено (без итогового сообщения)
@@ -3193,7 +3276,7 @@ def get_user_router() -> Router:
             # Ожидаемый формат: open_web_app_123 → берём последнюю часть после _
             key_id = int(callback.data.split("_")[-1])
         except (ValueError, IndexError):
-            await callback.message.answer("❌ Некорректный идентификатор подписки")
+            await callback.message.answer("❌ Некорректный идентификатор подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3201,7 +3284,7 @@ def get_user_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data or key_data.get("user_id") != callback.from_user.id:
-            await callback.message.answer("🚫 Это не ваша подписка")
+            await callback.message.answer("🚫 Это не ваша подписка", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3211,7 +3294,7 @@ def get_user_router() -> Router:
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details.get("connection_string"):
                 await callback.message.answer(
-                    "❌ Не удалось получить актуальную подписку с сервера"
+                    "❌ Не удалось получить актуальную подписку с сервера", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
                 return
             connection_string = details["connection_string"]
@@ -3220,7 +3303,7 @@ def get_user_router() -> Router:
                 f"Ошибка при получении subscription link для ключа {key_id}: {e}",
                 exc_info=True,
             )
-            await callback.message.answer("❌ Не удалось получить данные подписки")
+            await callback.message.answer("❌ Не удалось получить данные подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -3258,7 +3341,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Ошибка отправки сообщения пользователю {callback.from_user.id}: {send_err}"
             )
-            await callback.message.answer("❌ Не удалось отправить ссылку")
+            await callback.message.answer("❌ Не удалось отправить ссылку", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
         # -------------------------------------------------------------------------
         # 7. Сообщение отправлено (без итогового сообщения)
@@ -3369,7 +3452,7 @@ def get_user_router() -> Router:
                 if not result:
                     keys_in_transition.discard(key_id)
                     await delete_and_send(loading_message, 
-                        f"❌ Не удалось перенести подписку на сервер {new_host_name}. Попробуйте позже."
+                        f"❌ Не удалось перенести подписку на сервер {new_host_name}. Попробуйте позже.", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                     )
                     return
 
@@ -3456,7 +3539,7 @@ def get_user_router() -> Router:
                     exc_info=True,
                 )
                 await delete_and_send(loading_message, 
-                    "❌ Произошла ошибка при переносе подписки. Попробуйте позже."
+                    "❌ Произошла ошибка при переносе подписки. Попробуйте позже.", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
         except Exception:
             # Подстраховка на случай неожиданной ошибки выше уровня внутреннего
@@ -3526,7 +3609,7 @@ def get_user_router() -> Router:
             # -------------------------------------------------------------------------
             details = await xui_api.get_key_details_from_host(key_data)
             if not details or not details["connection_string"]:
-                await callback.message.answer("❌ Не удалось сгенерировать QR-код")
+                await callback.message.answer("❌ Не удалось сгенерировать QR-код", reply_markup=keyboards.create_back_to_main_menu_keyboard())
                 return
 
             connection_string = details["connection_string"]
@@ -3658,7 +3741,7 @@ def get_user_router() -> Router:
 
             await safe_edit_text(callback, 
                 text,
-                reply_markup=keyboards.create_back_to_main_menu_keyboard(),
+                reply_markup=keyboards.create_back_to_more_keyboard(),
                 disable_web_page_preview=True,
             )
         except TelegramBadRequest:
@@ -3743,7 +3826,7 @@ def get_user_router() -> Router:
         hosts = await asyncio.to_thread(get_all_hosts)
         if not hosts:
             await delete_and_send(callback.message, 
-                "❌ В данный момент нет доступных серверов для покупки"
+                "❌ В данный момент нет доступных серверов для покупки", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
 
@@ -3764,7 +3847,7 @@ def get_user_router() -> Router:
         hosts = await asyncio.to_thread(get_all_hosts)
         if not hosts:
             await delete_and_send(callback.message, 
-                "❌ В данный момент нет доступных серверов для покупки"
+                "❌ В данный момент нет доступных серверов для покупки", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
 
@@ -3784,19 +3867,19 @@ def get_user_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[2])
         except (IndexError, ValueError):
-            await delete_and_send(callback.message, "❌ Произошла ошибка. Неверный формат подписки")
+            await delete_and_send(callback.message, "❌ Произошла ошибка. Неверный формат подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
 
         if not key_data or key_data["user_id"] != callback.from_user.id:
-            await delete_and_send(callback.message, "❌ Подписка не найдена или не принадлежит вам")
+            await delete_and_send(callback.message, "❌ Подписка не найдена или не принадлежит вам", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         host_name = key_data.get("host_name")
         if not host_name:
             await delete_and_send(callback.message, 
-                "❌ У этой подписки не указан сервер. Обратитесь в поддержку"
+                "❌ У этой подписки не указан сервер. Обратитесь в поддержку", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
 
@@ -3804,7 +3887,7 @@ def get_user_router() -> Router:
 
         if not plans:
             await delete_and_send(callback.message, 
-                f"❌ Извините, для сервера {host_name} в данный момент не настроены тарифы для продления."
+                f"❌ Извините, для сервера {host_name} в данный момент не настроены тарифы для продления.", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
 
@@ -3880,7 +3963,7 @@ def get_user_router() -> Router:
                     )
                 else:
                     await delete_and_send(callback.message, 
-                        f"❌ Для сервера {host_name} не настроены тарифы."
+                        f"❌ Для сервера {host_name} не настроены тарифы.", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                     )
             elif action == "new" and host_name:
                 plans = get_plans_for_host(host_name)
@@ -3894,7 +3977,7 @@ def get_user_router() -> Router:
                     )
                 else:
                     await delete_and_send(callback.message, 
-                        f"❌ Для сервера {host_name} не настроены тарифы."
+                        f"❌ Для сервера {host_name} не настроены тарифы.", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                     )
             elif action == "gift" and host_name:
                 plans = get_plans_for_host(host_name)
@@ -3908,13 +3991,13 @@ def get_user_router() -> Router:
                     )
                 else:
                     await delete_and_send(callback.message, 
-                        f"❌ Для сервера {host_name} не настроены тарифы."
+                        f"❌ Для сервера {host_name} не настроены тарифы.", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                     )
             elif action == "new":
                 hosts = await asyncio.to_thread(get_all_hosts)
                 if not hosts:
                     await delete_and_send(callback.message, 
-                        "❌ В данный момент нет доступных серверов для покупки"
+                        "❌ В данный момент нет доступных серверов для покупки", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                     )
                 else:
                     await safe_edit_text(callback, 
@@ -3956,7 +4039,7 @@ def get_user_router() -> Router:
                 await message.delete()
             except Exception:
                 pass
-            await message.answer("❌ Неверный формат email. Попробуйте еще раз")
+            await message.answer("❌ Неверный формат email. Попробуйте еще раз", reply_markup=keyboards.create_back_to_main_menu_keyboard())
 
     @user_router.callback_query(PaymentProcess.waiting_for_email, F.data == "skip_email")
     async def skip_email_handler(callback: types.CallbackQuery, state: FSMContext):
@@ -4103,6 +4186,23 @@ def get_user_router() -> Router:
             await state.update_data(flow_chat_id=sent.chat.id, flow_msg_id=sent.message_id)
         await state.set_state(PaymentProcess.waiting_for_payment_method)
 
+    @user_router.callback_query(F.data == "back_to_payment_options")
+    async def back_to_payment_options_handler(callback: types.CallbackQuery, state: FSMContext):
+        """Возврат к выбору способа оплаты из ввода промокода или с экрана ссылки."""
+        await callback.answer()
+        data = await state.get_data()
+        if not data.get("plan_id"):
+            # Состояние потеряно (например, рестарт бота) — безопасно уходим в меню
+            await state.clear()
+            await show_main_menu(callback.message, edit_message=True)
+            return
+        await show_payment_options(
+            callback.bot,
+            callback.message.chat.id,
+            callback.message.message_id,
+            state,
+        )
+
     @user_router.callback_query(
         PaymentProcess.waiting_for_payment_method, F.data == "back_to_email_prompt"
     )
@@ -4124,7 +4224,7 @@ def get_user_router() -> Router:
         await state.set_state(PaymentProcess.waiting_for_promo_code)
         await safe_edit_text(callback, 
             "🎟️ <b>Введите промокод текстом:</b>",
-            reply_markup=keyboards.create_back_to_main_menu_keyboard(),
+            reply_markup=keyboards.create_promo_input_keyboard(),
             parse_mode="HTML",
         )
 
@@ -4210,7 +4310,7 @@ def get_user_router() -> Router:
         plan = get_plan_by_id(plan_id)
 
         if not plan:
-            await callback.message.answer("❌ Произошла ошибка при выборе тарифа")
+            await callback.message.answer("❌ Произошла ошибка при выборе тарифа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -4246,7 +4346,7 @@ def get_user_router() -> Router:
 
         plan = get_plan_by_id(plan_id)
         if not plan:
-            await callback.message.answer("❌ Произошла ошибка при выборе тарифа")
+            await callback.message.answer("❌ Произошла ошибка при выборе тарифа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -4313,13 +4413,13 @@ def get_user_router() -> Router:
             await safe_edit_text(callback, 
                 "⬇️ <b>Нажмите на кнопку ниже для оплаты:</b>",
                 reply_markup=keyboards.create_payment_keyboard(
-                    payment.confirmation.confirmation_url
+                    payment.confirmation.confirmation_url, back_callback="back_to_payment_options"
                 ),
                 parse_mode="HTML",
             )
         except Exception as e:
             logger.error(f"Не удалось создать платёж YooKassa: {e}", exc_info=True)
-            await callback.message.answer("❌ Не удалось создать ссылку на оплату")
+            await callback.message.answer("❌ Не удалось создать ссылку на оплату", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
 
     @user_router.callback_query(PaymentProcess.waiting_for_payment_method, F.data == "pay_yoomoney")
@@ -4329,7 +4429,7 @@ def get_user_router() -> Router:
         user_data = get_user(callback.from_user.id)
         plan = get_plan_by_id(data.get("plan_id"))
         if not plan:
-            await delete_and_send(callback.message, "❌ Произошла ошибка при выборе тарифа")
+            await delete_and_send(callback.message, "❌ Произошла ошибка при выборе тарифа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         # Цена со скидкой по рефералке (как у других методов)
@@ -4361,7 +4461,7 @@ def get_user_router() -> Router:
 
         ym_wallet = (get_setting("yoomoney_wallet") or "").strip()
         if not ym_wallet:
-            await delete_and_send(callback.message, "❌ Оплата через ЮMoney временно недоступна")
+            await delete_and_send(callback.message, "❌ Оплата через ЮMoney временно недоступна", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -4408,7 +4508,7 @@ def get_user_router() -> Router:
             await safe_edit_text(callback, 
                 "⬇️ <b>Нажмите на кнопку ниже для оплаты. После оплаты нажмите 'Проверить оплату':</b>",
                 reply_markup=keyboards.create_payment_with_check_keyboard(
-                    pay_url, f"check_yoomoney_{payment_id}"
+                    pay_url, f"check_yoomoney_{payment_id}", back_callback="back_to_payment_options"
                 ),
                 parse_mode="HTML",
             )
@@ -4416,7 +4516,7 @@ def get_user_router() -> Router:
             await callback.message.answer(
                 "⬇️ <b>Нажмите на кнопку ниже для оплаты. После оплаты нажмите 'Проверить оплату':</b>",
                 reply_markup=keyboards.create_payment_with_check_keyboard(
-                    pay_url, f"check_yoomoney_{payment_id}"
+                    pay_url, f"check_yoomoney_{payment_id}", back_callback="back_to_payment_options"
                 ),
                 parse_mode="HTML",
             )
@@ -4430,7 +4530,7 @@ def get_user_router() -> Router:
         user_data = get_user(callback.from_user.id)
         plan = get_plan_by_id(data.get("plan_id"))
         if not plan:
-            await delete_and_send(callback.message, "❌ Произошла ошибка при выборе тарифа")
+            await delete_and_send(callback.message, "❌ Произошла ошибка при выборе тарифа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         base_price = Decimal(str(plan["price"]))
@@ -4486,7 +4586,7 @@ def get_user_router() -> Router:
         except Exception as e:
             logger.error(f"Не удалось отправить счёт Stars: {e}")
             await delete_and_send(callback.message, 
-                "❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты"
+                "❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             await state.clear()
 
@@ -4508,7 +4608,7 @@ def get_user_router() -> Router:
                 f"Попытка создать счёт Crypto Pay не удалась для пользователя {user_id}: cryptobot_token не задан"
             )
             await delete_and_send(callback.message, 
-                "❌ Оплата криптовалютой временно недоступна. (Администратор не указал токен)"
+                "❌ Оплата криптовалютой временно недоступна. (Администратор не указал токен)", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             await state.clear()
             return
@@ -4518,7 +4618,7 @@ def get_user_router() -> Router:
             logger.error(
                 f"Попытка создать счёт Crypto Pay не удалась для пользователя {user_id}: тариф с id {plan_id} не найден"
             )
-            await delete_and_send(callback.message, "❌ Произошла ошибка при выборе тарифа")
+            await delete_and_send(callback.message, "❌ Произошла ошибка при выборе тарифа", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -4547,13 +4647,13 @@ def get_user_router() -> Router:
                 "⏳ После оплаты подтверждение приходит автоматически — обычно "
                 "это занимает 1-3 минуты. Как только оно придёт, бот сам пришлёт "
                 "сообщение здесь же",
-                reply_markup=keyboards.create_payment_keyboard(pay_url),
+                reply_markup=keyboards.create_payment_keyboard(pay_url, back_callback="back_to_payment_options"),
                 parse_mode="HTML",
             )
             await state.clear()
         else:
             await delete_and_send(callback.message, 
-                "❌ Не удалось создать счет CryptoBot. Попробуйте другой способ оплаты"
+                "❌ Не удалось создать счет CryptoBot. Попробуйте другой способ оплаты", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
 
     @user_router.callback_query(
@@ -4567,7 +4667,7 @@ def get_user_router() -> Router:
         plan = get_plan_by_id(data.get("plan_id"))
 
         if not wallet_address or not plan:
-            await delete_and_send(callback.message, "❌ Оплата через TON временно недоступна")
+            await delete_and_send(callback.message, "❌ Оплата через TON временно недоступна", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -4579,7 +4679,7 @@ def get_user_router() -> Router:
         ton_usdt_rate = await get_ton_usdt_rate()
 
         if not usdt_rub_rate or not ton_usdt_rate:
-            await delete_and_send(callback.message, "❌ Не удалось получить курс TON. Попробуйте позже")
+            await delete_and_send(callback.message, "❌ Не удалось получить курс TON. Попробуйте позже", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
 
@@ -4645,7 +4745,7 @@ def get_user_router() -> Router:
                     f"сообщение здесь же"
                 ),
                 parse_mode="HTML",
-                reply_markup=keyboards.create_ton_connect_keyboard(connect_url),
+                reply_markup=keyboards.create_ton_connect_keyboard(connect_url, back_callback="back_to_payment_options"),
             )
             await state.clear()
 
@@ -4655,7 +4755,7 @@ def get_user_router() -> Router:
                 exc_info=True,
             )
             await callback.message.answer(
-                "❌ Не удалось создать ссылку для TON Connect. Попробуйте позже"
+                "❌ Не удалось создать ссылку для TON Connect. Попробуйте позже", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             await state.clear()
 
@@ -4668,7 +4768,7 @@ def get_user_router() -> Router:
         user_id = callback.from_user.id
         plan = get_plan_by_id(data.get("plan_id"))
         if not plan:
-            await delete_and_send(callback.message, "❌ Тариф не найден")
+            await delete_and_send(callback.message, "❌ Тариф не найден", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             await state.clear()
             return
         months = int(plan["months"])
@@ -4754,7 +4854,7 @@ def get_user_router() -> Router:
             amount = Decimal(callback.data.removeprefix("topup_missing_"))
         except Exception:
             await callback.message.answer(
-                "❌ Не удалось определить сумму. Откройте пополнение из главного меню"
+                "❌ Не удалось определить сумму. Откройте пополнение из главного меню", reply_markup=keyboards.create_back_to_main_menu_keyboard()
             )
             return
         final_amount = amount.quantize(Decimal("0.01"))
@@ -4814,7 +4914,7 @@ def get_user_router() -> Router:
         if not metadata:
             try:
                 await message.answer(
-                    "✅ Оплата получена, но нет данных заказа. Обратитесь в поддержку, если подписка не выдана"
+                    "✅ Оплата получена, но нет данных заказа. Обратитесь в поддержку, если подписка не выдана", reply_markup=keyboards.create_back_to_main_menu_keyboard()
                 )
             except Exception:
                 pass
@@ -5445,7 +5545,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             # Продление существующего ключа — достаём email по key_id
             existing_key = await asyncio.to_thread(get_key_by_id, key_id)
             if not existing_key or not existing_key.get("key_email"):
-                await delete_and_send(processing_message, "❌ Не удалось найти подписку для продления")
+                await delete_and_send(processing_message, "❌ Не удалось найти подписку для продления", reply_markup=keyboards.create_back_to_main_menu_keyboard())
                 return
             candidate_email = existing_key["key_email"]
 
@@ -5501,7 +5601,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             host_name=host_name, email=candidate_email, months_to_add=int(months)
         )
         if not result:
-            await delete_and_send(processing_message, "❌ Не удалось создать/обновить подписку на сервере")
+            await delete_and_send(processing_message, "❌ Не удалось создать/обновить подписку на сервере", reply_markup=keyboards.create_back_to_main_menu_keyboard())
             return
 
         if action == "new":
@@ -5812,7 +5912,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             exc_info=True,
         )
         try:
-            await delete_and_send(processing_message, "❌ Ошибка при выдаче подписки")
+            await delete_and_send(processing_message, "❌ Ошибка при выдаче подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
         except Exception:
             try:
                 await bot.send_message(chat_id=user_id, text="❌ Ошибка при выдаче подписки")
