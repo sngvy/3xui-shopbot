@@ -416,12 +416,30 @@ def get_admin_router() -> Router:
             await message.answer(full_text, reply_markup=keyboard)
 
     @admin_router.callback_query(F.data == "admin_menu")
-    async def open_admin_menu_handler(callback: types.CallbackQuery):
+    async def open_admin_menu_handler(callback: types.CallbackQuery, state: FSMContext):
         if not is_admin(callback.from_user.id):
             await callback.answer("🚫 У вас нет прав", show_alert=True)
             return
         await callback.answer()
+        # Выход в админ-меню всегда сбрасывает незавершённый ввод (FSM)
+        await state.clear()
         await show_admin_menu(callback.message, edit_message=True)
+
+    @admin_router.callback_query(F.data.startswith("admin_grp_"))
+    async def open_admin_group_handler(callback: types.CallbackQuery, state: FSMContext):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        await state.clear()
+        group = callback.data[len("admin_grp_"):]
+        title = keyboards.ADMIN_GROUPS.get(group, ("🛠 <b>Админка</b>", []))[0]
+        await safe_edit_text(
+            callback,
+            f"{title}\n\nВыберите действие:",
+            reply_markup=keyboards.create_admin_group_keyboard(group),
+            parse_mode="HTML",
+        )
 
     @admin_router.callback_query(F.data == "admin_monitor")
     async def admin_monitor_open(callback: types.CallbackQuery):
@@ -454,7 +472,7 @@ def get_admin_router() -> Router:
         await callback.answer()
         hosts = await asyncio.to_thread(get_all_hosts) or []
         if not hosts:
-            await callback.message.answer("⚠️ Хосты не найдены в настройках")
+            await callback.message.answer("⚠️ Хосты не найдены в настройках", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await safe_edit_text(callback, 
             "<b>⚡ Выберите сервер для теста скорости:</b>",
@@ -541,9 +559,9 @@ def get_admin_router() -> Router:
             try:
                 await wait_msg.edit_text(text_res)
             except Exception:
-                await callback.message.answer(text_res)
+                await callback.message.answer(text_res, reply_markup=keyboards.create_admin_back_keyboard())
         else:
-            await callback.message.answer(text_res)
+            await callback.message.answer(text_res, reply_markup=keyboards.create_admin_back_keyboard())
 
         # Разослать финал всем админам
         for aid in admin_ids:
@@ -604,7 +622,7 @@ def get_admin_router() -> Router:
                 summary_lines.append(f"🗺️ <b>{name}</b>\n❌ {e}\n")
             await asyncio.sleep(5)
         text = "🏁 Тест для всех завершён:\n\n" + "\n".join(summary_lines)
-        await callback.message.answer(text)
+        await callback.message.answer(text, reply_markup=keyboards.create_admin_back_keyboard())
         for aid in admin_ids:
             # Не дублируем результат инициатору/в текущий чат
             if aid == callback.from_user.id or aid == callback.message.chat.id:
@@ -630,7 +648,7 @@ def get_admin_router() -> Router:
             if wait:
                 await wait.edit_text("❌ Не удалось создать бэкап БД")
             else:
-                await callback.message.answer("❌ Не удалось создать бэкап БД")
+                await callback.message.answer("❌ Не удалось создать бэкап БД", reply_markup=keyboards.create_admin_back_keyboard())
             return
         # Отправим всем администраторам
         try:
@@ -642,9 +660,9 @@ def get_admin_router() -> Router:
             try:
                 await wait.edit_text(txt)
             except Exception:
-                await callback.message.answer(txt)
+                await callback.message.answer(txt, reply_markup=keyboards.create_admin_back_keyboard())
         else:
-            await callback.message.answer(txt)
+            await callback.message.answer(txt, reply_markup=keyboards.create_admin_back_keyboard())
 
     # --- Восстановление БД ---
     class AdminRestoreDB(StatesGroup):
@@ -680,11 +698,11 @@ def get_admin_router() -> Router:
         except Exception:
             pass
         if not doc:
-            await message.answer("❌ Пришлите файл .zip или .db")
+            await message.answer("❌ Пришлите файл .zip или .db", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         filename = (doc.file_name or "uploaded.db").lower()
         if not (filename.endswith(".zip") or filename.endswith(".db")):
-            await message.answer("❌ Поддерживаются только файлы .zip или .db")
+            await message.answer("❌ Поддерживаются только файлы .zip или .db", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         try:
             ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -692,16 +710,16 @@ def get_admin_router() -> Router:
             dest.parent.mkdir(parents=True, exist_ok=True)
             await message.bot.download(doc, destination=dest)
         except Exception as e:
-            await message.answer(f"❌ Не удалось скачать файл: {e}")
+            await message.answer(f"❌ Не удалось скачать файл: {e}", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         ok = backup_manager.restore_from_file(dest)
         await state.clear()
         if ok:
             await message.answer(
-                "✅ Восстановление выполнено успешно.\nБот и панель продолжают работу с новой БД"
+                "✅ Восстановление выполнено успешно.\nБот и панель продолжают работу с новой БД", reply_markup=keyboards.create_admin_back_keyboard()
             )
         else:
-            await message.answer("❌ Восстановление не удалось. Проверьте файл и повторите")
+            await message.answer("❌ Восстановление не удалось. Проверьте файл и повторите", reply_markup=keyboards.create_admin_cancel_keyboard())
 
     # --- Speedtest: Автоустановка speedtest на выбранном хосте ---
     @admin_router.callback_query(F.data.startswith("admin_speedtest_autoinstall_"))
@@ -713,7 +731,7 @@ def get_admin_router() -> Router:
         host_name = callback.data.replace("admin_speedtest_autoinstall_", "", 1)
         try:
             wait = await callback.message.answer(
-                f"🛠 Пытаюсь установить speedtest на <b>{host_name}</b>..."
+                f"🛠 Пытаюсь установить speedtest на <b>{host_name}</b>...", reply_markup=keyboards.create_admin_back_keyboard()
             )
         except Exception:
             wait = None
@@ -736,9 +754,9 @@ def get_admin_router() -> Router:
             try:
                 await wait.edit_text(text)
             except Exception:
-                await callback.message.answer(text)
+                await callback.message.answer(text, reply_markup=keyboards.create_admin_back_keyboard())
         else:
-            await callback.message.answer(text)
+            await callback.message.answer(text, reply_markup=keyboards.create_admin_back_keyboard())
 
     # --- Топ рефереров ---
     @admin_router.callback_query(F.data == "admin_top_referrers")
@@ -1077,7 +1095,7 @@ def get_admin_router() -> Router:
         except Exception:
             pass
         if not code or len(code) < 2:
-            await message.answer("❌ Код слишком короткий. Повторите ввод")
+            await message.answer("❌ Код слишком короткий. Повторите ввод", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         await state.update_data(code=code)
         await state.set_state(PromoCreate.waiting_discount)
@@ -1195,11 +1213,11 @@ def get_admin_router() -> Router:
                 amt = float(text)
             else:
                 await message.answer(
-                    "❌ Формат не распознан. Введите число или percent:10/amount:100"
+                    "❌ Формат не распознан. Введите число или percent:10/amount:100", reply_markup=keyboards.create_admin_cancel_keyboard()
                 )
                 return
         except Exception:
-            await message.answer("❌ Не удалось прочитать число. Повторите ввод")
+            await message.answer("❌ Не удалось прочитать число. Повторите ввод", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         await state.update_data(
             discount_percent=perc,
@@ -1351,7 +1369,7 @@ def get_admin_router() -> Router:
             if val <= 0:
                 raise ValueError()
         except Exception:
-            await message.answer("❌ Введите положительное целое число")
+            await message.answer("❌ Введите положительное целое число", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         if manual == "total":
             await state.update_data(usage_limit_total=val, limits_manual_input=None)
@@ -1470,7 +1488,7 @@ def get_admin_router() -> Router:
             if days <= 0 or days > 3650:
                 raise ValueError()
         except Exception:
-            await message.answer("❌ Введите целое число дней (1–3650)")
+            await message.answer("❌ Введите целое число дней (1–3650)", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         now = datetime.now()
         vf_iso = now.isoformat()
@@ -1615,7 +1633,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await _render_user_card(
             callback.bot, callback.message.chat.id, callback.message.message_id, user_id
@@ -1631,7 +1649,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         user = await asyncio.to_thread(get_user, user_id) or {}
         who = format_stored_username(user.get("username"), user_id, linked=False)
@@ -1653,7 +1671,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         try:
             await asyncio.to_thread(ban_user, user_id)
@@ -1692,7 +1710,7 @@ def get_admin_router() -> Router:
             except Exception:
                 pass
         except Exception as e:
-            await delete_and_send(callback.message, f"❌ Не удалось забанить пользователя: {e}")
+            await delete_and_send(callback.message, f"❌ Не удалось забанить пользователя: {e}", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await _render_user_card(
             callback.bot,
@@ -1757,7 +1775,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         try:
             await asyncio.to_thread(unban_user, user_id)
@@ -1773,7 +1791,7 @@ def get_admin_router() -> Router:
             except Exception:
                 pass
         except Exception as e:
-            await delete_and_send(callback.message, f"❌ Не удалось разбанить пользователя: {e}")
+            await delete_and_send(callback.message, f"❌ Не удалось разбанить пользователя: {e}", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await _render_user_card(
             callback.bot,
@@ -1793,7 +1811,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         keys = await asyncio.to_thread(get_keys_for_user, user_id)
         await safe_edit_text(callback, 
@@ -1816,7 +1834,7 @@ def get_admin_router() -> Router:
             page = int(parts[-1])
             user_id = int(parts[-2])
         except Exception:
-            await callback.message.answer("❌ Неверный формат запроса истории операций")
+            await callback.message.answer("❌ Неверный формат запроса истории операций", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         per_page = 5
@@ -1860,11 +1878,11 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         inviter = await asyncio.to_thread(get_user, user_id)
         if not inviter:
-            await callback.message.answer("❌ Пользователь не найден")
+            await callback.message.answer("❌ Пользователь не найден", reply_markup=keyboards.create_admin_back_keyboard())
             return
         refs = get_referrals_for_user(user_id) or []
         ref_count = len(refs)
@@ -1910,11 +1928,11 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         key = await asyncio.to_thread(get_key_by_id, key_id)
         if not key:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_back_keyboard())
             return
         text = (
             f"🔑 <b>Подписка № {key_id}</b>\n\n"
@@ -1954,11 +1972,11 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         key = await asyncio.to_thread(get_key_by_id, key_id)
         if not key:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_back_keyboard())
             return
         email = key.get("key_email") or "—"
         host = key.get("host_name") or "—"
@@ -1987,7 +2005,7 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(extend_key_id=key_id)
         await state.set_state(AdminExtendSingleKey.waiting_days)
@@ -2009,25 +2027,25 @@ def get_admin_router() -> Router:
         key_id = int(data.get("extend_key_id", 0))
         if not key_id:
             await state.clear()
-            await message.answer("❌ Не удалось определить подписку")
+            await message.answer("❌ Не удалось определить подписку", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         try:
             days = int((message.text or "").strip())
         except Exception:
-            await message.answer("❌ Введите число дней")
+            await message.answer("❌ Введите число дней", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         if days <= 0:
-            await message.answer("❌ Дней должно быть положительное число")
+            await message.answer("❌ Дней должно быть положительное число", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         key = await asyncio.to_thread(get_key_by_id, key_id)
         if not key:
-            await message.answer("❌ Подписка не найдена")
+            await message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_cancel_keyboard())
             await state.clear()
             return
         host = key.get("host_name")
         email = key.get("key_email")
         if not host or not email:
-            await message.answer("❌ У подписки отсутствует сервер или email")
+            await message.answer("❌ У подписки отсутствует сервер или email", reply_markup=keyboards.create_admin_cancel_keyboard())
             await state.clear()
             return
         # Продление на хосте
@@ -2039,7 +2057,7 @@ def get_admin_router() -> Router:
             )
             resp = None
         if not resp or not resp.get("client_uuid") or not resp.get("expiry_timestamp_ms"):
-            await message.answer("❌ Не удалось продлить подписку на сервере")
+            await message.answer("❌ Не удалось продлить подписку на сервере", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         # Обновление в БД
         try:
@@ -2057,7 +2075,7 @@ def get_admin_router() -> Router:
             f"🆔 <b>Email:</b> {new_key.get('key_email') or '—'}\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
         )
-        await message.answer(f"✅ Подписка продлена на {days} дн.")
+        await message.answer(f"✅ Подписка продлена на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard())
         await message.answer(
             text,
             reply_markup=keyboards.create_admin_key_actions_keyboard(
@@ -2080,7 +2098,7 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(reduce_key_id=key_id)
         await state.set_state(AdminReduceSingleKey.waiting_days)
@@ -2102,25 +2120,25 @@ def get_admin_router() -> Router:
         key_id = int(data.get("reduce_key_id", 0))
         if not key_id:
             await state.clear()
-            await message.answer("❌ Не удалось определить подписку")
+            await message.answer("❌ Не удалось определить подписку", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         try:
             days = int((message.text or "").strip())
         except Exception:
-            await message.answer("❌ Введите число дней")
+            await message.answer("❌ Введите число дней", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         if days <= 0:
-            await message.answer("❌ Дней должно быть положительное число (это то, на сколько убавить)")
+            await message.answer("❌ Дней должно быть положительное число (это то, на сколько убавить)", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         key = await asyncio.to_thread(get_key_by_id, key_id)
         if not key:
-            await message.answer("❌ Подписка не найдена")
+            await message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_cancel_keyboard())
             await state.clear()
             return
         host = key.get("host_name")
         email = key.get("key_email")
         if not host or not email:
-            await message.answer("❌ У подписки отсутствует сервер или email")
+            await message.answer("❌ У подписки отсутствует сервер или email", reply_markup=keyboards.create_admin_cancel_keyboard())
             await state.clear()
             return
         # Уменьшение срока на хосте — тот же путь, что и продление, но с
@@ -2137,7 +2155,7 @@ def get_admin_router() -> Router:
             )
             resp = None
         if not resp or not resp.get("client_uuid") or not resp.get("expiry_timestamp_ms"):
-            await message.answer("❌ Не удалось изменить срок подписки на сервере")
+            await message.answer("❌ Не удалось изменить срок подписки на сервере", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         # Обновление в БД
         try:
@@ -2155,7 +2173,7 @@ def get_admin_router() -> Router:
             f"🆔 <b>Email:</b> {new_key.get('key_email') or '—'}\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
         )
-        await message.answer(f"✅ Срок подписки уменьшен на {days} дн.")
+        await message.answer(f"✅ Срок подписки уменьшен на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard())
         await message.answer(
             text,
             reply_markup=keyboards.create_admin_key_actions_keyboard(
@@ -2227,7 +2245,7 @@ def get_admin_router() -> Router:
                     target_id = None
         if target_id is None:
             await message.answer(
-                "❌ Не удалось распознать ID/username. Отправьте корректное значение или нажмите Отмена"
+                "❌ Не удалось распознать ID/username. Отправьте корректное значение или нажмите Отмена", reply_markup=keyboards.create_admin_cancel_keyboard()
             )
             return
         # Обновляем настройки админов
@@ -2239,9 +2257,9 @@ def get_admin_router() -> Router:
             # Сохраняем в admin_telegram_ids строкой CSV
             ids_str = ",".join(str(i) for i in sorted(ids))
             update_setting("admin_telegram_ids", ids_str)
-            await message.answer(f"✅ Пользователь {target_id} добавлен в администраторы")
+            await message.answer(f"✅ Пользователь {target_id} добавлен в администраторы", reply_markup=keyboards.create_admin_back_keyboard())
         except Exception as e:
-            await message.answer(f"❌ Ошибка при сохранении: {e}")
+            await message.answer(f"❌ Ошибка при сохранении: {e}", reply_markup=keyboards.create_admin_cancel_keyboard())
         await state.clear()
         # Показать админ-меню снова
         try:
@@ -2312,7 +2330,7 @@ def get_admin_router() -> Router:
                     target_id = None
         if target_id is None:
             await message.answer(
-                "❌ Не удалось распознать ID/username. Отправьте корректное значение или нажмите Отмена"
+                "❌ Не удалось распознать ID/username. Отправьте корректное значение или нажмите Отмена", reply_markup=keyboards.create_admin_cancel_keyboard()
             )
             return
         # Обновляем настройки админов
@@ -2321,7 +2339,7 @@ def get_admin_router() -> Router:
 
             ids = set(get_admin_ids())
             if target_id not in ids:
-                await message.answer(f"ℹ️ Пользователь {target_id} не является администратором")
+                await message.answer(f"ℹ️ Пользователь {target_id} не является администратором", reply_markup=keyboards.create_admin_back_keyboard())
                 await state.clear()
                 try:
                     await show_admin_menu(message)
@@ -2329,14 +2347,14 @@ def get_admin_router() -> Router:
                     pass
                 return
             if len(ids) <= 1:
-                await message.answer("❌ Нельзя снять последнего администратора")
+                await message.answer("❌ Нельзя снять последнего администратора", reply_markup=keyboards.create_admin_cancel_keyboard())
                 return
             ids.discard(int(target_id))
             ids_str = ",".join(str(i) for i in sorted(ids))
             update_setting("admin_telegram_ids", ids_str)
-            await message.answer(f"✅ Пользователь {target_id} снят с администраторов")
+            await message.answer(f"✅ Пользователь {target_id} снят с администраторов", reply_markup=keyboards.create_admin_back_keyboard())
         except Exception as e:
-            await message.answer(f"❌ Ошибка при сохранении: {e}")
+            await message.answer(f"❌ Ошибка при сохранении: {e}", reply_markup=keyboards.create_admin_cancel_keyboard())
         await state.clear()
         # Показать админ-меню снова
         try:
@@ -2404,7 +2422,7 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         try:
             key = await asyncio.to_thread(get_key_by_id, key_id)
@@ -2412,7 +2430,7 @@ def get_admin_router() -> Router:
             logger.error(f"Ошибка get_key_by_id для БД, ключ № {key_id}: {e}")
             key = None
         if not key:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_back_keyboard())
             return
         try:
             user_id = int(key.get("user_id"))
@@ -2420,7 +2438,7 @@ def get_admin_router() -> Router:
             logger.error(
                 f"Некорректный user_id для ключа № {key_id}: {key.get('user_id')}, ошибка={e}"
             )
-            await callback.message.answer("❌ Ошибка данных подписки: некорректный пользователь")
+            await callback.message.answer("❌ Ошибка данных подписки: некорректный пользователь", reply_markup=keyboards.create_admin_back_keyboard())
             return
         host = key.get("host_name")
         email = key.get("key_email")
@@ -2441,7 +2459,7 @@ def get_admin_router() -> Router:
         if ok_db:
             await callback.message.answer(
                 "✅ Подписка удалена"
-                + (" (с сервера тоже)" if ok_host else " (но удалить на сервере не удалось)")
+                + (" (с сервера тоже)" if ok_host else " (но удалить на сервере не удалось)"), reply_markup=keyboards.create_admin_back_keyboard()
             )
             # Обновить список ключей пользователя
             keys = await asyncio.to_thread(get_keys_for_user, user_id)
@@ -2470,7 +2488,7 @@ def get_admin_router() -> Router:
             except Exception:
                 pass
         else:
-            await callback.message.answer("❌ Не удалось удалить подписку из базы данных")
+            await callback.message.answer("❌ Не удалось удалить подписку из базы данных", reply_markup=keyboards.create_admin_back_keyboard())
 
     class AdminEditKeyEmail(StatesGroup):
         waiting_for_email = State()
@@ -2484,7 +2502,7 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(edit_key_id=key_id)
         await state.set_state(AdminEditKeyEmail.waiting_for_email)
@@ -2505,13 +2523,13 @@ def get_admin_router() -> Router:
         except Exception:
             pass
         if not new_email:
-            await message.answer("❌ Введите корректный email")
+            await message.answer("❌ Введите корректный email", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         ok = update_key_email(key_id, new_email)
         if ok:
-            await message.answer("✅ Email обновлён")
+            await message.answer("✅ Email обновлён", reply_markup=keyboards.create_admin_back_keyboard())
         else:
-            await message.answer("❌ Не удалось обновить email (возможно, уже занят)")
+            await message.answer("❌ Не удалось обновить email (возможно, уже занят)", reply_markup=keyboards.create_admin_cancel_keyboard())
         await state.clear()
 
     # --- Перенос подписки на другой сервер ---
@@ -2530,25 +2548,25 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         # Получаем данные ключа без проверки user_id
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data:
-            await callback.message.answer("❌ Подписка не найдена в базе данных")
+            await callback.message.answer("❌ Подписка не найдена в базе данных", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         hosts = await asyncio.to_thread(get_all_hosts)
         if not hosts:
-            await callback.message.answer("❌ Нет доступных серверов")
+            await callback.message.answer("❌ Нет доступных серверов", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         current_host = key_data.get("host_name")
         # Исключаем текущий сервер, чтобы не переносить на него же
         hosts = [h for h in hosts if h.get("host_name") != current_host]
         if not hosts:
-            await callback.message.answer("❌ Другие серверы отсутствуют")
+            await callback.message.answer("❌ Другие серверы отсутствуют", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2602,12 +2620,12 @@ def get_admin_router() -> Router:
         # -------------------------------------------------------------------------
         key_data = await asyncio.to_thread(get_key_by_id, key_id)
         if not key_data:
-            await delete_and_send(callback.message, "❌ Подписка не найдена")
+            await delete_and_send(callback.message, "❌ Подписка не найдена", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         old_host = key_data.get("host_name")
         if not old_host:
-            await delete_and_send(callback.message, "❌ Для подписки не указан текущий сервер")
+            await delete_and_send(callback.message, "❌ Для подписки не указан текущий сервер", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         if new_host_name == old_host:
@@ -2626,7 +2644,7 @@ def get_admin_router() -> Router:
 
         email = key_data.get("key_email")
         if not email:
-            await delete_and_send(callback.message, "❌ Не удалось определить email подписки")
+            await delete_and_send(callback.message, "❌ Не удалось определить email подписки", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         await callback.answer("⏳ Переношу подписку...", show_alert=False)
@@ -2644,7 +2662,7 @@ def get_admin_router() -> Router:
             )
             if not result:
                 await delete_and_send(callback.message, 
-                    f"❌ Не удалось перенести подписку на сервер {new_host_name}"
+                    f"❌ Не удалось перенести подписку на сервер {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
                 )
                 return
 
@@ -2682,11 +2700,11 @@ def get_admin_router() -> Router:
                     )
                 else:
                     await delete_and_send(callback.message, 
-                        f"✅ Готово! Подписка № {key_id} перенесена на {new_host_name}"
+                        f"✅ Готово! Подписка № {key_id} перенесена на {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
                     )
             except Exception:
                 await delete_and_send(callback.message, 
-                    f"✅ Готово! Подписка № {key_id} перенесена на {new_host_name}"
+                    f"✅ Готово! Подписка № {key_id} перенесена на {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
                 )
 
             # -------------------------------------------------------------------------
@@ -2713,7 +2731,7 @@ def get_admin_router() -> Router:
             )
             await delete_and_send(callback.message, 
                 f"❌ Произошла ошибка при переносе подписки:\n<code>{e}</code>",
-                parse_mode="HTML",
+                parse_mode="HTML", reply_markup=keyboards.create_admin_back_keyboard(),
             )
 
     # --- Начисление реф. баланса: удалено ---
@@ -2750,7 +2768,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.clear()
         await state.update_data(target_user_id=user_id)
@@ -2794,7 +2812,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(target_user_id=user_id)
         hosts = await asyncio.to_thread(get_all_hosts)
@@ -2870,10 +2888,10 @@ def get_admin_router() -> Router:
         try:
             days = int(message.text.strip())
         except Exception:
-            await message.answer("❌ Введите целое число дней")
+            await message.answer("❌ Введите целое число дней", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         if days <= 0:
-            await message.answer("❌ Срок должен быть положительным")
+            await message.answer("❌ Срок должен быть положительным", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
 
         # -------------------------------------------------------------------------
@@ -2952,7 +2970,7 @@ def get_admin_router() -> Router:
             or not host_resp.get("expiry_timestamp_ms")
         ):
             await delete_and_send(callback.message, 
-                "❌ Не удалось выдать подписку на сервере. Проверьте настройки хоста и доступность сервера"
+                "❌ Не удалось выдать подписку на сервере. Проверьте настройки хоста и доступность сервера", reply_markup=keyboards.create_admin_back_keyboard()
             )
             await _render_user_card(callback.bot, chat_id, None, user_id)
             return
@@ -3058,7 +3076,7 @@ def get_admin_router() -> Router:
                 pass
         else:
             try:
-                await delete_and_send(callback.message, "❌ Не удалось сохранить подписку в базе данных")
+                await delete_and_send(callback.message, "❌ Не удалось сохранить подписку в базе данных", reply_markup=keyboards.create_admin_back_keyboard())
             except TelegramBadRequest:
                 await callback.bot.send_message(
                     chat_id, "❌ Не удалось сохранить подписку в базе данных"
@@ -3110,7 +3128,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(
             target_user_id=user_id,
@@ -3154,7 +3172,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(
             target_user_id=user_id,
@@ -3285,9 +3303,9 @@ def get_admin_router() -> Router:
                     note=f"✅ Начислено {amount:.2f} ₽",
                 )
             else:
-                await delete_and_send(callback.message, "❌ Пользователь не найден или ошибка БД")
+                await delete_and_send(callback.message, "❌ Пользователь не найден или ошибка БД", reply_markup=keyboards.create_admin_back_keyboard())
         except Exception as e:
-            await delete_and_send(callback.message, f"❌ Ошибка начисления: {e}")
+            await delete_and_send(callback.message, f"❌ Ошибка начисления: {e}", reply_markup=keyboards.create_admin_back_keyboard())
 
     @admin_router.callback_query(
         AdminMainRefill.waiting_for_confirm, F.data == "admin_balance_cancel_add"
@@ -3314,11 +3332,11 @@ def get_admin_router() -> Router:
         try:
             key_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат key_id")
+            await callback.message.answer("❌ Неверный формат key_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         key = await asyncio.to_thread(get_key_by_id, key_id)
         if not key:
-            await callback.message.answer("❌ Подписка не найдена")
+            await callback.message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_back_keyboard())
             return
         # Если мы находимся в контексте просмотра ключей хоста — вернёмся к списку ключей этого хоста
         host_from_state = None
@@ -3387,7 +3405,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(
             target_user_id=user_id,
@@ -3431,7 +3449,7 @@ def get_admin_router() -> Router:
         try:
             user_id = int(callback.data.split("_")[-1])
         except Exception:
-            await callback.message.answer("❌ Неверный формат user_id")
+            await callback.message.answer("❌ Неверный формат user_id", reply_markup=keyboards.create_admin_back_keyboard())
             return
         await state.update_data(
             target_user_id=user_id,
@@ -3562,10 +3580,10 @@ def get_admin_router() -> Router:
                 )
             else:
                 await delete_and_send(callback.message, 
-                    "❌ Пользователь не найден или недостаточно средств"
+                    "❌ Пользователь не найден или недостаточно средств", reply_markup=keyboards.create_admin_back_keyboard()
                 )
         except Exception as e:
-            await delete_and_send(callback.message, f"❌ Ошибка списания: {e}")
+            await delete_and_send(callback.message, f"❌ Ошибка списания: {e}", reply_markup=keyboards.create_admin_back_keyboard())
 
     @admin_router.callback_query(
         AdminMainDeduct.waiting_for_confirm, F.data == "admin_balance_cancel_deduct"
@@ -3727,7 +3745,7 @@ def get_admin_router() -> Router:
         prompt_msg_id = state_data.get("prompt_msg_id")
 
         if not query:
-            await message.answer("❌ Введите корректный запрос")
+            await message.answer("❌ Введите корректный запрос", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
 
         # Удаляем текстовый запрос самого админа, чтобы в чате не висел мусор
@@ -3842,7 +3860,7 @@ def get_admin_router() -> Router:
             # Затем как email
             key = get_key_by_email(text)
         if not key:
-            await message.answer("❌ Подписка не найдена. Пришлите корректный key_id или email")
+            await message.answer("❌ Подписка не найдена. Пришлите корректный key_id или email", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         key_id = int(key.get("key_id"))
         email = key.get("key_email") or "—"
@@ -3879,25 +3897,25 @@ def get_admin_router() -> Router:
         except Exception:
             pass
         if len(parts) != 2:
-            await message.answer("❌ Формат: <code>key_id дни</code>")
+            await message.answer("❌ Формат: <code>key_id дни</code>", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         try:
             key_id = int(parts[0])
             days = int(parts[1])
         except Exception:
-            await message.answer("❌ Оба значения должны быть числами")
+            await message.answer("❌ Оба значения должны быть числами", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         if days <= 0:
-            await message.answer("❌ Количество дней должно быть положительным")
+            await message.answer("❌ Количество дней должно быть положительным", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         key = await asyncio.to_thread(get_key_by_id, key_id)
         if not key:
-            await message.answer("❌ Подписка не найдена")
+            await message.answer("❌ Подписка не найдена", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         host = key.get("host_name")
         email = key.get("key_email")
         if not host or not email:
-            await message.answer("❌ У подписки отсутствуют данные о хосте или email")
+            await message.answer("❌ У подписки отсутствуют данные о хосте или email", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         # Обновим на хосте
         resp = None
@@ -3908,7 +3926,7 @@ def get_admin_router() -> Router:
                 f"Продление: не удалось обновить клиента на хосте '{host}' для ключа № {key_id}: {e}"
             )
         if not resp or not resp.get("client_uuid") or not resp.get("expiry_timestamp_ms"):
-            await message.answer("❌ Не удалось продлить подписку на сервере")
+            await message.answer("❌ Не удалось продлить подписку на сервере", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         # Обновим в БД
         try:
@@ -3916,7 +3934,7 @@ def get_admin_router() -> Router:
         except Exception as e:
             logger.error(f"Продление: не удалось обновить БД для ключа № {key_id}: {e}")
         await state.clear()
-        await message.answer(f"✅ Подписка № {key_id} продлена на {days} дн.")
+        await message.answer(f"✅ Подписка № {key_id} продлена на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard())
         # Попробуем уведомить пользователя
         try:
             await message.bot.send_message(
@@ -4039,7 +4057,7 @@ def get_admin_router() -> Router:
             except Exception:
                 pass
             await message.answer(
-                "❌ Ссылка должна начинаться с http:// или https://. Попробуйте еще раз"
+                "❌ Ссылка должна начинаться с http:// или https://. Попробуйте еще раз", reply_markup=keyboards.create_admin_cancel_keyboard()
             )
             return
         await state.update_data(button_url=url_to_check)
@@ -4097,7 +4115,7 @@ def get_admin_router() -> Router:
                 await message.delete()
             except Exception:
                 pass
-            await message.answer("❌ Введите число от 1 до 100 (процент скидки)")
+            await message.answer("❌ Введите число от 1 до 100 (процент скидки)", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         await state.update_data(promo_discount=discount)
         try:
@@ -4221,7 +4239,7 @@ def get_admin_router() -> Router:
         await state.clear()
 
         if broadcast_id is None:
-            await message.answer("❌ Не удалось сохранить отложенную рассылку. Попробуйте ещё раз")
+            await message.answer("❌ Не удалось сохранить отложенную рассылку. Попробуйте ещё раз", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         await message.answer(
@@ -4274,15 +4292,15 @@ def get_admin_router() -> Router:
             await message.answer(
                 "❌ Не получилось разобрать дату. Формат: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>, "
                 "например <code>05.11.2026 09:30</code>",
-                parse_mode="HTML",
+                parse_mode="HTML", reply_markup=keyboards.create_admin_cancel_keyboard(),
             )
             return
 
         if scheduled_at <= datetime.now():
-            await message.answer("❌ Это время уже в прошлом. Введите дату и время в будущем")
+            await message.answer("❌ Это время уже в прошлом. Введите дату и время в будущем", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
         if scheduled_at > datetime.now() + timedelta(days=90):
-            await message.answer("❌ Слишком далеко вперёд — максимум 90 дней")
+            await message.answer("❌ Слишком далеко вперёд — максимум 90 дней", reply_markup=keyboards.create_admin_cancel_keyboard())
             return
 
         await _save_scheduled_broadcast(message, state, scheduled_at)
@@ -4292,7 +4310,7 @@ def get_admin_router() -> Router:
         await callback.answer()
         items = await asyncio.to_thread(get_pending_scheduled_broadcasts)
         if not items:
-            await callback.message.answer("📭 Нет запланированных рассылок")
+            await callback.message.answer("📭 Нет запланированных рассылок", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         display_items = []
@@ -4362,17 +4380,17 @@ def get_admin_router() -> Router:
             user = await asyncio.to_thread(get_user, user_id)
             balance = user.get("referral_balance", 0)
             if balance < 100:
-                await message.answer("🫰 Баланс пользователя менее 100 ₽")
+                await message.answer("🫰 Баланс пользователя менее 100 ₽", reply_markup=keyboards.create_admin_back_keyboard())
                 return
             set_referral_balance(user_id, 0)
             set_referral_balance_all(user_id, 0)
-            await message.answer(f"✅ Выплата {balance:.2f} ₽ пользователю {user_id} подтверждена")
+            await message.answer(f"✅ Выплата {balance:.2f} ₽ пользователю {user_id} подтверждена", reply_markup=keyboards.create_admin_back_keyboard())
             await message.bot.send_message(
                 user_id,
                 f"✅ Ваша заявка на вывод {balance:.2f} ₽ одобрена. Деньги будут переведены в ближайшее время",
             )
         except Exception as e:
-            await message.answer(f"Ошибка: {e}")
+            await message.answer(f"Ошибка: {e}", reply_markup=keyboards.create_admin_back_keyboard())
 
     @admin_router.message(Command(commands=["decline_withdraw"]))
     async def decline_withdraw_handler(message: types.Message):
@@ -4380,13 +4398,13 @@ def get_admin_router() -> Router:
             return
         try:
             user_id = int(message.text.split("_")[-1])
-            await message.answer(f"❌ Заявка пользователя {user_id} отклонена")
+            await message.answer(f"❌ Заявка пользователя {user_id} отклонена", reply_markup=keyboards.create_admin_back_keyboard())
             await message.bot.send_message(
                 user_id,
                 "❌ Ваша заявка на вывод отклонена. Проверьте корректность реквизитов и попробуйте снова",
             )
         except Exception as e:
-            await message.answer(f"Ошибка: {e}")
+            await message.answer(f"Ошибка: {e}", reply_markup=keyboards.create_admin_back_keyboard())
 
     @admin_router.callback_query(F.data == "admin_realtime_online")
     async def admin_realtime_online_handler(callback: types.CallbackQuery, state: FSMContext):
@@ -4404,7 +4422,7 @@ def get_admin_router() -> Router:
         # -------------------------------------------------------------------------
         all_hosts = await asyncio.to_thread(database.get_all_hosts)
         if not all_hosts:
-            return await delete_and_send(callback.message, "❌ Хосты не найдены")
+            return await delete_and_send(callback.message, "❌ Хосты не найдены", reply_markup=keyboards.create_admin_back_keyboard())
 
         # -------------------------------------------------------------------------
         # 3. Параллельный опрос всех панелей через asyncio.gather
@@ -4469,7 +4487,7 @@ def get_admin_router() -> Router:
         # -------------------------------------------------------------------------
         all_hosts = await asyncio.to_thread(database.get_all_hosts)
         if not all_hosts:
-            return await delete_and_send(callback.message, "❌ Хосты не найдены")
+            return await delete_and_send(callback.message, "❌ Хосты не найдены", reply_markup=keyboards.create_admin_back_keyboard())
 
         all_clients_data = []
 
@@ -4761,6 +4779,20 @@ def get_admin_router() -> Router:
         )
 
     @admin_router.callback_query(F.data == "admin_bot_restart")
+    async def admin_bot_restart_prompt(callback: types.CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        await safe_edit_text(
+            callback,
+            "🔄 <b>Перезапустить контейнер бота?</b>\n\n"
+            "Бот будет недоступен несколько секунд",
+            reply_markup=keyboards.create_admin_restart_confirm_keyboard(),
+            parse_mode="HTML",
+        )
+
+    @admin_router.callback_query(F.data == "admin_bot_restart_confirm")
     async def admin_execute_bot_restart_direct(callback: types.CallbackQuery):
         # -------------------------------------------------------------------------
         # 1. Проверка прав доступа администратора
@@ -4781,8 +4813,7 @@ def get_admin_router() -> Router:
         # Редактируем текст сообщения заранее, чтобы успеть завершить сетевой запрос к Telegram
         await safe_edit_text(callback, 
             text=(
-                "🚀 <b>Контейнер отправлен на перезагрузку!</b>\n\n"
-                "Команда передана Docker-демону. Бот отключается.\n"
+                "🚀 <b>Контейнер отправлен на перезагрузку</b>\n\n"
                 "Подождите около 5 секунд, пока он поднимется заново, "
                 "после чего вы сможете нажать кнопку ниже для возврата в меню"
             ),
