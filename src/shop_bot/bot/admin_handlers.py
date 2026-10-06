@@ -68,6 +68,8 @@ from shop_bot.data_manager.database import (  # Promo API
     keys_in_transition,
     list_promo_codes,
     log_transaction,
+    set_referral_balance,
+    set_referral_balance_all,
     unban_user,
     update_key_email,
     update_key_host_and_info,
@@ -311,7 +313,7 @@ def get_admin_router() -> Router:
             local["is_local"] = True
             hosts = []
             try:
-                db_hosts = db_hosts = await asyncio.to_thread(database.get_all_hosts) or []
+                db_hosts = await asyncio.to_thread(database.get_all_hosts) or []
                 for db_h in db_hosts:
                     if isinstance(db_h, dict):
                         name = db_h.get("host_name")
