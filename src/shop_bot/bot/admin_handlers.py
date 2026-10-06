@@ -93,6 +93,18 @@ logger = logging.getLogger(__name__)
 
 REDIR_URL = os.getenv("REDIR_URL")
 
+
+def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Целое из переменной окружения; при пустом/неверном значении — default, результат зажимается в [minimum, maximum]."""
+    raw = (os.getenv(name) or "").strip()
+    try:
+        value = int(raw) if raw else default
+    except ValueError:
+        logging.getLogger(__name__).warning(f"{name}={raw!r} не число — использую {default}")
+        value = default
+    return max(minimum, min(maximum, value))
+
+
 last_refresh_time = 0
 
 
@@ -4453,8 +4465,63 @@ def get_admin_router() -> Router:
 
         await safe_edit_text(callback, text=text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
+    # --- Отчёт «Потребление WL»: постраничный вывод ----------------------------
+    # Верхняя граница размера страницы — чтобы текст гарантированно влезал в 4096 символов
+    WL_REPORT_PAGE_SIZE = _env_int("WL_REPORT_PAGE_SIZE", 5, 1, 10)  # клиентов на странице
+    WL_REPORT_MAX_ITEMS = _env_int("WL_REPORT_MAX_ITEMS", 30, 1, 500)  # сколько самых «тяжёлых» клиентов показывать всего
+    WL_REPORT_CACHE_TTL_SECONDS = _env_int("WL_REPORT_CACHE_TTL_SECONDS", 30 * 60, 0, 24 * 3600)  # сколько секунд листаем без пересбора
+    _wl_report_cache: dict[int, dict] = {}
+
+    def _build_wl_report_page(cached: dict, page: int) -> tuple[str, InlineKeyboardBuilder]:
+        items = cached["items"]
+        total = len(items)
+        total_pages = max(1, (total + WL_REPORT_PAGE_SIZE - 1) // WL_REPORT_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        chunk = items[page * WL_REPORT_PAGE_SIZE : (page + 1) * WL_REPORT_PAGE_SIZE]
+
+        if not items:
+            text = (
+                f"ℹ️ <b>Нет данных о WL трафике</b>\n\n"
+                f"📅 <b>Обновлено:</b> {cached['updated']}"
+            )
+        else:
+            text = (
+                f"🏳️ <b>Потребление трафика на WL-серверах</b> ▪️ стр. {page + 1}/{total_pages}\n\n"
+            )
+            for n, item in enumerate(chunk, start=page * WL_REPORT_PAGE_SIZE + 1):
+                text += (
+                    f"<b>{n}. {html_escape.escape(str(item['host_name']))}</b>\n"
+                    f"👤 <b>Клиент:</b> {html_escape.escape(str(item['combined_emails']))}\n"
+                    f"🆔 <b>UUID:</b> {item['c_uuid']}\n"
+                    f"📈 <b>Расход:</b> {item['delta_mb']:.2f} МБ\n"
+                    f"🚀 <b>Скорость:</b> {item['mbps']:.1f} Мбит/с\n\n"
+                )
+            text += f"🕒 <b>Интервал:</b> {cached['interval_min']} мин.\n"
+            text += f"📅 <b>Обновлено:</b> {cached['updated']}"
+            if len(text) > 4096:  # страховка от «message is too long»
+                text = text[:4093] + "…"
+
+        kb = InlineKeyboardBuilder()
+        rows = []
+        nav = []
+        if page > 0:
+            nav.append(("⬅️ Назад", f"admin_wl_traffic_page_{page - 1}"))
+        if page < total_pages - 1:
+            nav.append(("Вперёд ➡️", f"admin_wl_traffic_page_{page + 1}"))
+        for label, cb in nav:
+            kb.button(text=label, callback_data=cb)
+        if nav:
+            rows.append(len(nav))
+        kb.button(text="🔄 Обновить", callback_data="admin_wl_traffic_report")
+        kb.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+        rows.extend([1, 1])
+        kb.adjust(*rows)
+        return text, kb
+
     @admin_router.callback_query(F.data == "admin_wl_traffic_report")
-    async def admin_wl_traffic_report_handler(callback: types.CallbackQuery, state: FSMContext):
+    async def admin_wl_traffic_report_handler(
+        callback: types.CallbackQuery, state: FSMContext, skip_answer: bool = False
+    ):
         """
         Мониторинг потребления трафика на WL-серверах (Топ-10) и уведомление админа.
 
@@ -4475,10 +4542,12 @@ def get_admin_router() -> Router:
         if not is_admin(callback.from_user.id):
             await callback.answer("🚫 У вас нет прав", show_alert=True)
             return
-        await callback.answer("⏳ Анализирую WL трафик...")
+        if not skip_answer:
+            await callback.answer("⏳ Анализирую WL трафик...")
 
         from shop_bot.data_manager.scheduler import (
             CHECK_INTERVAL_SECONDS,
+            format_emails_short,
             traffic_snapshots,
         )
 
@@ -4569,11 +4638,11 @@ def get_admin_router() -> Router:
                             delta_mb = delta_bytes / (1024 * 1024)
                             mbps = (delta_mb * 8) / CHECK_INTERVAL_SECONDS
 
-                            # Отображаем только реально активные email, если они найдены
-                            display_emails = (
-                                ", ".join(data["active_emails"])
-                                if data["active_emails"]
-                                else ", ".join(data["emails"])
+                            # Отображаем только реально активные email, если они найдены.
+                            # Несколько имён у одного UUID сворачиваем в «первое и ещё N»,
+                            # иначе сообщение упирается в лимит Telegram.
+                            display_emails = format_emails_short(
+                                data["active_emails"] or data["emails"]
                             )
 
                             all_clients_data.append(
@@ -4589,43 +4658,39 @@ def get_admin_router() -> Router:
             except Exception as e:
                 logger.error(f"TrafficReport: Ошибка сбора данных на {host_name}: {e}")
 
-        # -------------------------------------------------------------------------
-        # 5. Сборка клавиатуры и обновление интерфейса
-        # -------------------------------------------------------------------------
-        kb = InlineKeyboardBuilder()
-        kb.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="admin_wl_traffic_report"))
-        kb.row(InlineKeyboardButton(text="⬅️ В админ-меню", callback_data="admin_menu"))
+        # Сортируем по расходу и сохраняем в кэш: листание страниц не должно
+        # заново опрашивать все панели.
+        ranked = sorted(all_clients_data, key=lambda x: x["delta_mb"], reverse=True)[
+            :WL_REPORT_MAX_ITEMS
+        ]
+        _wl_report_cache[callback.from_user.id] = {
+            "items": ranked,
+            "ts": time.time(),
+            "updated": datetime.now().strftime("%H:%M:%S"),
+            "interval_min": CHECK_INTERVAL_SECONDS // 60,
+        }
 
-        # -------------------------------------------------------------------------
-        # 4. Формирование итогового сообщения
-        # -------------------------------------------------------------------------
-        if not all_clients_data:
-            text = (
-                f"ℹ️ <b>Нет данных о WL трафике</b>\n\n"
-                f"📅 <b>Обновлено:</b> {datetime.now().strftime('%H:%M:%S')}"
-            )
-            await safe_edit_text(callback, 
-                text=text, reply_markup=kb.as_markup(), parse_mode="HTML"
-            )
+        text, kb = _build_wl_report_page(_wl_report_cache[callback.from_user.id], page=0)
+        await safe_edit_text(callback, text=text, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+    @admin_router.callback_query(F.data.startswith("admin_wl_traffic_page_"))
+    async def admin_wl_traffic_page_nav(callback: types.CallbackQuery, state: FSMContext):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
             return
+        try:
+            page = int(callback.data.rsplit("_", 1)[-1])
+        except ValueError:
+            page = 0
 
-        # Сортируем и берем Топ-10
-        top_10 = sorted(all_clients_data, key=lambda x: x["delta_mb"], reverse=True)[:10]
+        cached = _wl_report_cache.get(callback.from_user.id)
+        if not cached or time.time() - cached["ts"] > WL_REPORT_CACHE_TTL_SECONDS:
+            # Кэш устарел или бот перезапускался — пересобираем отчёт заново
+            await callback.answer("⏳ Данные устарели, обновляю...")
+            return await admin_wl_traffic_report_handler(callback, state, skip_answer=True)
 
-        text = "🏳️ <b>Потребление трафика на WL-серверах</b>\n\n"
-
-        for item in top_10:
-            text += (
-                f"🗺️ <b>{item['host_name']}</b>\n"
-                f"👤 <b>Клиент:</b> {item['combined_emails']}\n"
-                f"🆔 <b>UUID:</b> {item['c_uuid']}\n"
-                f"📈 <b>Расход:</b> {item['delta_mb']:.2f} МБ\n"
-                f"🚀 <b>Скорость:</b> {item['mbps']:.1f} Мбит/с\n\n"
-            )
-
-        text += f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин.\n\n"
-        text += f"📅 <b>Обновлено:</b> {datetime.now().strftime('%H:%M:%S')}"
-
+        await callback.answer()
+        text, kb = _build_wl_report_page(cached, page=page)
         await safe_edit_text(callback, text=text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
     @admin_router.callback_query(F.data == "admin_get_docker_logs")
