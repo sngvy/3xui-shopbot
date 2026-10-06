@@ -11,6 +11,10 @@ from typing import Any, Dict, List, Tuple
 import paramiko
 
 from shop_bot.data_manager import database
+from shop_bot.env_utils import env_int
+
+# Таймаут SSH-подключения и команд на хостах (метрики, speedtest).
+SSH_TIMEOUT_SECONDS = env_int("SSH_TIMEOUT_SECONDS", 30, 5, 600)
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +156,7 @@ def get_local_metrics() -> Dict[str, Any]:
 
 
 # -------- Remote host metrics (via SSH) --------
-def _ssh_connect(host_row: dict, timeout: int = 30) -> paramiko.SSHClient:
+def _ssh_connect(host_row: dict, timeout: int = SSH_TIMEOUT_SECONDS) -> paramiko.SSHClient:
     ssh_host = (host_row.get("ssh_host") or "").strip()
     ssh_port = int(host_row.get("ssh_port") or 22)
     ssh_user = (host_row.get("ssh_user") or "").strip()
@@ -187,7 +191,7 @@ def _ssh_connect(host_row: dict, timeout: int = 30) -> paramiko.SSHClient:
     return ssh
 
 
-def _ssh_exec(ssh: paramiko.SSHClient, cmd: str, timeout: int = 30) -> Tuple[int, str, str]:
+def _ssh_exec(ssh: paramiko.SSHClient, cmd: str, timeout: int = SSH_TIMEOUT_SECONDS) -> Tuple[int, str, str]:
     # -------------------------------------------------------------------------
     # 1. Запускаем команду с таймаутом на сокет
     # -------------------------------------------------------------------------
@@ -239,7 +243,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
     # 1. Попытка установить SSH-соединение с хостом
     # -------------------------------------------------------------------------
     try:
-        ssh = _ssh_connect(host_row, timeout=30)
+        ssh = _ssh_connect(host_row, timeout=SSH_TIMEOUT_SECONDS)
     except Exception as e:
         res["error"] = f"SSH connect failed: {e}"
         return res
@@ -249,7 +253,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
         # 2. Сбор информации о количестве ядер процессора (CPU count)
         # -------------------------------------------------------------------------
         cpu_count = None
-        rc, out, _ = _ssh_exec(ssh, "nproc", timeout=30)
+        rc, out, _ = _ssh_exec(ssh, "nproc", timeout=SSH_TIMEOUT_SECONDS)
         if rc == 0 and out and out.strip():
             try:
                 cpu_count = int(out.strip().splitlines()[0])
@@ -257,7 +261,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
                 pass
 
         if cpu_count is None:
-            rc, out, _ = _ssh_exec(ssh, "getconf _NPROCESSORS_ONLN", timeout=30)
+            rc, out, _ = _ssh_exec(ssh, "getconf _NPROCESSORS_ONLN", timeout=SSH_TIMEOUT_SECONDS)
             if rc == 0 and out and out.strip():
                 try:
                     cpu_count = int(out.strip().splitlines()[0])
@@ -272,7 +276,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
 
         # 3.1. Собираем loadavg (метрика полезна для оценки общей очереди задач)
         la = None
-        rc, out, _ = _ssh_exec(ssh, "cat /proc/loadavg", timeout=30)
+        rc, out, _ = _ssh_exec(ssh, "cat /proc/loadavg", timeout=SSH_TIMEOUT_SECONDS)
         if rc == 0 and out and out.strip():
             try:
                 parts = out.strip().split()
@@ -285,7 +289,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
                 la = None
 
         if la is None:
-            rc, out, _ = _ssh_exec(ssh, "uptime", timeout=30)
+            rc, out, _ = _ssh_exec(ssh, "uptime", timeout=SSH_TIMEOUT_SECONDS)
             if rc == 0 and out and out.strip() and "load average:" in out.lower():
                 try:
                     avg_part = out.lower().split("load average:")[1].strip()
@@ -303,7 +307,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
         cpu_pct = None
 
         # Запрашиваем vmstat (интервал 1 секунда, 2 замера) и забираем последнюю строку
-        rc_vm, out_vm, _ = _ssh_exec(ssh, "vmstat 1 2 | tail -n 1", timeout=30)
+        rc_vm, out_vm, _ = _ssh_exec(ssh, "vmstat 1 2 | tail -n 1", timeout=SSH_TIMEOUT_SECONDS)
         if rc_vm == 0 and out_vm and out_vm.strip():
             try:
                 parts_vm = out_vm.strip().split()
@@ -336,7 +340,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
         # -------------------------------------------------------------------------
         # 4. Сбор метрик оперативной памяти (meminfo)
         # -------------------------------------------------------------------------
-        rc, out, _ = _ssh_exec(ssh, "cat /proc/meminfo", timeout=30)
+        rc, out, _ = _ssh_exec(ssh, "cat /proc/meminfo", timeout=SSH_TIMEOUT_SECONDS)
         total_kb = None
         avail_kb = None
         if rc == 0 and out and out.strip():
@@ -361,7 +365,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
         # -------------------------------------------------------------------------
         # 5. Сбор метрик использования дискового пространства корня (/)
         # -------------------------------------------------------------------------
-        rc, out, _ = _ssh_exec(ssh, "LC_ALL=C df -P -B1 / | tail -n 1", timeout=30)
+        rc, out, _ = _ssh_exec(ssh, "LC_ALL=C df -P -B1 / | tail -n 1", timeout=SSH_TIMEOUT_SECONDS)
         try:
             parts = out.strip().split()
             if len(parts) >= 5:
@@ -379,7 +383,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
         # 6. Получение времени аптайма сервера (uptime seconds)
         # -------------------------------------------------------------------------
         up = None
-        rc, out, _ = _ssh_exec(ssh, "cat /proc/uptime", timeout=30)
+        rc, out, _ = _ssh_exec(ssh, "cat /proc/uptime", timeout=SSH_TIMEOUT_SECONDS)
         if rc == 0 and out and out.strip():
             try:
                 up = float(out.strip().split()[0])
@@ -387,7 +391,7 @@ def get_host_metrics_via_ssh(host_row: dict) -> Dict[str, Any]:
                 up = None
 
         if up is None:
-            rc, out, _ = _ssh_exec(ssh, "uptime -s", timeout=30)
+            rc, out, _ = _ssh_exec(ssh, "uptime -s", timeout=SSH_TIMEOUT_SECONDS)
             if rc == 0 and out and out.strip():
                 try:
                     boot_dt = datetime.fromisoformat(out.strip())
