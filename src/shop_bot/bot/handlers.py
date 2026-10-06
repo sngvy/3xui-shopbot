@@ -706,7 +706,7 @@ def get_user_router() -> Router:
                                 "✅ <b>Подарок активирован!</b>\n\n"
                                 f"🗺️ <b>Сервер:</b> {gift_host_name}\n"
                                 f"📅 <b>Срок:</b> {gift_months} мес.\n\n"
-                                "Откройте «🔑 Мои подписки», чтобы получить ссылку для подключения.",
+                                "Откройте «🔑 Мои подписки», чтобы получить ссылку для подключения",
                                 parse_mode="HTML",
                             )
                             # Уведомляем дарителя, что подарок забрали
@@ -714,7 +714,7 @@ def get_user_router() -> Router:
                                 await bot.send_message(
                                     int(gift["created_by"]),
                                     "🎁 <b>Ваш подарок активирован!</b>\n\n"
-                                    f"Получатель уже пользуется подпиской на сервере {gift_host_name}.",
+                                    f"Получатель уже пользуется подпиской на сервере {gift_host_name}",
                                     parse_mode="HTML",
                                 )
                             except Exception:
@@ -3771,7 +3771,7 @@ def get_user_router() -> Router:
         await safe_edit_text(callback, 
             "🎁 <b>Выберите сервер для подарочной подписки:</b>\n\n"
             "Получатель сам выберет момент активации по ссылке — сервер и тариф "
-            "фиксируются сейчас, их нельзя будет сменить после активации.",
+            "фиксируются сейчас, их нельзя будет сменить после активации",
             reply_markup=keyboards.create_host_selection_keyboard(hosts, action="gift"),
             parse_mode="HTML",
         )
@@ -5354,7 +5354,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                 chat_id=user_id,
                 text=(
                     "⚠️ <b>Оплата получена, но не удалось создать подарочный код</b>\n\n"
-                    "Обратитесь в поддержку."
+                    "Обратитесь в поддержку"
                 ),
                 reply_markup=keyboards.create_support_keyboard(),
                 parse_mode="HTML",
@@ -5405,8 +5405,8 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                 if admin_id:
                     await bot.send_message(
                         admin_id,
-                        f"🎁 Подарок: пользователь {user_id} купил подписку в подарок "
-                        f"({host_name}, {months} мес., {float(price):.2f} ₽), код {gift_code}",
+                        f"🎁 Подарок: пользователь {user_id}, сервер {host_name}, "
+                        f"{months} мес., сумма {float(price):.2f} ₽, код {gift_code}",
                     )
         except Exception:
             pass
