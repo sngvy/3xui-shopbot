@@ -4324,7 +4324,7 @@ def get_admin_router() -> Router:
         await callback.answer()
         items = await asyncio.to_thread(get_pending_scheduled_broadcasts)
         if not items:
-            await callback.message.answer("📭 Нет запланированных рассылок", reply_markup=keyboards.create_admin_back_keyboard())
+            await safe_edit_text(callback, "📭 Нет запланированных рассылок", reply_markup=keyboards.create_admin_back_keyboard())
             return
 
         display_items = []
@@ -4337,7 +4337,8 @@ def get_admin_router() -> Router:
                 f"№{item['id']} — {display_time} — {item['segment_label']}{promo_note}"
             )
 
-        await callback.message.answer(
+        await safe_edit_text(
+            callback,
             "\n".join(lines),
             reply_markup=keyboards.create_scheduled_broadcast_list_keyboard(display_items),
             parse_mode="HTML",
@@ -4360,7 +4361,7 @@ def get_admin_router() -> Router:
         # Обновляем список на месте
         items = await asyncio.to_thread(get_pending_scheduled_broadcasts)
         if not items:
-            await safe_edit_text(callback, "📭 Нет запланированных рассылок", reply_markup=None)
+            await safe_edit_text(callback, "📭 Нет запланированных рассылок", reply_markup=keyboards.create_admin_back_keyboard())
             return
         display_items = []
         lines = ["📅 <b>Запланированные рассылки:</b>\n"]
