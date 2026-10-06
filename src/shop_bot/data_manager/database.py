@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+import secrets
 import sqlite3
 import threading
 import unicodedata
@@ -249,6 +250,20 @@ def initialize_db():
                     promo_discount_amount REAL,
                     chat_id INTEGER,
                     message_id INTEGER
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS gift_subscriptions (
+                    gift_code TEXT PRIMARY KEY,
+                    created_by INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    plan_id INTEGER,
+                    months INTEGER NOT NULL,
+                    host_name TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by INTEGER,
+                    claimed_at TIMESTAMP
                 )
             """)
             cursor.execute("""
@@ -3564,6 +3579,84 @@ def clear_pending_purchase(user_id: int):
             conn.commit()
     except sqlite3.Error as e:
         logging.error(f"Не удалось удалить незавершённую покупку для {user_id}: {e}")
+
+
+def create_gift_subscription(
+    created_by: int, plan_id: int | None, months: int, host_name: str, price: float
+) -> str | None:
+    """Создаёт подарочную подписку — сервер/тариф уже выбраны дарителем при
+    покупке (host_name/months/plan_id фиксированы), получатель только
+    активирует код по ссылке. Возвращает код (для ссылки вида
+    t.me/bot?start=gift_<код>) или None при ошибке."""
+    gift_code = secrets.token_urlsafe(12).rstrip("=").replace("-", "").replace("_", "")[:16]
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO gift_subscriptions
+                    (gift_code, created_by, plan_id, months, host_name, price)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (gift_code, created_by, plan_id, months, host_name, price),
+            )
+            conn.commit()
+            return gift_code
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось создать подарочную подписку для {created_by}: {e}")
+        return None
+
+
+def get_gift_subscription(gift_code: str) -> dict | None:
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM gift_subscriptions WHERE gift_code = ?", (gift_code,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить подарочную подписку {gift_code}: {e}")
+        return None
+
+
+def claim_gift_subscription(gift_code: str, claimed_by: int) -> bool:
+    """Атомарно активирует подарок: True, если именно этот вызов его забрал
+    (status был 'pending'); False — код не найден или уже активирован кем-то
+    раньше. Та же защита от повторной активации двумя параллельными
+    запросами, что и у claim_payment для вебхуков."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE gift_subscriptions
+                SET status = 'claimed', claimed_by = ?, claimed_at = datetime('now','localtime')
+                WHERE gift_code = ? AND status = 'pending'
+                """,
+                (claimed_by, gift_code),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось активировать подарок {gift_code}: {e}")
+        return False
+
+
+def get_gifts_created_by(user_id: int) -> list[dict]:
+    """Подарки, отправленные этим пользователем — для экрана 'Мои подарки'."""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM gift_subscriptions WHERE created_by = ? ORDER BY created_at DESC",
+                (user_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить список подарков пользователя {user_id}: {e}")
+        return []
 
 
 def get_users_paginated(
