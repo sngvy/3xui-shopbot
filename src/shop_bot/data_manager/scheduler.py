@@ -2527,6 +2527,9 @@ async def periodic_subscription_check(bot_controller: BotController):
                 # Ежедневный автобэкап БД с отправкой админам
                 await _maybe_run_daily_backup(bot)
 
+            # Плановое обслуживание БД (REINDEX + VACUUM)
+            await _maybe_run_db_maintenance()
+
         except Exception as e:
             logger.error(f"Scheduler: Необработанная ошибка в основном цикле: {e}", exc_info=True)
 
@@ -2674,6 +2677,72 @@ async def _maybe_run_daily_backup(bot: Bot):
             f"Scheduler: Критическая ошибка при создании и отправке бэкапа: {e}",
             exc_info=True,
         )
+
+
+DB_MAINTENANCE_LAST_RUN_SETTING = "db_maintenance_last_run_at"
+_db_maintenance_last_attempt_day: str | None = None
+
+
+async def _maybe_run_db_maintenance():
+    """REINDEX + VACUUM базы раз в DB_MAINTENANCE_INTERVAL_DAYS дней (по умолчанию 1 — ежедневно,
+    0 — выключено), только в окне DB_MAINTENANCE_HOUR...+2 ч (по умолчанию с 04:00).
+    Время последнего запуска хранится в bot_settings и переживает рестарт."""
+    try:
+        days = int(os.getenv("DB_MAINTENANCE_INTERVAL_DAYS", "1").strip() or "1")
+    except ValueError:
+        days = 1
+    if days <= 0:
+        return
+    try:
+        start_hour = int(os.getenv("DB_MAINTENANCE_HOUR", "4").strip() or "4")
+    except ValueError:
+        start_hour = 4
+
+    now = datetime.now()
+    if not (start_hour <= now.hour < start_hour + 2):
+        return
+
+    try:
+        stored = await asyncio.to_thread(database.get_setting, DB_MAINTENANCE_LAST_RUN_SETTING)
+        last = datetime.fromisoformat(stored) if stored else None
+    except Exception:
+        last = None
+    if last and (now - last).total_seconds() < days * 24 * 3600 - 3600:
+        return
+
+    # Не чаще одной попытки в сутки (иначе она повторялась бы каждый цикл планировщика)
+    global _db_maintenance_last_attempt_day
+    today = now.strftime("%Y-%m-%d")
+    if _db_maintenance_last_attempt_day == today:
+        return
+    _db_maintenance_last_attempt_day = today
+
+    logger.info("Scheduler: Запускаю обслуживание БД (REINDEX + VACUUM)...")
+    try:
+        # Страховка: перед VACUUM нужен свежий бэкап. Если ежедневный автобэкап
+        # уже был в последние сутки — не дублируем, иначе делаем локальный
+        # (без отправки админам)
+        try:
+            last_backup = await asyncio.to_thread(database.get_latest_backup_created_at)
+            if not last_backup or (now - last_backup).total_seconds() > 24 * 3600:
+                await asyncio.to_thread(backup_manager.create_backup_file)
+        except Exception as e:
+            logger.warning(f"Scheduler: Не удалось сделать бэкап перед обслуживанием БД: {e}")
+        res = await asyncio.to_thread(database.run_db_maintenance)
+        await asyncio.to_thread(
+            database.update_setting, DB_MAINTENANCE_LAST_RUN_SETTING, now.isoformat()
+        )
+        logger.info(
+            "Scheduler: Обслуживание БД завершено за %s с: %.1f МБ -> %.1f МБ",
+            res.get("total_s"),
+            res.get("size_before", 0) / 1048576,
+            res.get("size_after", 0) / 1048576,
+        )
+    except database.DatabaseCorruptedError as e:
+        logger.critical(f"Scheduler: Обслуживание БД отменено — база повреждена: {e}")
+    except Exception as e:
+        # Время запуска не записываем: попробуем снова на следующий день
+        logger.error(f"Scheduler: Ошибка обслуживания БД: {e}", exc_info=True)
 
 
 async def _maybe_collect_host_metrics():
