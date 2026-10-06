@@ -261,7 +261,7 @@ def create_more_menu_keyboard() -> InlineKeyboardMarkup:
     layout: list[int] = []
 
     builder.button(
-        text=(get_setting("btn_referral") or "🤝 Реферальная программа"),
+        text=(get_setting("btn_referral") or "🤝 Рефералка"),
         callback_data="show_referral_program",
     )
     builder.button(
@@ -307,7 +307,7 @@ def create_admin_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="👥 Пользователи", callback_data="admin_grp_users")
     builder.button(text="📊 Мониторинг", callback_data="admin_grp_monitor")
-    builder.button(text="💰 Финансы и маркетинг", callback_data="admin_grp_finance")
+    builder.button(text="💰 Маркетинг", callback_data="admin_grp_finance")
     builder.button(text="🛠 Система", callback_data="admin_grp_system")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
     builder.adjust(2, 2, 1)
@@ -319,8 +319,8 @@ ADMIN_GROUPS: dict[str, tuple[str, list[tuple[str, str]]]] = {
         "👥 <b>Пользователи и подписки</b>",
         [
             ("👥 Пользователи", "admin_users"),
-            ("🌍 Подписки на хосте", "admin_host_keys"),
-            ("🔎 Поиск пользователей", "admin_search_user"),
+            ("🌍 Подписки", "admin_host_keys"),
+            ("🔎 Поиск", "admin_search_user"),
             ("🪄 Выдать подписку", "admin_gift_key"),
         ],
     ),
@@ -449,12 +449,12 @@ def create_admin_user_actions_keyboard(
     builder.button(text="➕ Начислить баланс", callback_data=f"admin_add_balance_{user_id}")
     builder.button(text="➖ Списать баланс", callback_data=f"admin_deduct_balance_{user_id}")
     builder.button(text="🪄 Выдать подписку", callback_data=f"admin_gift_key_{user_id}")
-    builder.button(text="🤝 Рефералы пользователя", callback_data=f"admin_user_referrals_{user_id}")
+    builder.button(text="🤝 Рефералы", callback_data=f"admin_user_referrals_{user_id}")
     if is_banned:
         builder.button(text="✅ Разбанить", callback_data=f"admin_unban_user_{user_id}")
     else:
         builder.button(text="🚫 Забанить", callback_data=f"admin_ban_user_{user_id}")
-    builder.button(text="🔑 Подписки пользователя", callback_data=f"admin_user_keys_{user_id}")
+    builder.button(text="🔑 Подписки", callback_data=f"admin_user_keys_{user_id}")
     builder.button(text="📜 История операций", callback_data=f"admin_tx_history_{user_id}_0")
     builder.button(text="⬅️ К списку", callback_data="admin_users")
     builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
@@ -589,7 +589,7 @@ def create_broadcast_segment_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="💤 Платили раньше", callback_data="broadcast_segment_paid_no_active")
     builder.button(text="🛒 Ни разу не покупали", callback_data="broadcast_segment_never_purchased")
     builder.button(text="⏳ День до продления", callback_data="broadcast_segment_expiring_1_day")
-    builder.button(text="📅 Запланированные рассылки", callback_data="view_scheduled_broadcasts")
+    builder.button(text="📅 Запланированные", callback_data="view_scheduled_broadcasts")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
     builder.adjust(1)
     return builder.as_markup()
