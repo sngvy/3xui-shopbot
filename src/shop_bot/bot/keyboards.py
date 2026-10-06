@@ -206,51 +206,34 @@ def _build_keyboard_from_db(
 def create_main_menu_keyboard(
     user_keys: list, trial_available: bool, is_admin: bool
 ) -> InlineKeyboardMarkup:
-    # Prepare filters and replacements for main menu
-    """Строит клавиатуру главного меню (из настроек БД либо по резервной жёсткой логике)."""
-
-    def _filter(cfg: dict) -> bool:
-        button_id = (cfg.get("button_id") or "").strip()
-        # Filter trial button
-        if button_id == "btn_try":
-            if not trial_available or get_setting("trial_enabled") != "true":
-                return False
-        # Filter admin button
-        if button_id == "btn_admin" and not is_admin:
-            return False
-        return True
-
-    # Fallback to original implementation if DB config not available
+    """Главное меню: только основное, всё остальное — в подменю «➡️ Ещё»."""
     builder = InlineKeyboardBuilder()
+    layout: list[int] = []
 
-    # Fallback to original hardcoded logic
-    logger.info("Используется резервная (жёстко заданная) логика кнопок")
     if trial_available and get_setting("trial_enabled") == "true":
         builder.button(
             text=(get_setting("btn_try") or "🎁 Попробовать бесплатно"),
             callback_data="get_trial",
             style="success",
         )
+        layout.append(1)
 
+    keys_label_tpl = get_setting("btn_my_keys") or "🔑 Мои подписки ({count})"
     builder.button(
         text=(get_setting("btn_profile") or "👤 Мой профиль"),
         callback_data="show_profile",
         style="primary",
     )
-    keys_label_tpl = get_setting("btn_my_keys") or "🔑 Мои подписки ({count})"
     builder.button(
         text=keys_label_tpl.replace("{count}", str(len(user_keys))),
         callback_data="manage_keys",
         style="success",
     )
+    layout.append(2)
+
     builder.button(
         text=(get_setting("btn_buy_key") or "💳 Купить подписку"),
         callback_data="buy_new_key",
-        style="danger",
-    )
-    builder.button(
-        text=(get_setting("btn_gift_key") or "🎁 Подарить"),
-        callback_data="buy_gift_key",
         style="danger",
     )
     builder.button(
@@ -258,146 +241,145 @@ def create_main_menu_keyboard(
         callback_data="top_up_start",
         style="danger",
     )
+    layout.append(2)
+
+    builder.button(text=(get_setting("btn_support") or "🆘 Поддержка"), callback_data="show_help")
+    builder.button(text="➡️ Ещё", callback_data="show_more_menu")
+    layout.append(2)
+
+    if is_admin:
+        builder.button(text=(get_setting("btn_admin") or "⚙️ Админка"), callback_data="admin_menu")
+        layout.append(1)
+
+    builder.adjust(*layout)
+    return builder.as_markup()
+
+
+def create_more_menu_keyboard() -> InlineKeyboardMarkup:
+    """Подменю «➡️ Ещё»: второстепенные разделы, вынесенные из главного меню."""
+    builder = InlineKeyboardBuilder()
+    layout: list[int] = []
+
     builder.button(
         text=(get_setting("btn_referral") or "🤝 Реферальная программа"),
         callback_data="show_referral_program",
     )
-    builder.button(text=(get_setting("btn_support") or "🆘 Поддержка"), callback_data="show_help")
+    builder.button(
+        text=(get_setting("btn_gift_key") or "🎁 Подарить"),
+        callback_data="buy_gift_key",
+        style="danger",
+    )
+    layout.append(2)
+
     builder.button(text=(get_setting("btn_about") or "ℹ️ О сервисе"), callback_data="show_about")
     builder.button(
         text=(get_setting("btn_howto") or "❓ Как использовать"),
         callback_data="howto_vless",
     )
-    if os.getenv("USE_WEBAPP_SPEEDTEST", "").strip() == "1":
-        # В этом режиме спидтест — не callback с прогоном на сервере, а
-        # отдельная веб-страница (speed.html), открываемая как Telegram
-        # Mini App — тот же паттерн, что и "Открыть Web App" в карточке
-        # подписки (WebAppInfo(url=...), не callback_data).
-        #
-        # WORKER_DOMAIN — домен, где отдаётся сам этот бот/Flask-сервер
-        # (webhook_server/app.py, роуты /speed, /mon, /redir).
-        worker_domain = os.getenv("WORKER_DOMAIN", "").strip()
-        if worker_domain:
-            builder.button(
-                text=(get_setting("btn_speed") or "⚡ Тест скорости"),
-                web_app=WebAppInfo(url=f"https://{worker_domain}/speed"),
-            )
-        else:
-            # Без WORKER_DOMAIN нет валидного https-адреса для Web App —
-            # откатываемся на обычный callback-вариант.
-            logger.warning(
-                "USE_WEBAPP_SPEEDTEST=1, но WORKER_DOMAIN не задан в .env — "
-                "используется обычная кнопка теста скорости вместо Web App."
-            )
-            builder.button(
-                text=(get_setting("btn_speed") or "⚡ Тест скорости"),
-                callback_data="user_speedtest",
-            )
-    else:
-        builder.button(
-            text=(get_setting("btn_speed") or "⚡ Тест скорости"),
-            callback_data="user_speedtest",
-        )
+    layout.append(2)
 
-    # "Статус сервисов" — отдельная страница (mon.html), всегда как Web App.
-    # Без WORKER_DOMAIN нет валидного https-адреса для WebApp вообще, и тут
-    # нет старого callback-варианта, на который можно было бы откатиться,
-    # так что просто не показываем.
-    worker_domain_for_status = os.getenv("WORKER_DOMAIN", "").strip()
-    status_button_shown = bool(worker_domain_for_status)
-    if status_button_shown:
+    worker_domain = os.getenv("WORKER_DOMAIN", "").strip()
+    speed_text = get_setting("btn_speed") or "⚡ Тест скорости"
+    if os.getenv("USE_WEBAPP_SPEEDTEST", "").strip() == "1" and worker_domain:
+        builder.button(text=speed_text, web_app=WebAppInfo(url=f"https://{worker_domain}/speed"))
+    else:
+        builder.button(text=speed_text, callback_data="user_speedtest")
+    n = 1
+    if worker_domain:
         builder.button(
             text=(get_setting("btn_status") or "🟢 Статус сервисов"),
-            web_app=WebAppInfo(url=f"https://{worker_domain_for_status}/mon"),
+            web_app=WebAppInfo(url=f"https://{worker_domain}/mon"),
         )
-    else:
-        logger.warning(
-            "Кнопка 'Статус сервисов' скрыта в главном меню — WORKER_DOMAIN "
-            "не задан в .env, нет валидного https-адреса для Web App."
-        )
+        n = 2
+    layout.append(n)
 
-    if is_admin:
-        builder.button(text=(get_setting("btn_admin") or "⚙️ Админка"), callback_data="admin_menu")
-
-    # Строим сетку динамически, в зависимости от прав и доступности триала
-    layout = []
-
-    # Триал (если включен и доступен юзеру)
-    if trial_available and get_setting("trial_enabled") == "true":
-        layout.append(1)
-
-    # Стандартные блоки кнопок (всегда парами)
-    layout.append(2)  # Профиль + Подписки
-    layout.append(2)  # Купить + Пополнить
-    layout.append(2)  # Рефералка + Поддержка
-    layout.append(2)  # О проекте + Инструкция
-
-    # Тест скорости для юзеров (одиночная широкая кнопка)
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
     layout.append(1)
-
-    # Статус сервисов — тоже одиночная широкая кнопка, но только если она
-    # реально была добавлена выше (иначе счётчик в adjust() сломает сетку)
-    if status_button_shown:
-        layout.append(1)
-
-    # Кнопка админки (только для админов, в самом низу)
-    if is_admin:
-        layout.append(1)
-
-    # Распаковываем получившийся список в метод adjust
     builder.adjust(*layout)
     return builder.as_markup()
 
 
 def create_admin_menu_keyboard() -> InlineKeyboardMarkup:
-    # Try DB-driven keyboard first
-    """Строит клавиатуру главного меню админ-панели."""
-    kb = _build_keyboard_from_db("admin_menu")
-    if kb:
-        return kb
-
-    # Fallback hardcoded
+    """Главное меню админ-панели: 4 группы разделов."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="👥 Пользователи", callback_data="admin_users")
-    builder.button(text="🌍 Подписки на хосте", callback_data="admin_host_keys")
-    builder.button(text="🔎 Поиск пользователей", callback_data="admin_search_user")
-    builder.button(text="🟢 Текущий онлайн", callback_data="admin_realtime_online")
-    builder.button(text="🏳️ Потребление WL", callback_data="admin_wl_traffic_report")
-    builder.button(text="📋 Логи контейнера", callback_data="admin_get_docker_logs")
-    builder.button(text="💸 История кассы", callback_data="admin_view_cashbox")
-    builder.button(text="🪄 Выдать подписку", callback_data="admin_gift_key")
-    builder.button(text="⚡ Тест скорости", callback_data="admin_speedtest")
-    builder.button(text="📊 Мониторинг", callback_data="admin_monitor")
-    builder.button(text="🗄 Бэкап БД", callback_data="admin_backup_db")
-    builder.button(text="♻️ Восстановить БД", callback_data="admin_restore_db")
-    builder.button(text="🔄 Перезапуск", callback_data="admin_bot_restart")
-    builder.button(text="👮 Администраторы", callback_data="admin_admins_menu")
-    builder.button(text="🎟 Промокоды", callback_data="admin_promo_menu")
-    builder.button(text="🏆 Топ рефереров", callback_data="admin_top_referrers")
-    builder.button(text="📢 Рассылка", callback_data="start_broadcast")
-
-    # Кнопку "Назад" добавляем последней
+    builder.button(text="👥 Пользователи", callback_data="admin_grp_users")
+    builder.button(text="📊 Мониторинг", callback_data="admin_grp_monitor")
+    builder.button(text="💰 Финансы и маркетинг", callback_data="admin_grp_finance")
+    builder.button(text="🛠 Система", callback_data="admin_grp_system")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
 
-    # --- Динамическое построение сетки ---
-    # Считаем только основные кнопки (все, кроме "Назад")
-    main_buttons_count = len(list(builder.buttons)) - 1
 
-    layout = []
+ADMIN_GROUPS: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    "users": (
+        "👥 <b>Пользователи и подписки</b>",
+        [
+            ("👥 Пользователи", "admin_users"),
+            ("🌍 Подписки на хосте", "admin_host_keys"),
+            ("🔎 Поиск пользователей", "admin_search_user"),
+            ("🪄 Выдать подписку", "admin_gift_key"),
+        ],
+    ),
+    "monitor": (
+        "📊 <b>Мониторинг</b>",
+        [
+            ("🟢 Текущий онлайн", "admin_realtime_online"),
+            ("🏳️ Потребление WL", "admin_wl_traffic_report"),
+            ("📋 Логи контейнера", "admin_get_docker_logs"),
+            ("⚡ Тест скорости", "admin_speedtest"),
+            ("📊 Мониторинг", "admin_monitor"),
+        ],
+    ),
+    "finance": (
+        "💰 <b>Финансы и маркетинг</b>",
+        [
+            ("💸 История кассы", "admin_view_cashbox"),
+            ("🎟 Промокоды", "admin_promo_menu"),
+            ("🏆 Топ рефереров", "admin_top_referrers"),
+            ("📢 Рассылка", "start_broadcast"),
+        ],
+    ),
+    "system": (
+        "🛠 <b>Система</b>",
+        [
+            ("🗄 Бэкап БД", "admin_backup_db"),
+            ("♻️ Восстановить БД", "admin_restore_db"),
+            ("🔄 Перезапуск", "admin_bot_restart"),
+            ("👮 Администраторы", "admin_admins_menu"),
+        ],
+    ),
+}
 
-    # Все основные кнопки группируем по 2 в ряд
-    for _ in range(main_buttons_count // 2):
-        layout.append(2)
 
-    # Если общее количество админ-кнопок вдруг станет нечетным,
-    # оставшаяся одна кнопка красиво займет целую строку перед "Назад"
-    if main_buttons_count % 2 != 0:
-        layout.append(1)
+def create_admin_group_keyboard(group: str) -> InlineKeyboardMarkup:
+    """Клавиатура подраздела админки (users / monitor / finance / system)."""
+    builder = InlineKeyboardBuilder()
+    items = ADMIN_GROUPS.get(group, ("", []))[1]
+    for text, cb in items:
+        builder.button(text=text, callback_data=cb)
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    builder.adjust(*([2] * (len(items) // 2) + ([1] if len(items) % 2 else []) + [1]))
+    return builder.as_markup()
 
-    # Кнопка "Назад" всегда одна на всю ширину
-    layout.append(1)
 
-    builder.adjust(*layout)
+def create_admin_back_keyboard(target: str = "admin_menu") -> InlineKeyboardMarkup:
+    """Одна кнопка «⬅️ В админ-меню» — для результатов и ошибок админских действий."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ В админ-меню", callback_data=target)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_restart_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Подтверждение перезапуска контейнера."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, перезапустить", callback_data="admin_bot_restart_confirm", style="danger")
+    builder.button(text="❌ Отмена", callback_data="admin_grp_system")
+    builder.adjust(1, 1)
     return builder.as_markup()
 
 
@@ -692,8 +674,8 @@ def create_about_keyboard(
             url=privacy_url,
         )
     builder.button(
-        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
-        callback_data="back_to_main_menu",
+        text="⬅️ Назад",
+        callback_data="show_more_menu",
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -1087,22 +1069,42 @@ def create_admin_promo_confirm_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def create_ton_connect_keyboard(connect_url: str) -> InlineKeyboardMarkup:
+def _add_payment_back(builder: InlineKeyboardBuilder, back_callback: str | None) -> None:
+    """Кнопка возврата под ссылкой на оплату (иначе из экрана оплаты нет выхода)."""
+    if back_callback == "back_to_payment_options":
+        text = "⬅️ Другой способ оплаты"
+    elif back_callback == "top_up_start":
+        text = "⬅️ Другая сумма / способ"
+    else:
+        back_callback = "back_to_main_menu"
+        text = "⬅️ Назад в меню"
+    builder.button(text=text, callback_data=back_callback)
+
+
+def create_ton_connect_keyboard(
+    connect_url: str, back_callback: str | None = None
+) -> InlineKeyboardMarkup:
     """Строит клавиатуру со ссылкой на подключение кошелька через TON Connect."""
     builder = InlineKeyboardBuilder()
     builder.button(text="🚀 Открыть кошелек", url=connect_url)
+    _add_payment_back(builder, back_callback)
+    builder.adjust(1)
     return builder.as_markup()
 
 
-def create_payment_keyboard(payment_url: str) -> InlineKeyboardMarkup:
+def create_payment_keyboard(
+    payment_url: str, back_callback: str | None = None
+) -> InlineKeyboardMarkup:
     """Строит клавиатуру со ссылкой на оплату у внешнего платёжного провайдера."""
     builder = InlineKeyboardBuilder()
     builder.button(text=(get_setting("btn_go_to_payment") or "Перейти к оплате"), url=payment_url)
+    _add_payment_back(builder, back_callback)
+    builder.adjust(1)
     return builder.as_markup()
 
 
 def create_payment_with_check_keyboard(
-    payment_url: str, check_callback: str
+    payment_url: str, check_callback: str, back_callback: str | None = None
 ) -> InlineKeyboardMarkup:
     """Строит клавиатуру со ссылкой на оплату и кнопкой проверки статуса платежа."""
     builder = InlineKeyboardBuilder()
@@ -1111,6 +1113,7 @@ def create_payment_with_check_keyboard(
         text=(get_setting("btn_check_payment") or "✅ Проверить оплату"),
         callback_data=check_callback,
     )
+    _add_payment_back(builder, back_callback)
     builder.adjust(1)
     return builder.as_markup()
 
@@ -1136,22 +1139,24 @@ def create_topup_payment_method_keyboard(payment_methods: dict) -> InlineKeyboar
         builder.button(text="🪙 TON Connect", callback_data="topup_pay_tonconnect")
 
     builder.button(
-        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
-        callback_data="show_profile",
+        text="⬅️ Назад",
+        callback_data="top_up_start",
     )
     builder.adjust(1)
     return builder.as_markup()
 
 
 def create_keys_management_keyboard(keys: list) -> InlineKeyboardMarkup:
-    """Строит клавиатуру списка ключей пользователя для управления ими."""
+    """Список подписок: короткие кнопки «🟢 Сервер ▪️ до 12.05»."""
     builder = InlineKeyboardBuilder()
     if keys:
         for i, key in enumerate(keys):
             expiry_date = datetime.fromisoformat(key["expiry_date"])
             status_icon = "🟢" if expiry_date > datetime.now() else "🔴"
-            host_name = key.get("host_name", "Неизвестный сервер")
-            button_text = f"{status_icon} Подписка № {i+1} ({host_name}) (до {expiry_date.strftime('%d.%m.%Y')})"
+            host_name = str(key.get("host_name") or "Сервер")
+            if len(host_name) > 18:
+                host_name = host_name[:17] + "…"
+            button_text = f"{status_icon} {host_name} ▪️ до {expiry_date.strftime('%d.%m')}"
             builder.button(text=button_text, callback_data=f"show_key_{key['key_id']}")
     builder.button(
         text=(get_setting("btn_buy_key") or "➕ Купить новую подписку"),
@@ -1165,138 +1170,62 @@ def create_keys_management_keyboard(keys: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def _client_links(connection_string: str) -> dict[str, str]:
+    """Диплинки на клиентов (через REDIR_URL) для строки подписки."""
+
+    def _b64(s: str) -> str:
+        return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
+
+    return {
+        "happ": f"{REDIR_URL}{_b64(f'happ://add/{connection_string}')}",
+        "flclashx": f"{REDIR_URL}"
+        + _b64(
+            "flclashx://install-config?url="
+            + quote(connection_string.replace("/sub/", "/clash/"), safe="")
+        ),
+        "incy": f"{REDIR_URL}{_b64(f'incy://add/{connection_string}')}",
+        "v2raytun": f"{REDIR_URL}{_b64(f'v2raytun://import/{connection_string}')}",
+        "v2rayng": f"{REDIR_URL}{_b64(f'v2rayng://install-config/?url={connection_string}')}",
+    }
+
+
 def create_key_info_keyboard(
     key_id: int, connection_string: str | None = None
 ) -> InlineKeyboardMarkup:
-    """Строит клавиатуру карточки конкретного ключа (инструкции, продление, QR и т.д.)."""
+    """Карточка подписки: главное — наверху, клиенты и сервис — в подменю."""
     builder = InlineKeyboardBuilder()
+    layout: list[int] = []
 
     if connection_string:
-        # Строка подписки уже известна — сразу делаем кнопки внешними ссылками
-        # (Telegram сам добавит на такую кнопку стрелочку внешнего перехода),
-        # без промежуточного callback-запроса к боту
-        happ_link = (
-            base64.urlsafe_b64encode(f"happ://add/{connection_string}".encode())
-            .decode()
-            .rstrip("=")
-        )
-        # FlClashX — Clash-совместимый клиент: ему нужна не /sub/, а /clash/
-        # ссылка, и сам url в query install-config?url= должен быть
-        # percent-encoded (иначе "://" внутри ломает разбор диплинка).
-        flclashx_link = (
-            base64.urlsafe_b64encode(
-                (
-                    "flclashx://install-config?url="
-                    + quote(connection_string.replace("/sub/", "/clash/"), safe="")
-                ).encode()
-            )
-            .decode()
-            .rstrip("=")
-        )
-        incy_link = (
-            base64.urlsafe_b64encode(f"incy://add/{connection_string}".encode())
-            .decode()
-            .rstrip("=")
-        )
-        v2raytun_link = (
-            base64.urlsafe_b64encode(f"v2raytun://import/{connection_string}".encode())
-            .decode()
-            .rstrip("=")
-        )
-        v2rayng_link = (
-            base64.urlsafe_b64encode(f"v2rayng://install-config/?url={connection_string}".encode())
-            .decode()
-            .rstrip("=")
-        )
-
         builder.button(
-            text="🌐 Открыть Web App",
+            text="🌐 Web App",
             web_app=WebAppInfo(url=connection_string),
             style="success",
         )
-        builder.button(
-            text=(get_setting("btn_extend_key") or "➕ Продлить эту подписку"),
-            callback_data=f"extend_key_{key_id}",
-            style="danger",
-        )
-        builder.button(text="⚡ Добавить в Happ", url=f"{REDIR_URL}{happ_link}", style="primary")
-        builder.button(
-            text="🪽 Добавить в FlClashX", url=f"{REDIR_URL}{flclashx_link}", style="primary"
-        )
-        builder.button(text="🛡️ Добавить в INCY", url=f"{REDIR_URL}{incy_link}", style="primary")
-        builder.button(
-            text="🚀 Добавить в v2RayTun",
-            url=f"{REDIR_URL}{v2raytun_link}",
-            style="primary",
-        )
-        builder.button(
-            text="👾 Добавить в v2rayNG",
-            url=f"{REDIR_URL}{v2rayng_link}",
-            style="primary",
-        )
     else:
-        # Фолбэк на старое поведение (через callback), если строка подписки
-        # на момент построения клавиатуры ещё не получена
-        builder.button(
-            text="🌐 Открыть Web App",
-            callback_data=f"open_web_app_{key_id}",
-            style="success",
-        )
-        builder.button(
-            text=(get_setting("btn_extend_key") or "➕ Продлить эту подписку"),
-            callback_data=f"extend_key_{key_id}",
-            style="danger",
-        )
-        builder.button(
-            text="⚡ Добавить в Happ",
-            callback_data=f"add_to_happ_{key_id}",
-            style="primary",
-        )
-        builder.button(
-            text="🪽 Добавить в FlClashX",
-            callback_data=f"add_to_flclashx_{key_id}",
-            style="primary",
-        )
-        builder.button(
-            text="🛡️ Добавить в INCY",
-            callback_data=f"add_to_incy_{key_id}",
-            style="primary",
-        )
-        builder.button(
-            text="🚀 Добавить в v2RayTun",
-            callback_data=f"add_to_v2raytun_{key_id}",
-            style="primary",
-        )
-        builder.button(
-            text="👾 Добавить в v2rayNG",
-            callback_data=f"add_to_v2rayng_{key_id}",
-            style="primary",
-        )
+        builder.button(text="🌐 Web App", callback_data=f"open_web_app_{key_id}", style="success")
     builder.button(
-        text=(get_setting("btn_show_qr") or "📱 Показать QR-код"),
+        text=(get_setting("btn_extend_key") or "➕ Продлить эту подписку"),
+        callback_data=f"extend_key_{key_id}",
+        style="danger",
+    )
+    layout.append(2)
+
+    builder.button(text="⚡ Подключить", callback_data=f"key_connect_{key_id}", style="primary")
+    builder.button(
+        text=(get_setting("btn_show_qr") or "📱 QR-код"),
         callback_data=f"show_qr_{key_id}",
     )
+    layout.append(2)
+
     builder.button(
         text=(get_setting("btn_instruction") or "📖 Инструкция"),
         callback_data=f"howto_vless_{key_id}",
     )
-    builder.button(
-        text=(get_setting("btn_switch_server") or "🌍 Сменить сервер"),
-        callback_data=f"switch_server_{key_id}",
-    )
-    builder.button(
-        text="🔄 Пересоздать",
-        callback_data=f"regen_key_prompt_{key_id}",
-        style="danger",
-    )
-    builder.button(text="🛜 Файлы для XKeen", callback_data=f"download_xkeen_outbounds_{key_id}")
-    builder.button(text="🪏 Ключи для Podkop", callback_data=f"show_podkop_keys_{key_id}")
-    builder.button(text="🔐 Показать все ключи", callback_data=f"show_raw_keys_{key_id}")
+    builder.button(text="🛠 Дополнительно", callback_data=f"key_more_{key_id}")
+    layout.append(2)
 
-    # Тумблер автопродления с баланса — только для ключей, у которых уже
-    # есть привязанный тариф (last_plan_id, проставляется при первой
-    # покупке/продлении). У триальных ключей его нет — предлагать тумблер
-    # там бессмысленно, включать нечего и продлевать не по чему.
+    # Тумблер автопродления — только для ключей с привязанным тарифом
     key_data = get_key_by_id(key_id)
     if key_data and key_data.get("last_plan_id") is not None:
         auto_renew_on = bool(key_data.get("auto_renew_enabled"))
@@ -1305,32 +1234,55 @@ def create_key_info_keyboard(
             callback_data=f"toggle_auto_renew_{key_id}",
             style=("success" if auto_renew_on else "danger"),
         )
+        layout.append(1)
 
-    # Кнопку "Назад" добавляем последней
     builder.button(
         text=(get_setting("btn_back_to_keys") or "⬅️ Назад к списку подписок"),
         callback_data="manage_keys",
     )
-
-    # --- Динамическое построение сетки ---
-    # Считаем информационные кнопки (все, кроме "Назад")
-    main_buttons_count = len(list(builder.buttons)) - 1
-
-    layout = []
-
-    # Все основные кнопки группируем по 2 в ряд
-    for _ in range(main_buttons_count // 2):
-        layout.append(2)
-
-    # Если кнопок вдруг станет нечетное количество,
-    # оставшаяся одна кнопка займет целую строку перед "Назад"
-    if main_buttons_count % 2 != 0:
-        layout.append(1)
-
-    # Кнопка "Назад" всегда одна на всю ширину
     layout.append(1)
 
     builder.adjust(*layout)
+    return builder.as_markup()
+
+
+def create_key_connect_keyboard(
+    key_id: int, connection_string: str | None = None
+) -> InlineKeyboardMarkup:
+    """Подменю «⚡ Подключить»: выбор клиентского приложения."""
+    builder = InlineKeyboardBuilder()
+    clients = [
+        ("happ", "⚡ Happ"),
+        ("flclashx", "🪽 FlClashX"),
+        ("incy", "🛡️ INCY"),
+        ("v2raytun", "🚀 v2RayTun"),
+        ("v2rayng", "👾 v2rayNG"),
+    ]
+    links = _client_links(connection_string) if connection_string else None
+    for code, title in clients:
+        if links:
+            builder.button(text=title, url=links[code], style="primary")
+        else:
+            builder.button(text=title, callback_data=f"add_to_{code}_{key_id}", style="primary")
+    builder.button(text="📖 Инструкция", callback_data=f"howto_vless_{key_id}")
+    builder.button(text="⬅️ Назад к подписке", callback_data=f"key_back_{key_id}")
+    builder.adjust(2, 2, 1, 1, 1)
+    return builder.as_markup()
+
+
+def create_key_more_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Подменю «🛠 Дополнительно»: сервисные действия с подпиской."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_switch_server") or "🌍 Сменить сервер"),
+        callback_data=f"switch_server_{key_id}",
+    )
+    builder.button(text="🔄 Пересоздать", callback_data=f"regen_key_prompt_{key_id}", style="danger")
+    builder.button(text="🛜 Файлы для XKeen", callback_data=f"download_xkeen_outbounds_{key_id}")
+    builder.button(text="🪏 Ключи для Podkop", callback_data=f"show_podkop_keys_{key_id}")
+    builder.button(text="🔐 Все ключи", callback_data=f"show_raw_keys_{key_id}")
+    builder.button(text="⬅️ Назад к подписке", callback_data=f"key_back_{key_id}")
+    builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
 
 
@@ -1437,20 +1389,8 @@ def create_back_to_menu_keyboard() -> InlineKeyboardMarkup:
 
 
 def create_profile_keyboard() -> InlineKeyboardMarkup:
-    """Строит клавиатуру раздела профиля пользователя."""
-    kb = _build_keyboard_from_db("profile_menu")
-    if kb:
-        return kb
-
+    """Профиль: только история операций и возврат в меню."""
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text=(get_setting("btn_top_up") or "➕ Пополнить баланс"),
-        callback_data="top_up_start",
-    )
-    builder.button(
-        text=(get_setting("btn_referral") or "🤝 Реферальная программа"),
-        callback_data="show_referral_program",
-    )
     builder.button(
         text=(get_setting("btn_tx_history") or "📜 История операций"),
         callback_data="tx_history_0",
@@ -1660,5 +1600,22 @@ def create_back_to_main_menu_keyboard() -> InlineKeyboardMarkup:
     """Создать клавиатуру с кнопкой возврата в главное меню."""
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+
+def create_promo_input_keyboard() -> InlineKeyboardMarkup:
+    """Экран ввода промокода: возврат к выбору способа оплаты (а не в главное меню)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад к оплате", callback_data="back_to_payment_options")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_back_to_more_keyboard() -> InlineKeyboardMarkup:
+    """Возврат в подменю «➡️ Ещё»."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data="show_more_menu")
     builder.adjust(1)
     return builder.as_markup()
