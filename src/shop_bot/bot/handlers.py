@@ -744,8 +744,6 @@ def get_user_router() -> Router:
             # -------------------------------------------------------------------------
             # 1. Динамическое определение времени суток для приветствия
             # -------------------------------------------------------------------------
-            from datetime import datetime
-
             current_hour = datetime.now().hour
 
             if 5 <= current_hour < 12:
@@ -1564,7 +1562,7 @@ def get_user_router() -> Router:
         support_user = get_setting("support_user")
         if not support_user:
             await safe_edit_text(callback, 
-                "❌ <b>Внешний контакт поддержки не настроен<b>",
+                "❌ <b>Внешний контакт поддержки не настроен</b>",
                 reply_markup=keyboards.create_back_to_menu_keyboard(),
             )
             return
@@ -1683,7 +1681,7 @@ def get_user_router() -> Router:
         support_bot_username = get_setting("support_bot_username")
         if support_bot_username:
             await message.answer(
-                "⚠️ <b>Отправка ответов доступна в отдельном боте поддержки",
+                "⚠️ <b>Отправка ответов доступна в отдельном боте поддержки</b>",
                 reply_markup=keyboards.create_support_bot_link_keyboard(support_bot_username),
             )
         else:
