@@ -2253,6 +2253,28 @@ async def sync_keys_with_panels(bot: Bot) -> dict[str, tuple]:
     return host_sessions
 
 
+def format_emails_short(emails, limit: int = 1) -> str:
+    """Краткая строка с email клиента для сообщений админу.
+
+    У одного UUID может быть несколько разных имён (мастер и клоны по разным
+    инбаундам), и если склеить их все через запятую, сообщение упирается в
+    лимит Telegram (message is too long). Показываем первое имя целиком,
+    остальные — счётчиком: «vol_choke@snowyservices_bot и ещё 3».
+    Используется и в алерте об аномальном трафике, и в отчёте «Потребление WL».
+    """
+    # Первым показываем мастера (без суффикса клона -N), потом клоны по порядку
+    uniq = sorted(
+        {str(e) for e in (emails or []) if e},
+        key=lambda e: (bool(re.search(r"-\d+$", e.split("@")[0])), e),
+    )
+    if not uniq:
+        return "—"
+    shown = ", ".join(uniq[:limit])
+    if len(uniq) > limit:
+        shown += f" и ещё {len(uniq) - limit}"
+    return shown
+
+
 async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | None = None):
     """
     Мониторинг резких скачков трафика и уведомление админа.
@@ -2340,11 +2362,7 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
 
             for c_uuid, data in host_stats.items():
                 current_total = data["total"]
-                display_emails = (
-                    ", ".join(data["active_emails"])
-                    if data["active_emails"]
-                    else ", ".join(data["emails"])
-                )
+                display_emails = format_emails_short(data["active_emails"] or data["emails"])
 
                 snapshot_key = f"uuid:{host_name}:{c_uuid}"
 
