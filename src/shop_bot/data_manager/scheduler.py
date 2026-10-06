@@ -25,15 +25,17 @@ from shop_bot.data_manager import (
 )
 from shop_bot.data_manager.database import keys_in_transition
 from shop_bot.modules import xui_api
+from shop_bot.env_utils import env_float, env_int, env_int_list
 
-CHECK_INTERVAL_SECONDS = 300
-NOTIFY_BEFORE_HOURS = {72, 48, 24, 1}
+BACKUP_KEEP_COUNT = env_int("BACKUP_KEEP_COUNT", 7, 1, 365)  # сколько архивов бэкапа хранить
+CHECK_INTERVAL_SECONDS = env_int("SCHEDULER_CHECK_INTERVAL_SECONDS", 300, 30, 3600)
+NOTIFY_BEFORE_HOURS = set(env_int_list("NOTIFY_BEFORE_HOURS", [72, 48, 24, 1], 1))
 notified_users = {}
 
 # -------------------------------------------------------------------------
 # Grace-период между истечением подписки и физическим удалением ключа.
 # -------------------------------------------------------------------------
-EXPIRED_KEY_DELETION_GRACE = timedelta(days=5)
+EXPIRED_KEY_DELETION_GRACE = timedelta(days=env_int("EXPIRED_KEY_GRACE_DAYS", 5, 1, 90))
 
 # -------------------------------------------------------------------------
 # Инбаунд для доступа к Telegram в течение grace-периода: пока подписка уже
@@ -42,7 +44,7 @@ EXPIRED_KEY_DELETION_GRACE = timedelta(days=5)
 # на этот инбаунд — с урезанным трафиком, без доступа к обычным клонам.
 # -------------------------------------------------------------------------
 GRACE_INBOUND_REMARK = "🇱🇨 Подписка истекла. Подключитесь для продления"
-GRACE_INBOUND_TOTAL_GB_BYTES = int(1 * 1024**3)  # 1 ГБ; totalGB в API 3X-UI — это байты, не гигабайты
+GRACE_INBOUND_TOTAL_GB_BYTES = int(env_float("GRACE_TRAFFIC_GB", 1.0, 0.01, 1024) * 1024**3)  # по умолчанию 1 ГБ; totalGB в API 3X-UI — это байты, не гигабайты
 GRACE_EMAIL_SUFFIX = "-expired"  # никогда не пересекается с числовыми суффиксами клонов (-2, -3, ...)
 
 logger = logging.getLogger(__name__)
@@ -51,20 +53,20 @@ logger = logging.getLogger(__name__)
 # Дифференцированные интервалы для sync_keys_with_panels
 # -------------------------------------------------------------------------
 # Чистка ключей, просроченных > 5 дней — не time-critical, гоняем реже
-EXPIRED_CLEANUP_INTERVAL_SECONDS = 30 * 60
+EXPIRED_CLEANUP_INTERVAL_SECONDS = env_int("EXPIRED_CLEANUP_INTERVAL_SECONDS", 30 * 60, 60, 86400)
 _last_expired_cleanup_at: datetime | None = None
 
 # Полная сверка панели с БД по всем клиентам (не только по тем, у кого ещё
 # жива строка в vpn_keys) — ловит "сирот", которые накопились из-за частично
 # неудавшихся удалений в прошлом. Тяжёлая операция (полный обход клиентов
 # всех инбаундов хоста), гоняем редко.
-ORPHAN_SWEEP_INTERVAL_SECONDS = 24 * 60 * 60
+ORPHAN_SWEEP_INTERVAL_SECONDS = env_int("ORPHAN_SWEEP_INTERVAL_SECONDS", 24 * 60 * 60, 3600, 30 * 86400)
 _last_orphan_sweep_at: datetime | None = None
 
 # Даже если локальный хэш состояния не менялся, в этот интервал всё
 # равно делаем полную сверку клонов с панелью, чтобы ловить обновления
 # состояния (например, ручное изменение в самой панели)
-FULL_RECONCILE_INTERVAL_SECONDS = 30 * 60
+FULL_RECONCILE_INTERVAL_SECONDS = env_int("FULL_RECONCILE_INTERVAL_SECONDS", 30 * 60, 60, 86400)
 _host_state_hash: dict[str, str] = {}
 _host_last_full_sync_at: dict[str, datetime] = {}
 
@@ -79,26 +81,26 @@ _host_last_full_sync_at: dict[str, datetime] = {}
 # ключей — не обязательно вычищать все за один 30-минутный цикл, порядок
 # тут не важен: то, что не успели, спокойно останется в БД (как и раньше)
 # и будет обработано в следующем цикле, ничего не теряется и не портится.
-MAX_EXPIRED_KEYS_PER_CYCLE = 5
+MAX_EXPIRED_KEYS_PER_CYCLE = env_int("MAX_EXPIRED_KEYS_PER_CYCLE", 5, 1, 100)
 
 # Ограничиваем параллелизм обхода хостов
-HOST_SYNC_CONCURRENCY = 3
+HOST_SYNC_CONCURRENCY = env_int("HOST_SYNC_CONCURRENCY", 3, 1, 10)
 
 # Запуск обоих видов измерений 3 раза в сутки (каждые 8 часов)
-SPEEDTEST_INTERVAL_SECONDS = 24 * 3600
+SPEEDTEST_INTERVAL_SECONDS = env_int("SPEEDTEST_INTERVAL_SECONDS", 24 * 3600, 3600, 30 * 86400)
 _last_speedtests_run_at: datetime | None = None
 _last_backup_run_at: datetime | None = None
 
 # Сбор метрик ресурсов (каждые 5 минут)
-METRICS_INTERVAL_SECONDS = 5 * 60
+METRICS_INTERVAL_SECONDS = env_int("METRICS_INTERVAL_SECONDS", 5 * 60, 30, 86400)
 _last_metrics_run_at: datetime | None = None
 
 # Параметры для выявления стационарного использования (роутеры, ПК, торренты)
 traffic_snapshots = {}
 traffic_strikes = {}
-TRAFFIC_THRESHOLD_MB = 6000  # Порог объема за интервал в МБ (детект разовых тяжелых закачек)
-SPEED_THRESHOLD_MBPS = 110.0  # Порог скорости (стабильная полка для детекта провода)
-STRIKE_THRESHOLD = 3  # Кол-во проверок подряд для подтверждения аномалии
+TRAFFIC_THRESHOLD_MB = env_int("TRAFFIC_THRESHOLD_MB", 6000, 1)  # Порог объема за интервал в МБ (детект разовых тяжелых закачек)
+SPEED_THRESHOLD_MBPS = env_float("SPEED_THRESHOLD_MBPS", 110.0, 1.0)  # Порог скорости (стабильная полка для детекта провода)
+STRIKE_THRESHOLD = env_int("STRIKE_THRESHOLD", 3, 1, 100)  # Кол-во проверок подряд для подтверждения аномалии
 
 # Множитель пауз шедулера между мутациями панели.
 try:
@@ -2786,7 +2788,7 @@ async def _maybe_run_daily_backup(bot: Bot):
             except Exception as e:
                 logger.error(f"Scheduler: Не удалось отправить бэкап: {e}")
             try:
-                backup_manager.cleanup_old_backups(keep=7)
+                backup_manager.cleanup_old_backups(keep=BACKUP_KEEP_COUNT)
             except Exception:
                 pass
             await asyncio.to_thread(database.record_backup_created, zip_path.name)
