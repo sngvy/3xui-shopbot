@@ -24,6 +24,7 @@ from shop_bot.data_manager.database import (
     get_setting,
     set_key_sub_token_by_email,
 )
+from shop_bot.env_utils import env_float, env_int
 from shop_bot.modules import xui_http
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,13 @@ LEGACY_EMAIL_DOMAINS = tuple(
 # без единой попытки повтора. Поэтому ретраим такие вызовы здесь, на
 # уровне бота, а не полагаемся на встроенный механизм py3xui.
 # -------------------------------------------------------------------------
-def call_with_retry(fn, *args, retries: int = 3, base_delay: float = 1.5, **kwargs):
+_CALL_RETRIES = env_int("XUI_CALL_RETRIES", 3, 1, 10)
+_CALL_RETRY_DELAY = env_float("XUI_CALL_RETRY_DELAY", 1.5, 0.0, 60.0)
+
+
+def call_with_retry(
+    fn, *args, retries: int = _CALL_RETRIES, base_delay: float = _CALL_RETRY_DELAY, **kwargs
+):
     """Вызывает fn(*args, **kwargs) с повтором при пустом/битом ответе панели.
 
     Повторяет только на json.JSONDecodeError (пустое тело ответа) — на
@@ -395,7 +402,7 @@ def _resolve_hysteria_update(
 # -------------------------------------------------------------------------
 _session_cache: dict[str, tuple[Api, float]] = {}
 _session_cache_lock = threading.Lock()
-_SESSION_CACHE_TTL_SECONDS = 25 * 60
+_SESSION_CACHE_TTL_SECONDS = env_int("XUI_SESSION_CACHE_TTL_SECONDS", 25 * 60, 60, 86400)
 
 
 def _session_cache_key(host_url: str, username: str) -> str:
