@@ -251,6 +251,7 @@ def create_main_menu_keyboard(
     builder.button(
         text=(get_setting("btn_gift_key") or "🎁 Подарить"),
         callback_data="buy_gift_key",
+        style="danger",
     )
     builder.button(
         text=(get_setting("btn_top_up") or "➕ Пополнить баланс"),
