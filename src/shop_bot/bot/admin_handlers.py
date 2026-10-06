@@ -4467,9 +4467,9 @@ def get_admin_router() -> Router:
 
     # --- Отчёт «Потребление WL»: постраничный вывод ----------------------------
     # Верхняя граница размера страницы — чтобы текст гарантированно влезал в 4096 символов
-    WL_REPORT_PAGE_SIZE = _env_int("WL_REPORT_PAGE_SIZE", 5, 1, 10)  # клиентов на странице
-    WL_REPORT_MAX_ITEMS = _env_int("WL_REPORT_MAX_ITEMS", 30, 1, 500)  # сколько самых «тяжёлых» клиентов показывать всего
-    WL_REPORT_CACHE_TTL_SECONDS = _env_int("WL_REPORT_CACHE_TTL_SECONDS", 30 * 60, 0, 24 * 3600)  # сколько секунд листаем без пересбора
+    WL_REPORT_PAGE_SIZE = _env_int("WL_REPORT_PAGE_SIZE", 5, 1, 10)
+    WL_REPORT_MAX_ITEMS = _env_int("WL_REPORT_MAX_ITEMS", 30, 1, 500)
+    WL_REPORT_CACHE_TTL_SECONDS = _env_int("WL_REPORT_CACHE_TTL_SECONDS", 30 * 60, 0, 24 * 3600)
     _wl_report_cache: dict[int, dict] = {}
 
     def _build_wl_report_page(cached: dict, page: int) -> tuple[str, InlineKeyboardBuilder]:
@@ -4498,7 +4498,7 @@ def get_admin_router() -> Router:
                 )
             text += f"🕒 <b>Интервал:</b> {cached['interval_min']} мин.\n"
             text += f"📅 <b>Обновлено:</b> {cached['updated']}"
-            if len(text) > 4096:  # страховка от «message is too long»
+            if len(text) > 4096:
                 text = text[:4093] + "…"
 
         kb = InlineKeyboardBuilder()
