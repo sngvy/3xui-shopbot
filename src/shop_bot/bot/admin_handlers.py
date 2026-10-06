@@ -4493,7 +4493,7 @@ def get_admin_router() -> Router:
             for n, item in enumerate(chunk, start=page * WL_REPORT_PAGE_SIZE + 1):
                 text += (
                     f"<b>{n}. {html_escape.escape(str(item['host_name']))}</b>\n"
-                    f"👤 <b>Клиент:</b> {html_escape.escape(str(item['combined_emails']))}\n"
+                    f"👤 <b>Клиент:</b> {item['combined_emails']}\n"
                     f"🆔 <b>UUID:</b> <code>{html_escape.escape(str(item['c_uuid']))}</code>\n"
                     f"📈 <b>Расход:</b> {item['delta_mb']:.2f} МБ\n"
                     f"🚀 <b>Скорость:</b> {item['mbps']:.1f} Мбит/с\n\n"
@@ -4644,7 +4644,7 @@ def get_admin_router() -> Router:
                             # Несколько имён у одного UUID сворачиваем в «первое и ещё N»,
                             # иначе сообщение упирается в лимит Telegram.
                             display_emails = format_emails_short(
-                                data["active_emails"] or data["emails"]
+                                data["active_emails"] or data["emails"], code=True
                             )
 
                             all_clients_data.append(
