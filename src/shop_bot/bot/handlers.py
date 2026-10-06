@@ -95,6 +95,7 @@ from shop_bot.data_manager.database import (
     update_promo_code_status,
     update_user_stats,
 )
+from shop_bot.env_utils import env_int
 from shop_bot.modules import xui_api
 
 TELEGRAM_BOT_USERNAME = get_setting("telegram_bot_username")
@@ -111,7 +112,7 @@ logger = logging.getLogger(__name__)
 # с новой ссылкой (см. _switch_key_to_host / _delayed_delete_old_host).
 # 5 минут — достаточно, чтобы вручную скопировать ссылку в клиент,
 # и достаточно коротко, чтобы не держать два активных ключа подолгу.
-OLD_HOST_DELETE_DELAY_SECONDS = 300
+OLD_HOST_DELETE_DELAY_SECONDS = env_int("OLD_HOST_DELETE_DELAY_SECONDS", 300, 0, 3600)
 
 
 class KeyPurchase(StatesGroup):
