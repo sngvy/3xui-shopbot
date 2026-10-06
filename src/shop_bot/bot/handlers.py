@@ -53,7 +53,9 @@ from shop_bot.data_manager.database import (
     add_support_message,
     add_to_balance,
     check_promo_code_available,
+    claim_gift_subscription,
     clear_pending_purchase,
+    create_gift_subscription,
     create_pending_transaction,
     credit_referral_reward,
     deduct_from_balance,
@@ -75,6 +77,7 @@ from shop_bot.data_manager.database import (
     get_user,
     get_user_keys,
     get_user_transactions,
+    get_gift_subscription,
     is_admin,
     keys_in_transition,
     log_transaction,
@@ -634,6 +637,98 @@ def get_user_router() -> Router:
                     )
                 except Exception:
                     pass
+
+        # Активация подарочной подписки по ссылке t.me/bot?start=gift_<код>.
+        # Срабатывает независимо от состояния terms-флоу ниже — код уже
+        # оплачен дарителем, ждать согласия с условиями необязательно, сам
+        # факт регистрации (register_user_if_not_exists выше) уже произошёл.
+        if command.args and command.args.startswith("gift_"):
+            gift_code = command.args[len("gift_") :]
+            gift = await asyncio.to_thread(get_gift_subscription, gift_code)
+            if not gift:
+                await message.answer("❌ Подарочный код не найден или введён неверно")
+            elif gift["status"] != "pending":
+                await message.answer("❌ Этот подарок уже активирован ранее")
+            elif int(gift["created_by"]) == user_id:
+                await message.answer("❌ Нельзя активировать собственный подарок")
+            else:
+                claimed = await asyncio.to_thread(claim_gift_subscription, gift_code, user_id)
+                if not claimed:
+                    # Кто-то успел активировать тот же код параллельно между
+                    # проверкой выше и этим вызовом — честно сообщаем, не
+                    # создаём ключ повторно.
+                    await message.answer("❌ Этот подарок уже активирован (опередили на доли секунды)")
+                else:
+                    gift_host_name = gift["host_name"]
+                    gift_months = int(gift["months"])
+                    processing_msg = await message.answer(
+                        f"🎁 Активирую подарок — подписка на сервере {gift_host_name}..."
+                    )
+                    try:
+                        raw_username = (username or f"user{user_id}").lower()
+                        username_slug = (
+                            re.sub(r"[^a-z0-9._-]", "_", raw_username).strip("_")[:16]
+                            or f"user{user_id}"
+                        )
+                        base_local = f"{username_slug}"
+                        candidate_local = base_local
+                        attempt = 1
+                        while True:
+                            candidate_email = f"{candidate_local}@{xui_api.EMAIL_DOMAIN}"
+                            if not get_key_by_email(candidate_email):
+                                break
+                            attempt += 1
+                            candidate_local = f"{base_local}_{attempt}"
+                            if attempt > 100:
+                                candidate_local = f"{base_local}_{int(datetime.now().timestamp())}"
+                                candidate_email = f"{candidate_local}@{xui_api.EMAIL_DOMAIN}"
+                                break
+
+                        result = await xui_api.create_or_update_key_on_host(
+                            host_name=gift_host_name, email=candidate_email, months_to_add=gift_months
+                        )
+                        if not result:
+                            await delete_and_send(
+                                processing_msg,
+                                "❌ Не удалось выдать ключ на сервере. Обратитесь в поддержку — "
+                                f"код подарка: {gift_code}",
+                            )
+                        else:
+                            new_key_id = add_new_key(
+                                user_id=user_id,
+                                host_name=gift_host_name,
+                                xui_client_uuid=result["client_uuid"],
+                                key_email=result["email"],
+                                expiry_timestamp_ms=result["expiry_timestamp_ms"],
+                            )
+                            await delete_and_send(
+                                processing_msg,
+                                "✅ <b>Подарок активирован!</b>\n\n"
+                                f"🗺️ <b>Сервер:</b> {gift_host_name}\n"
+                                f"📅 <b>Срок:</b> {gift_months} мес.\n\n"
+                                "Откройте «🔑 Мои подписки», чтобы получить ссылку для подключения.",
+                                parse_mode="HTML",
+                            )
+                            # Уведомляем дарителя, что подарок забрали
+                            try:
+                                await bot.send_message(
+                                    int(gift["created_by"]),
+                                    "🎁 <b>Ваш подарок активирован!</b>\n\n"
+                                    f"Получатель уже пользуется подпиской на сервере {gift_host_name}.",
+                                    parse_mode="HTML",
+                                )
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logger.error(
+                            f"Ошибка активации подарка {gift_code} пользователем {user_id}: {e}",
+                            exc_info=True,
+                        )
+                        await delete_and_send(
+                            processing_msg,
+                            "❌ Произошла ошибка при активации подарка. Обратитесь в поддержку — "
+                            f"код подарка: {gift_code}",
+                        )
 
         if user_data and user_data.get("agreed_to_terms"):
             # -------------------------------------------------------------------------
@@ -1732,6 +1827,25 @@ def get_user_router() -> Router:
                 reply_markup=keyboards.create_plans_keyboard(
                     plans, action="new", host_name=host_name
                 ),
+            )
+            return
+
+        if action == "gift":
+            (
+                await callback.answer(alert_text, show_alert=True)
+                if alert_text
+                else await callback.answer()
+            )
+            plans = get_plans_for_host(host_name)
+            if not plans:
+                await delete_and_send(callback.message, f"❌ Для сервера {host_name} не настроены тарифы")
+                return
+            await safe_edit_text(callback, 
+                "📦 <b>Выберите тариф для подарочной подписки:</b>",
+                reply_markup=keyboards.create_plans_keyboard(
+                    plans, action="gift", host_name=host_name
+                ),
+                parse_mode="HTML",
             )
             return
 
@@ -3639,6 +3753,29 @@ def get_user_router() -> Router:
             parse_mode="HTML",
         )
 
+    @user_router.callback_query(F.data == "buy_gift_key")
+    @registration_required
+    async def buy_gift_key_handler(callback: types.CallbackQuery):
+        """Вход в флоу подарка — те же экраны выбора сервера/тарифа, что и
+        у обычной покупки, только action='gift' ведёт дальше по другой
+        ветке в process_successful_payment (код для получателя вместо
+        немедленной выдачи ключа дарителю)."""
+        await callback.answer()
+        hosts = await asyncio.to_thread(get_all_hosts)
+        if not hosts:
+            await delete_and_send(callback.message, 
+                "❌ В данный момент нет доступных серверов для покупки"
+            )
+            return
+
+        await safe_edit_text(callback, 
+            "🎁 <b>Выберите сервер для подарочной подписки:</b>\n\n"
+            "Получатель сам выберет момент активации по ссылке — сервер и тариф "
+            "фиксируются сейчас, их нельзя будет сменить после активации.",
+            reply_markup=keyboards.create_host_selection_keyboard(hosts, action="gift"),
+            parse_mode="HTML",
+        )
+
     @user_router.callback_query(F.data.startswith("extend_key_"))
     @registration_required
     async def extend_key_handler(callback: types.CallbackQuery):
@@ -3752,6 +3889,20 @@ def get_user_router() -> Router:
                         "📦 <b>Выберите тариф для новой подписки:</b>",
                         reply_markup=keyboards.create_plans_keyboard(
                             plans=plans, action="new", host_name=host_name
+                        ),
+                        parse_mode="HTML",
+                    )
+                else:
+                    await delete_and_send(callback.message, 
+                        f"❌ Для сервера {host_name} не настроены тарифы."
+                    )
+            elif action == "gift" and host_name:
+                plans = get_plans_for_host(host_name)
+                if plans:
+                    await safe_edit_text(callback, 
+                        "📦 <b>Выберите тариф для подарочной подписки:</b>",
+                        reply_markup=keyboards.create_plans_keyboard(
+                            plans=plans, action="gift", host_name=host_name
                         ),
                         parse_mode="HTML",
                     )
@@ -5185,6 +5336,77 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                     await bot.send_message(
                         admin_id,
                         f"📥 Пополнение: пользователь {user_id}, сумма {float(price):.2f} ₽",
+                    )
+        except Exception:
+            pass
+        return
+
+    # Спец-ветка: подарочная подписка. Код создаётся сразу после оплаты, но
+    # ключ на панели появится только когда получатель активирует ссылку
+    # (см. разбор gift_ внутри CommandStart) — не раньше. Сервер/тариф уже
+    # зафиксированы в host_name/plan_id/months из флоу покупки дарителя.
+    if action == "gift":
+        gift_code = await asyncio.to_thread(
+            create_gift_subscription, user_id, plan_id, months, host_name, price
+        )
+        if not gift_code:
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "⚠️ <b>Оплата получена, но не удалось создать подарочный код</b>\n\n"
+                    "Обратитесь в поддержку."
+                ),
+                reply_markup=keyboards.create_support_keyboard(),
+                parse_mode="HTML",
+            )
+            return
+        try:
+            bot_user = await bot.get_me()
+            bot_username = bot_user.username
+        except Exception:
+            bot_username = None
+        if bot_username:
+            link_line = f"<code>https://t.me/{bot_username}?start=gift_{gift_code}</code>"
+        else:
+            link_line = f"Код: <code>{gift_code}</code>"
+        await bot.send_message(
+            chat_id=user_id,
+            text=(
+                "🎁 <b>Подарок готов!</b>\n\n"
+                "Перешлите эту ссылку тому, кому хотите подарить подписку — "
+                "активировать её можно в любой момент, ссылка не истекает:\n\n"
+                f"{link_line}"
+            ),
+            parse_mode="HTML",
+        )
+        try:
+            user_info = await asyncio.to_thread(get_user, user_id)
+            log_username = user_info.get("username", "N/A") if user_info else "N/A"
+            log_transaction(
+                username=log_username,
+                transaction_id=None,
+                payment_id=str(uuid.uuid4()),
+                user_id=user_id,
+                status="paid",
+                amount_rub=float(price),
+                amount_currency=None,
+                currency_name=None,
+                payment_method=payment_method or "Unknown",
+                metadata=json.dumps(
+                    {"action": "gift", "gift_code": gift_code, "host_name": host_name, "months": months}
+                ),
+            )
+        except Exception:
+            pass
+        try:
+            admins = [u for u in (get_all_users() or []) if is_admin(u.get("telegram_id") or 0)]
+            for a in admins:
+                admin_id = a.get("telegram_id")
+                if admin_id:
+                    await bot.send_message(
+                        admin_id,
+                        f"🎁 Подарок: пользователь {user_id} купил подписку в подарок "
+                        f"({host_name}, {months} мес., {float(price):.2f} ₽), код {gift_code}",
                     )
         except Exception:
             pass
