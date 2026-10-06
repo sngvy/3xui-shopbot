@@ -640,7 +640,7 @@ def get_user_router() -> Router:
                         chat_id=int(referrer_id),
                         text=(
                             "💰 <b>Начисление за приглашение!</b>\n\n"
-                            f"👤 <b>Новый пользователь:</b> {safe_full_name} (ID: {user_id})\n"
+                            f"👤 <b>Новый пользователь:</b> {safe_full_name} (ID: <code>{user_id}</code>)\n"
                             f"💸 <b>Бонус:</b> {float(start_bonus):.2f} ₽"
                         ),
                         parse_mode="HTML",
@@ -4117,7 +4117,7 @@ def get_user_router() -> Router:
                 if final_price < Decimal("0"):
                     final_price = Decimal("0.00")
                 # Добавим описание скидки промокода
-                promo_line = f"🏷️ <b>Промокод {promo_code}:</b> "
+                promo_line = f"🏷️ <b>Промокод</b> <code>{promo_code}</code><b>:</b> "
                 if promo_percent:
                     promo_line += f"скидка {Decimal(str(promo_percent)):.0f}%\n"
                 elif promo_amount:
@@ -5276,7 +5276,7 @@ async def notify_admin_of_purchase(bot: Bot, metadata: dict):
 
         text = (
             "📥 <b>Новая оплата</b>\n\n"
-            f"👤 <b>Пользователь:</b> {user_id}\n"
+            f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
             f"🗺️ <b>Сервер:</b> {host_name}\n"
             f"📦 <b>Тариф:</b> {plan_name} ({months} мес.)\n"
             f"💳 <b>Метод:</b> {payment_method_display}\n"
@@ -5712,7 +5712,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                             chat_id=referrer_id,
                             text=(
                                 "💸 <b>Вам начислено реферальное вознаграждение!</b>\n\n"
-                                f"👤 <b>Пользователь:</b> {referrer_username} (ID: {user_id})\n"
+                                f"👤 <b>Пользователь:</b> {referrer_username} (ID: <code>{user_id}</code>)\n"
                                 f"💰 <b>Сумма:</b> {float(reward):.2f} ₽"
                             ),
                             parse_mode="HTML",
@@ -5843,8 +5843,8 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                                     status_line += f" (использовано {used_total_now})"
                             text = (
                                 "🎟️ <b>Промокод использован</b>\n\n"
-                                f"🏷️ <b>Код:</b> {promo_code_used}\n"
-                                f"👤 <b>Пользователь:</b> {user_id}\n"
+                                f"🏷️ <b>Код:</b> <code>{promo_code_used}</code>\n"
+                                f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
                                 f"📦 <b>Тариф:</b> {plan_name} ({months} мес.)\n"
                                 f"{status_line}"
                             )
