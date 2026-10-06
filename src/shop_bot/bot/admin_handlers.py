@@ -2829,13 +2829,38 @@ def get_admin_router() -> Router:
         user_id = int(data.get("target_user_id"))
         host_name = data.get("host_name")
         prompt_msg_id = data.get("prompt_msg_id")
+        async def _days_error(note: str):
+            # Убираем ввод админа и правим сообщение-запрос, а не шлём новое
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            text = f"{note}\n\n🌍 <b>Сервер: {host_name}. Введите срок действия подписки в днях (целое число):</b>"
+            if prompt_msg_id:
+                try:
+                    await message.bot.edit_message_text(
+                        text,
+                        chat_id=message.chat.id,
+                        message_id=prompt_msg_id,
+                        reply_markup=keyboards.create_admin_cancel_keyboard(),
+                        parse_mode="HTML",
+                    )
+                    return
+                except TelegramBadRequest as e:
+                    if "message is not modified" in str(e).lower():
+                        return
+            sent_err = await message.answer(
+                text, reply_markup=keyboards.create_admin_cancel_keyboard(), parse_mode="HTML"
+            )
+            await state.update_data(prompt_msg_id=sent_err.message_id)
+
         try:
             days = int(message.text.strip())
         except Exception:
-            await message.answer("❌ Введите целое число дней", reply_markup=keyboards.create_admin_cancel_keyboard())
+            await _days_error("❌ Введите целое число дней")
             return
         if days <= 0:
-            await message.answer("❌ Срок должен быть положительным", reply_markup=keyboards.create_admin_cancel_keyboard())
+            await _days_error("❌ Срок должен быть положительным")
             return
 
         # -------------------------------------------------------------------------
@@ -3693,7 +3718,25 @@ def get_admin_router() -> Router:
         prompt_msg_id = state_data.get("prompt_msg_id")
 
         if not query:
-            await message.answer("❌ Введите корректный запрос", reply_markup=keyboards.create_admin_cancel_keyboard())
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            text = "❌ Введите корректный запрос"
+            if prompt_msg_id:
+                try:
+                    await message.bot.edit_message_text(
+                        text,
+                        chat_id=message.chat.id,
+                        message_id=prompt_msg_id,
+                        reply_markup=keyboards.create_admin_cancel_keyboard(),
+                        parse_mode="HTML",
+                    )
+                    return
+                except TelegramBadRequest:
+                    return
+            sent_err = await message.answer(text, reply_markup=keyboards.create_admin_cancel_keyboard())
+            await state.update_data(prompt_msg_id=sent_err.message_id)
             return
 
         # Удаляем текстовый запрос самого админа, чтобы в чате не висел мусор
@@ -4246,6 +4289,12 @@ def get_admin_router() -> Router:
     async def broadcast_schedule_custom_time_received(message: types.Message, state: FSMContext):
         _ui_anchor = await ui_anchor(state)
         raw = (message.text or "").strip()
+        # Введённую дату удаляем, как и в остальных сценариях ввода (черновик
+        # рассылки хранится отдельно — это не мастер-копия)
+        try:
+            await message.delete()
+        except Exception:
+            pass
         try:
             scheduled_at = datetime.strptime(raw, "%d.%m.%Y %H:%M")
         except ValueError:
