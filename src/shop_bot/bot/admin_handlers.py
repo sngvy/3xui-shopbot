@@ -202,7 +202,7 @@ def get_admin_router() -> Router:
         keys = await asyncio.to_thread(get_keys_for_user, user_id)
         keys_count = len(keys)
         text = (
-            f"👤 <b>Пользователь:</b> {user_id}\n\n"
+            f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n\n"
             f"🆔 <b>Имя пользователя:</b> {user_tag}\n"
             f"💸 <b>Всего потратил:</b> {float(total_spent):.2f} ₽\n"
             f"💰 <b>Баланс:</b> {float(balance):.2f} ₽\n"
@@ -893,7 +893,7 @@ def get_admin_router() -> Router:
             usage_part = f"использован {used_total} раз" if used_total else "не использован"
         date_part = f"до {vu}" if vu else "без ограничений"
 
-        return f"🎟 <b>{code}</b> ▪️ {disc}\n{usage_part} ▪️ {date_part}"
+        return f"🎟 <code>{code}</code> ▪️ {disc}\n{usage_part} ▪️ {date_part}"
 
     def _build_promo_list_page(promos: list[dict], page: int) -> tuple[str, InlineKeyboardBuilder]:
         total = len(promos)
@@ -1910,7 +1910,7 @@ def get_admin_router() -> Router:
             uname = r.get("username") or "—"
             rdate = r.get("registration_date") or "—"
             spent = float(r.get("total_spent") or 0)
-            lines.append(f"▪️@{uname} (ID: {rid}) — рег: {rdate}, потратил: {spent:.2f} ₽")
+            lines.append(f"▪️@{uname} (ID: <code>{rid}</code>) — рег: {rdate}, потратил: {spent:.2f} ₽")
         more_suffix = (
             "\n... и ещё {}".format(ref_count - max_items) if ref_count > max_items else ""
         )
@@ -1949,7 +1949,7 @@ def get_admin_router() -> Router:
         text = (
             f"🔑 <b>Подписка № {key_id}</b>\n\n"
             f"🗺️ <b>Сервер:</b> {key.get('host_name') or '—'}\n"
-            f"🆔 <b>Email:</b> {key.get('key_email') or '—'}\n"
+            f"🆔 <b>Email:</b> <code>{key.get('key_email') or '—'}</code>\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(key.get('expiry_date'))}\n"
         )
         try:
@@ -1994,13 +1994,13 @@ def get_admin_router() -> Router:
         host = key.get("host_name") or "—"
         try:
             await safe_edit_text(callback, 
-                f"🗑️ <b>Вы уверены, что хотите удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> {email}\n🗺️ <b>Сервер:</b> {host}",
+                f"🗑️ <b>Вы уверены, что хотите удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
                 reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id),
             )
         except Exception as e:
             logger.debug(f"Не удалось изменить текст в запросе на удаление ключа № {key_id}: {e}")
             await callback.message.answer(
-                f"🗑️ <b>Вы уверены, что хотите удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> {email}\n🗺️ <b>Сервер:</b> {host}",
+                f"🗑️ <b>Вы уверены, что хотите удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
                 reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id),
             )
 
@@ -2084,7 +2084,7 @@ def get_admin_router() -> Router:
         text = (
             f"🔑 <b>Подписка № {key_id}</b>\n\n"
             f"🗺️ <b>Сервер:</b> {new_key.get('host_name') or '—'}\n"
-            f"🆔 <b>Email:</b> {new_key.get('key_email') or '—'}\n"
+            f"🆔 <b>Email:</b> <code>{new_key.get('key_email') or '—'}</code>\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
         )
         await message.answer(f"✅ Подписка продлена на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard())
@@ -2182,7 +2182,7 @@ def get_admin_router() -> Router:
         text = (
             f"🔑 <b>Подписка № {key_id}</b>\n\n"
             f"🗺️ <b>Сервер:</b> {new_key.get('host_name') or '—'}\n"
-            f"🆔 <b>Email:</b> {new_key.get('key_email') or '—'}\n"
+            f"🆔 <b>Email:</b> <code>{new_key.get('key_email') or '—'}</code>\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
         )
         await message.answer(f"✅ Срок подписки уменьшен на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard())
@@ -2397,7 +2397,7 @@ def get_admin_router() -> Router:
         text = (
             f"🔑 <b>Подписка № {key_id}</b>\n\n"
             f"🗺️ <b>Сервер:</b> {key.get('host_name') or '—'}\n"
-            f"🆔 <b>Email:</b> {key.get('key_email') or '—'}\n"
+            f"🆔 <b>Email:</b> <code>{key.get('key_email') or '—'}</code>\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(key.get('expiry_date'))}\n"
         )
         try:
@@ -2706,7 +2706,7 @@ def get_admin_router() -> Router:
                     await delete_and_send(callback.message, 
                         text=f"✅ <b>Подписка № {key_id} перенесена!</b>\n\n"
                         f"🗺️ <b>Новый сервер:</b> {new_host_name}\n"
-                        f"🆔 <b>UUID:</b> {result['client_uuid']}\n\n"
+                        f"🆔 <b>UUID:</b> <code>{result['client_uuid']}</code>\n\n"
                         f"🔗 <b>Новая подписка:</b>\n<code>{connection_string}</code>",
                         parse_mode="HTML",
                     )
@@ -2996,7 +2996,7 @@ def get_admin_router() -> Router:
             user_part = f"{user_id} ({format_stored_username(user.get('username'), linked=False)})"
             text_admin = (
                 f"✅ Подписка № {key_id} выдана пользователю {user_part} (сервер: {host_name}, {days} дн.)\n"
-                f"🆔 Email: {generated_email}"
+                f"🆔 Email: <code>{generated_email}</code>"
             )
             try:
                 await delete_and_send(callback.message, text_admin)
@@ -3879,7 +3879,7 @@ def get_admin_router() -> Router:
         host = key.get("host_name") or "—"
         await state.clear()
         await message.answer(
-            f"🗑 <b>Подтвердите удаление подписки № {key_id}</b>\n\n🆔 <b>Email:</b> {email}\n🗺️ <b>Сервер:</b> {host}",
+            f"🗑 <b>Подтвердите удаление подписки № {key_id}</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
             reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id),
         )
 
@@ -4492,7 +4492,7 @@ def get_admin_router() -> Router:
                 text += (
                     f"<b>{n}. {html_escape.escape(str(item['host_name']))}</b>\n"
                     f"👤 <b>Клиент:</b> {html_escape.escape(str(item['combined_emails']))}\n"
-                    f"🆔 <b>UUID:</b> {item['c_uuid']}\n"
+                    f"🆔 <b>UUID:</b> <code>{html_escape.escape(str(item['c_uuid']))}</code>\n"
                     f"📈 <b>Расход:</b> {item['delta_mb']:.2f} МБ\n"
                     f"🚀 <b>Скорость:</b> {item['mbps']:.1f} Мбит/с\n\n"
                 )
