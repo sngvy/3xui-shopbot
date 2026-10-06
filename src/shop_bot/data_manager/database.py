@@ -111,6 +111,95 @@ def format_stored_username(
 _thread_local = threading.local()
 
 
+class DatabaseCorruptedError(RuntimeError):
+    """База данных повреждена (malformed / not a database) — запуск продолжать нельзя."""
+
+
+_CORRUPTION_MARKERS = ("malformed", "not a database", "disk image", "corrupt")
+
+
+def is_corruption_error(exc: BaseException) -> bool:
+    """True, если ошибка SQLite означает повреждение файла БД (а не блокировку и т.п.)."""
+    return isinstance(exc, sqlite3.DatabaseError) and any(
+        m in str(exc).lower() for m in _CORRUPTION_MARKERS
+    )
+
+
+def verify_db_integrity() -> None:
+    """Проверка целостности БД перед стартом бота (PRAGMA quick_check).
+
+    Если файл повреждён, бросает DatabaseCorruptedError и запуск прерывается:
+    работа на битой базе опасна (неполные данные -> неверные решения вроде
+    удаления «сирот» с панелей). Нет файла БД — это первый запуск, всё в порядке.
+    Прочие ошибки (например, база временно занята) запуск не блокируют.
+    """
+    if not DB_FILE.exists():
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        rows = [r[0] for r in conn.execute("PRAGMA quick_check").fetchall()]
+        if rows != ["ok"]:
+            raise DatabaseCorruptedError("; ".join(str(r) for r in rows[:5]))
+    except DatabaseCorruptedError:
+        raise
+    except sqlite3.DatabaseError as e:
+        if is_corruption_error(e):
+            raise DatabaseCorruptedError(str(e)) from e
+        logging.warning(f"Проверка целостности БД пропущена: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def run_db_maintenance() -> dict:
+    """Плановое обслуживание БД: проверка целостности, REINDEX, VACUUM.
+
+    Работает на отдельном соединении (не потоко-локальном) и вызывается из
+    планировщика в фоновом потоке. Шаги:
+      1. quick_check — на битой базе обслуживание не выполняется (VACUUM по
+         повреждённой базе может усугубить потери);
+      2. проверка свободного места — VACUUM временно требует ~размер БД;
+      3. wal_checkpoint(TRUNCATE) -> REINDEX -> PRAGMA optimize -> VACUUM ->
+         wal_checkpoint(TRUNCATE).
+    Возвращает статистику. Бросает DatabaseCorruptedError, если база повреждена,
+    и RuntimeError, если не хватает места на диске.
+    """
+    import shutil
+    import time
+
+    result: dict = {}
+    t0 = time.monotonic()
+    size_before = DB_FILE.stat().st_size if DB_FILE.exists() else 0
+    result["size_before"] = size_before
+
+    free = shutil.disk_usage(DB_FILE.parent).free
+    if free < size_before * 2 + 50 * 1024 * 1024:
+        raise RuntimeError(
+            f"недостаточно свободного места для VACUUM: свободно {free // 1048576} МБ, "
+            f"размер БД {size_before // 1048576} МБ"
+        )
+
+    # isolation_level=None — автокоммит: VACUUM нельзя выполнять внутри транзакции
+    conn = sqlite3.connect(DB_FILE, timeout=60, isolation_level=None)
+    try:
+        conn.execute("PRAGMA busy_timeout = 60000;")
+        rows = [r[0] for r in conn.execute("PRAGMA quick_check").fetchall()]
+        if rows != ["ok"]:
+            raise DatabaseCorruptedError("; ".join(str(r) for r in rows[:5]))
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        conn.execute("REINDEX;")
+        result["reindex_s"] = round(time.monotonic() - t0, 1)
+        conn.execute("PRAGMA optimize;")
+        conn.execute("VACUUM;")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    finally:
+        conn.close()
+    result["size_after"] = DB_FILE.stat().st_size if DB_FILE.exists() else 0
+    result["total_s"] = round(time.monotonic() - t0, 1)
+    return result
+
+
 def get_db_connection() -> sqlite3.Connection:
     """Возвращает потоко-локальное соединение с БД, пересоздавая его при необходимости."""
     conn = getattr(_thread_local, "conn", None)
@@ -559,6 +648,9 @@ def initialize_db():
 
             logging.info("База данных успешно инициализирована.")
     except sqlite3.Error as e:
+        if is_corruption_error(e):
+            # Битая база при инициализации — не продолжаем с неполными данными
+            raise DatabaseCorruptedError(str(e)) from e
         logging.error(f"Ошибка базы данных при инициализации: {e}")
 
 
