@@ -1155,7 +1155,7 @@ def create_keys_management_keyboard(keys: list) -> InlineKeyboardMarkup:
             status_icon = "🟢" if expiry_date > datetime.now() else "🔴"
             host_name = str(key.get("host_name") or "Сервер")
             if len(host_name) > 17:
-                host_name = host_name[:16] + "…"
+                host_name = host_name[:16]
             button_text = f"{status_icon} {host_name} ▪️ до {expiry_date.strftime('%d.%m')}"
             builder.button(text=button_text, callback_data=f"show_key_{key['key_id']}")
     builder.button(
