@@ -891,7 +891,7 @@ def get_user_router() -> Router:
         await state.clear()
         await safe_edit_text(
             callback,
-            "➡️ <b>Ещё</b>\n\nДополнительные разделы сервиса:",
+            "📂 <b>Больше</b>\n\nДополнительные разделы сервиса:",
             reply_markup=keyboards.create_more_menu_keyboard(),
             parse_mode="HTML",
         )
