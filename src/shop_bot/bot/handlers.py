@@ -5421,7 +5421,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                 if admin_id:
                     await bot.send_message(
                         admin_id,
-                        f"📥 Пополнение: пользователь {user_id}, сумма {float(price):.2f} ₽",
+                        f"📥 Пополнение: пользователь <code>{user_id}</code>, сумма {float(price):.2f} ₽",
                     )
         except Exception:
             pass
@@ -5491,7 +5491,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                 if admin_id:
                     await bot.send_message(
                         admin_id,
-                        f"🎁 Подарок: пользователь {user_id}, сервер {host_name}, "
+                        f"🎁 Подарок: пользователь <code>{user_id}</code>, сервер {host_name}, "
                         f"{months} мес., сумма {float(price):.2f} ₽, код {gift_code}",
                     )
         except Exception:
@@ -5697,7 +5697,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                             chat_id=referrer_id,
                             text=(
                                 "💸 <b>Вам начислено реферальное вознаграждение!</b>\n\n"
-                                f"👤 <b>Пользователь:</b> {referrer_username} (ID: <code>{user_id}</code>)\n"
+                                f"👤 <b>Пользователь:</b> {referrer_username} (ID: {user_id})\n"
                                 f"💰 <b>Сумма:</b> {float(reward):.2f} ₽"
                             ),
                             parse_mode="HTML",
