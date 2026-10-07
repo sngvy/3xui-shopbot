@@ -166,9 +166,9 @@ def get_admin_router() -> Router:
                 safe_name = html_escape.escape(full_name)
             except Exception:
                 safe_name = full_name
-            return f"{safe_name} ({u.id})"
+            return f"{safe_name} (<code>{u.id}</code>)"
         except Exception:
-            return str(getattr(u, "id", "—"))
+            return f"<code>{getattr(u, 'id', '—')}</code>"
 
     async def _render_user_card(
         bot: Bot,
@@ -1787,7 +1787,7 @@ def get_admin_router() -> Router:
         await callback.answer()
         keys = await asyncio.to_thread(get_keys_for_user, user_id)
         await safe_edit_text(callback, 
-            f"🔑 <b>Подписки пользователя {user_id}:</b>",
+            f"🔑 <b>Подписки пользователя <code>{user_id}</code>:</b>",
             reply_markup=keyboards.create_admin_user_keys_keyboard(user_id, keys),
             parse_mode="HTML",
         )
@@ -1817,7 +1817,7 @@ def get_admin_router() -> Router:
         if not transactions:
             await safe_edit_text(
                 callback,
-                f"📜 <b>История операций пользователя {user_id}</b>\n\n"
+                f"📜 <b>История операций пользователя <code>{user_id}</code></b>\n\n"
                 "Пока здесь пусто — здесь появятся пополнения, покупки и списания",
                 reply_markup=keyboards.create_admin_transaction_history_keyboard(
                     user_id, page, has_prev=page > 0, has_next=False
@@ -1826,7 +1826,7 @@ def get_admin_router() -> Router:
             )
             return
 
-        lines = [f"📜 <b>История операций пользователя {user_id}</b>"]
+        lines = [f"📜 <b>История операций пользователя <code>{user_id}</code></b>"]
         for tx in transactions:
             lines.append(format_transaction_line(tx))
 
@@ -1875,7 +1875,7 @@ def get_admin_router() -> Router:
             "\n... и ещё {}".format(ref_count - max_items) if ref_count > max_items else ""
         )
         text = (
-            f"🤝 <b>Рефералы пользователя {user_id}</b>\n\n"
+            f"🤝 <b>Рефералы пользователя <code>{user_id}</code></b>\n\n"
             f"🤝 <b>Всего приглашено:</b> {ref_count}\n"
             f"💰 <b>Заработано по рефералке (всего):</b> {total_ref_earned:.2f} ₽\n\n"
             + ("\n".join(lines) if lines else "Пока нет рефералов")
@@ -2224,7 +2224,7 @@ def get_admin_router() -> Router:
             # Сохраняем в admin_telegram_ids строкой CSV
             ids_str = ",".join(str(i) for i in sorted(ids))
             update_setting("admin_telegram_ids", ids_str)
-            await ui_reply(message, state, f"✅ Пользователь {target_id} добавлен в администраторы", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, f"✅ Пользователь <code>{target_id}</code> добавлен в администраторы", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
         except Exception as e:
             await ui_reply(message, state, f"❌ Ошибка при сохранении: {e}", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
         await state.clear()
@@ -2300,7 +2300,7 @@ def get_admin_router() -> Router:
 
             ids = set(get_admin_ids())
             if target_id not in ids:
-                await ui_reply(message, state, f"ℹ️ Пользователь {target_id} не является администратором", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
+                await ui_reply(message, state, f"ℹ️ Пользователь <code>{target_id}</code> не является администратором", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
                 await state.clear()
                 return
             if len(ids) <= 1:
@@ -2309,7 +2309,7 @@ def get_admin_router() -> Router:
             ids.discard(int(target_id))
             ids_str = ",".join(str(i) for i in sorted(ids))
             update_setting("admin_telegram_ids", ids_str)
-            await ui_reply(message, state, f"✅ Пользователь {target_id} снят с администраторов", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, f"✅ Пользователь <code>{target_id}</code> снят с администраторов", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
         except Exception as e:
             await ui_reply(message, state, f"❌ Ошибка при сохранении: {e}", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
         await state.clear()
@@ -2417,7 +2417,7 @@ def get_admin_router() -> Router:
             keys = await asyncio.to_thread(get_keys_for_user, user_id)
             await safe_edit_text(
                 callback,
-                f"{status_note}\n\n🔑 <b>Подписки пользователя {user_id}:</b>",
+                f"{status_note}\n\n🔑 <b>Подписки пользователя <code>{user_id}</code>:</b>",
                 reply_markup=keyboards.create_admin_user_keys_keyboard(user_id, keys),
                 parse_mode="HTML",
             )
@@ -2518,7 +2518,7 @@ def get_admin_router() -> Router:
         # -------------------------------------------------------------------------
         await safe_edit_text(callback, 
             f"🌍 <b>Выберите новый сервер для переноса подписки № {key_id}:</b>\n\n"
-            f"👤 <b>Владелец</b>: {key_data.get('user_id')}\n"
+            f"👤 <b>Владелец</b>: <code>{key_data.get('user_id')}</code>\n"
             f"🗺️ <b>Текущий сервер</b>: {current_host or 'Не указан'}",
             reply_markup=keyboards.create_host_selection_keyboard(hosts, action=f"adm_sw-{key_id}"),
             parse_mode="HTML",
@@ -2719,7 +2719,7 @@ def get_admin_router() -> Router:
         hosts = await asyncio.to_thread(get_all_hosts)
         await state.set_state(AdminGiftKey.picking_host)
         await safe_edit_text(callback, 
-            f"👤 <b>Пользователь {user_id}. Выберите сервер:</b>",
+            f"👤 <b>Пользователь <code>{user_id}</code>. Выберите сервер:</b>",
             reply_markup=keyboards.create_admin_hosts_pick_keyboard(hosts, action="gift"),
             parse_mode="HTML",
         )
@@ -2762,7 +2762,7 @@ def get_admin_router() -> Router:
         hosts = await asyncio.to_thread(get_all_hosts)
         await state.set_state(AdminGiftKey.picking_host)
         await safe_edit_text(callback, 
-            f"👤 <b>Пользователь {user_id}. Выберите сервер:</b>",
+            f"👤 <b>Пользователь <code>{user_id}</code>. Выберите сервер:</b>",
             reply_markup=keyboards.create_admin_hosts_pick_keyboard(hosts, action="gift"),
             parse_mode="HTML",
         )
@@ -2816,7 +2816,7 @@ def get_admin_router() -> Router:
         hosts = await asyncio.to_thread(get_all_hosts)
         await state.set_state(AdminGiftKey.picking_host)
         await safe_edit_text(callback, 
-            f"👤 <b>Пользователь {user_id}. Выберите сервер:</b>",
+            f"👤 <b>Пользователь <code>{user_id}</code>. Выберите сервер:</b>",
             reply_markup=keyboards.create_admin_hosts_pick_keyboard(hosts, action="gift"),
             parse_mode="HTML",
         )
@@ -2883,7 +2883,7 @@ def get_admin_router() -> Router:
         await state.update_data(days=days)
         await state.set_state(AdminGiftKey.confirming)
         sent = await message.answer(
-            f"⚠️ <b>Выдать подписку пользователю {user_id} на сервере {host_name} на {days} дн.?</b>",
+            f"⚠️ <b>Выдать подписку пользователю <code>{user_id}</code> на сервере {host_name} на {days} дн.?</b>",
             reply_markup=keyboards.create_admin_gift_confirm_keyboard(),
             parse_mode="HTML",
         )
@@ -2950,7 +2950,7 @@ def get_admin_router() -> Router:
 
         key_id = add_new_key(user_id, host_name, client_uuid, generated_email, expiry_ms)
         if key_id:
-            user_part = f"{user_id} ({format_stored_username(user.get('username'), linked=False)})"
+            user_part = f"<code>{user_id}</code> ({format_stored_username(user.get('username'), linked=False)})"
             text_admin = (
                 f"✅ Подписка № {key_id} выдана пользователю {user_part} (сервер: {host_name}, {days} дн.)\n"
                 f"🆔 Email: <code>{generated_email}</code>"
@@ -3110,7 +3110,7 @@ def get_admin_router() -> Router:
         )
         await state.set_state(AdminMainRefill.waiting_for_amount)
         await safe_edit_text(callback, 
-            f"💰 <b>Пользователь {user_id}. Введите сумму начисления (в рублях):</b>",
+            f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму начисления (в рублях):</b>",
             reply_markup=keyboards.create_admin_cancel_keyboard(),
             parse_mode="HTML",
         )
@@ -3154,7 +3154,7 @@ def get_admin_router() -> Router:
         )
         await state.set_state(AdminMainRefill.waiting_for_amount)
         await safe_edit_text(callback, 
-            f"💰 <b>Пользователь {user_id}. Введите сумму начисления (в рублях):</b>",
+            f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму начисления (в рублях):</b>",
             reply_markup=keyboards.create_admin_cancel_keyboard(),
             parse_mode="HTML",
         )
@@ -3182,7 +3182,7 @@ def get_admin_router() -> Router:
                 else "❌ Сумма должна быть положительной"
             )
             text = (
-                f"{note}\n\n💰 <b>Пользователь {user_id}. Введите сумму начисления (в рублях):</b>"
+                f"{note}\n\n💰 <b>Пользователь <code>{user_id}</code>. Введите сумму начисления (в рублях):</b>"
             )
             if msg_id:
                 try:
@@ -3204,7 +3204,7 @@ def get_admin_router() -> Router:
             return
         await state.update_data(pending_amount=amount)
         await state.set_state(AdminMainRefill.waiting_for_confirm)
-        confirm_text = f"⚠️ <b>Начислить {amount:.2f} ₽ пользователю {user_id}?</b>"
+        confirm_text = f"⚠️ <b>Начислить {amount:.2f} ₽ пользователю <code>{user_id}</code>?</b>"
         if msg_id:
             try:
                 await message.bot.edit_message_text(
@@ -3331,7 +3331,7 @@ def get_admin_router() -> Router:
             user_id = int(key.get("user_id"))
             keys = await asyncio.to_thread(get_keys_for_user, user_id)
             await safe_edit_text(callback, 
-                f"🔑 <b>Подписки пользователя {user_id}:</b>",
+                f"🔑 <b>Подписки пользователя <code>{user_id}</code>:</b>",
                 reply_markup=keyboards.create_admin_user_keys_keyboard(user_id, keys),
                 parse_mode="HTML",
             )
@@ -3387,7 +3387,7 @@ def get_admin_router() -> Router:
         )
         await state.set_state(AdminMainDeduct.waiting_for_amount)
         await safe_edit_text(callback, 
-            f"💰 <b>Пользователь {user_id}. Введите сумму списания (в рублях):</b>",
+            f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму списания (в рублях):</b>",
             reply_markup=keyboards.create_admin_cancel_keyboard(),
             parse_mode="HTML",
         )
@@ -3431,7 +3431,7 @@ def get_admin_router() -> Router:
         )
         await state.set_state(AdminMainDeduct.waiting_for_amount)
         await safe_edit_text(callback, 
-            f"💰 <b>Пользователь {user_id}. Введите сумму списания (в рублях):</b>",
+            f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму списания (в рублях):</b>",
             reply_markup=keyboards.create_admin_cancel_keyboard(),
             parse_mode="HTML",
         )
@@ -3458,7 +3458,7 @@ def get_admin_router() -> Router:
                 if amount is None
                 else "❌ Сумма должна быть положительной"
             )
-            text = f"{note}\n\n💰 <b>Пользователь {user_id}. Введите сумму списания (в рублях):</b>"
+            text = f"{note}\n\n💰 <b>Пользователь <code>{user_id}</code>. Введите сумму списания (в рублях):</b>"
             if msg_id:
                 try:
                     await message.bot.edit_message_text(
@@ -3479,7 +3479,7 @@ def get_admin_router() -> Router:
             return
         await state.update_data(pending_amount=amount)
         await state.set_state(AdminMainDeduct.waiting_for_confirm)
-        confirm_text = f"⚠️ <b>Списать {amount:.2f} ₽ у пользователя {user_id}?</b>"
+        confirm_text = f"⚠️ <b>Списать {amount:.2f} ₽ у пользователя <code>{user_id}</code>?</b>"
         if msg_id:
             try:
                 await message.bot.edit_message_text(
@@ -4391,7 +4391,7 @@ def get_admin_router() -> Router:
                 return
             set_referral_balance(user_id, 0)
             set_referral_balance_all(user_id, 0)
-            await message.answer(f"✅ Выплата {balance:.2f} ₽ пользователю {user_id} подтверждена", reply_markup=keyboards.create_admin_back_keyboard())
+            await message.answer(f"✅ Выплата {balance:.2f} ₽ пользователю <code>{user_id}</code> подтверждена", reply_markup=keyboards.create_admin_back_keyboard())
             await message.bot.send_message(
                 user_id,
                 f"✅ Ваша заявка на вывод {balance:.2f} ₽ одобрена. Деньги будут переведены в ближайшее время",
@@ -4405,7 +4405,7 @@ def get_admin_router() -> Router:
             return
         try:
             user_id = int(message.text.split("_")[-1])
-            await message.answer(f"❌ Заявка пользователя {user_id} отклонена", reply_markup=keyboards.create_admin_back_keyboard())
+            await message.answer(f"❌ Заявка пользователя <code>{user_id}</code> отклонена", reply_markup=keyboards.create_admin_back_keyboard())
             await message.bot.send_message(
                 user_id,
                 "❌ Ваша заявка на вывод отклонена. Проверьте корректность реквизитов и попробуйте снова",
