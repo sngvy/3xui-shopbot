@@ -12,13 +12,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300..800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-25..0&icon_names=ac_unit,add_link,arrow_outward,block,bolt,check,content_copy,expand_more,fingerprint,more_horiz,rocket_launch,schedule,send,shield,verified&display=block">
 <style>
-/* ==========================================================================
-   Snowy Services — Material 3 Expressive design tokens
-   ========================================================================== */
+/* Дизайн-токены (Material 3 Expressive) */
 :root{
   color-scheme: light dark;
 
-  /* Colour roles — vibrant scheme */
+  /* Цвета */
   --surface:#FBF7FF;
   --surface-container:#F2ECFA;
   --surface-container-high:#EAE1F6;
@@ -56,11 +54,11 @@
 
   --scrim:rgba(25,20,36,.10);
 
-  /* Shape scale */
+  /* Скругления */
   --r-xs:8px;  --r-s:12px;  --r-m:16px;
   --r-l:24px;  --r-xl:28px; --r-xxl:36px; --r-full:999px;
 
-  /* Motion */
+  /* Анимации */
   --ease-emph:cubic-bezier(.2,0,0,1);
   --ease-spring:cubic-bezier(.34,1.42,.5,1);
   --dur-short:180ms;
@@ -134,7 +132,7 @@ body{
   border-radius:var(--r-xs);
 }
 
-/* --------------------------------------------------------------- Typography */
+/* Типографика */
 .display{
   font-family:"Unbounded",sans-serif;
   font-weight:800;
@@ -205,7 +203,7 @@ body{
   user-select:none;
 }
 
-/* ------------------------------------------------------------------- Layout */
+/* Раскладка */
 .shell{width:100%;max-width:560px;display:flex;flex-direction:column;}
 
 .topbar{
@@ -231,7 +229,7 @@ body{
   color:var(--on-surface-variant);
 }
 
-/* -------------------------------------------------------------------- Cards */
+/* Карточки */
 .card{
   background:var(--surface-container);
   border-radius:var(--r-xl);
@@ -239,7 +237,7 @@ body{
 }
 .card + .card{margin-top:12px;}
 
-/* --------------------------------------------------------------- Stat tiles */
+/* Плитки статуса */
 .tiles{
   display:grid;
   grid-template-columns:repeat(2,1fr);
@@ -270,7 +268,7 @@ body{
 .t-online{background:var(--online-container);color:var(--on-tertiary-container);}
 .t-error{background:var(--error-container);color:var(--on-error-container);}
 
-/* ------------------------------------------------------------------ Buttons */
+/* Кнопки */
 .btn{
   -webkit-tap-highlight-color:transparent;
   appearance:none;
@@ -295,13 +293,13 @@ body{
 }
 .btn .msym{font-size:20px;}
 .btn:hover{filter:brightness(1.06);}
-/* Expressive shape-morph: the pill squeezes into a squircle while pressed */
+/* При нажатии кнопка сжимается и меняет форму */
 .btn:active{border-radius:var(--r-m);transform:scale(.96);}
 
 .btn-tonal{background:var(--secondary-container);color:var(--on-secondary-container);}
 .btn-full{width:100%;}
 
-/* Connected button group (Material 3 Expressive) */
+/* Группа связанных кнопок */
 .group{display:grid;gap:4px;}
 .group.cols-2{grid-template-columns:1fr 1fr;}
 .group.cols-1{grid-template-columns:1fr;}
@@ -333,7 +331,7 @@ body{
 .chipbtn.accent{background:var(--primary-container);color:var(--on-primary-container);font-weight:600;}
 .chipbtn.accent .msym{opacity:1;}
 
-/* --------------------------------------------------------------------- Chip */
+/* Чип */
 .chip{
   display:inline-flex;
   align-items:center;
@@ -350,7 +348,7 @@ body{
 .chip .msym{font-size:16px;}
 .chip .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
-/* ---------------------------------------------------------------- Dot / led */
+/* Индикатор */
 .led{
   width:10px;height:10px;border-radius:50%;
   background:var(--on-surface-variant);
@@ -367,7 +365,7 @@ body{
   100%{box-shadow:0 0 0 0 transparent;}
 }
 
-/* ------------------------------------------------- Wavy progress (M3E) ---- */
+/* Волнистый прогресс-бар */
 .wavy{width:100%;height:auto;display:block;overflow:visible;}
 .wavy .track{stroke:var(--outline-variant);stroke-width:7;stroke-linecap:round;fill:none;}
 .wavy .wave{stroke:var(--primary);stroke-width:7;stroke-linecap:round;fill:none;
@@ -375,7 +373,7 @@ body{
 .wavy .cap{fill:var(--primary);}
 @keyframes wave-flow{from{transform:translateX(0);}to{transform:translateX(-40px);}}
 
-/* ------------------------------------------------------------------- Footer */
+/* Подвал */
 .foot{
   margin-top:36px;
   text-align:center;
@@ -387,7 +385,7 @@ body{
   opacity:.5;
 }
 
-/* --------------------------------------------- Loading indicator (M3E) ---- */
+/* Экран загрузки */
 #page-loader{
   position:fixed;
   inset:0;
@@ -443,7 +441,7 @@ body{
 body.loading .shell,
 body.loading .foot{visibility:hidden;}
 
-/* ------------------------------------------------------------ Entry motion */
+/* Появление контента */
 .reveal{animation:reveal var(--dur-long) var(--ease-emph) both;}
 @keyframes reveal{from{opacity:0;transform:translateY(18px) scale(.985);}to{opacity:1;transform:none;}}
 
@@ -452,7 +450,7 @@ body.loading .foot{visibility:hidden;}
   .m3-loader{animation:none;}
 }
 
-/* -------------------------------------------------------- Redirect page --- */
+/* Страница перехода в приложение */
 body{justify-content:center;}
 .shell{align-items:flex-start;}
 
@@ -498,11 +496,9 @@ body{justify-content:center;}
 <div class="foot">Snowy Services</div>
 
 <script>
-/* Material 3 Expressive loading indicator ---------------------------------
-   Seven shapes — soft burst, 9-sided cookie, pentagon, pill, 4-sided cookie,
-   oval, 7-sided cookie — generated at runtime with identical point counts so
-   the browser can interpolate one into the next. Equal-area normalisation
-   keeps the optical weight constant through the whole morph.            */
+/* Индикатор загрузки: семь фигур с одинаковым числом точек,
+   чтобы браузер плавно перетекал из одной в другую.
+   Площади выровнены, поэтому фигура не «пульсирует» по размеру. */
 function m3LoaderPaths(){
   var N=72, TAU=Math.PI*2;
   function map(f){var a=[],i;for(i=0;i<N;i++){a.push(f(i/N*TAU));}return a;}
@@ -576,7 +572,6 @@ function hidePageLoader(){
   loader.classList.add('hidden');
   setTimeout(function(){ loader.remove(); }, 420);
 }
-
 
 m3BuildLoaders();
 
