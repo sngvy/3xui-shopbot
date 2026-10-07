@@ -953,7 +953,7 @@ def get_support_router() -> Router:
 
         status_text: str
         if currently_banned:
-            status_text = f"✅ Пользователь {user_id} разбанен"
+            status_text = f"✅ Пользователь <code>{user_id}</code> разбанен"
             try:
                 await bot.send_message(
                     user_id,
@@ -962,7 +962,7 @@ def get_support_router() -> Router:
             except Exception:
                 pass
         else:
-            status_text = f"🚫 Пользователь {user_id} забанен"
+            status_text = f"🚫 Пользователь <code>{user_id}</code> забанен"
             support_contact = (
                 get_setting("support_bot_username") or get_setting("support_user") or ""
             ).strip()
