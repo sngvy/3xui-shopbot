@@ -1,15 +1,10 @@
-/* ==========================================================================
-   Material 3 Expressive — слой поверх Tabler/Bootstrap и style.css
+/* Material 3 Expressive поверх Tabler/Bootstrap и style.css.
    Подключать после tabler.min.css и style.css.
+   Основная работа идёт через переназначение токенов, а не через переписывание
+   правил. Токены те же, что на страницах подписки и статуса, чтобы панель
+   и клиентские страницы выглядели как один продукт. */
 
-   Логика: style.css почти целиком построен на переменных проекта, поэтому
-   основную работу делает переназначение токенов, а не переписывание правил.
-   Ниже — те же роли цвета, шкала форм и моушн-токены, что и на публичных
-   страницах подписки/статуса, чтобы панель и клиентские страницы читались
-   как один продукт.
-   ========================================================================== */
-
-/* ------------------------------------------------------------ 1. Токены -- */
+/* 1. Токены */
 :root,
 [data-bs-theme='light']{
   /* Поверхности */
@@ -49,9 +44,8 @@
 
   --m3-press:rgba(25,20,36,.07);
 
-  /* Сетка и подписи графиков. В светлой теме значения совпадают с
-     дефолтами Chart.js, поэтому графики главной выглядят как прежде,
-     а мониторинг перестаёт отличаться сиреневым оттенком. */
+  /* Сетка и подписи графиков. В светлой теме совпадают с дефолтами Chart.js,
+     поэтому графики на главной и в мониторинге выглядят одинаково. */
   --m3-chart-grid:rgba(0,0,0,.10);
   --m3-chart-tick:#666666;
 }
@@ -97,18 +91,18 @@
 }
 
 :root{
-  /* Шкала форм M3 */
+  /* Скругления */
   --m3-r-xs:8px;  --m3-r-s:12px;  --m3-r-m:16px;
   --m3-r-l:24px;  --m3-r-xl:28px; --m3-r-xxl:36px; --m3-r-full:999px;
 
-  /* Моушн */
+  /* Анимации */
   --m3-ease-emph:cubic-bezier(.2,0,0,1);
   --m3-ease-spring:cubic-bezier(.34,1.42,.5,1);
   --m3-dur-short:180ms;
   --m3-dur-med:380ms;
 }
 
-/* --------------------------------- 2. Переназначение токенов проекта ----- */
+/* 2. Переназначение токенов проекта */
 :root,
 [data-bs-theme='light'],
 [data-bs-theme='dark']{
@@ -126,13 +120,13 @@
 
   --ui-radius:20px;
 
-  /* пятна анимированного фона — делаем их сочными */
+  /* Пятна анимированного фона */
   --accent-1:color-mix(in oklab, var(--m3-primary) 20%, transparent);
   --accent-2:color-mix(in oklab, var(--m3-secondary) 16%, transparent);
   --accent-3:color-mix(in oklab, var(--m3-tertiary) 14%, transparent);
 }
 
-/* ------------------------------- 3. Мост к Bootstrap / Tabler ------------ */
+/* 3. Связка с Bootstrap и Tabler */
 :root,
 [data-bs-theme='light'],
 [data-bs-theme='dark']{
@@ -158,10 +152,9 @@
   --bs-body-font-family:"Unbounded",system-ui,sans-serif;
   --bs-body-font-weight:300;
 }
-/* --tblr-primary-rgb нельзя выразить через var() — Tabler/Bootstrap берут
-   его в rgba() для нативных компонентов (disabled-состояния, progress-bar,
-   спиннеры, bg-primary-lt), которых не касаются точечные правила ниже.
-   Раньше значение было одно на обе темы (91,39,245 — светлый #5B27F5). */
+/* --tblr-primary-rgb нельзя задать через var(): Tabler и Bootstrap подставляют
+   его в rgba() для своих компонентов (disabled, progress-bar, спиннеры,
+   bg-primary-lt). Поэтому значения прописаны отдельно для каждой темы. */
 :root,
 [data-bs-theme='light']{
   --tblr-primary-rgb:91,39,245;
@@ -172,9 +165,9 @@
   --bs-primary-rgb:203,184,255;
 }
 
-/* ------------------------------------------------------ 4. Типографика --- */
-/* Unbounded — широкая витринная гарнитура. Мелкий текст ставим лёгким,
-   иначе интерфейс превращается в сплошные тяжёлые блоки.                  */
+/* 4. Типографика */
+/* Unbounded — широкая витринная гарнитура, поэтому мелкий текст делаем
+   лёгким, иначе интерфейс выглядит слишком тяжёлым. */
 body{
   font-family:"Unbounded",system-ui,sans-serif !important;
   font-weight:300;
@@ -183,9 +176,8 @@ body{
   color:var(--m3-on-surface);
 }
 
-/* Material Symbols — единый иконочный набор панели.
-   Без этого блока <span class="msym">ac_unit</span> выводился как
-   обычный текст «ac_unit» шрифтом Unbounded.                            */
+/* Material Symbols — иконки панели. Без этого блока <span class="msym">
+   выводит название иконки обычным текстом. */
 .msym{
   font-family:"Material Symbols Rounded" !important;
   font-weight:400;
@@ -206,7 +198,7 @@ body{
   user-select:none;
   flex-shrink:0;
 }
-/* контурный вариант — для крупных декоративных иконок */
+/* Контурный вариант для крупных декоративных иконок */
 .msym.outlined{font-variation-settings:"FILL" 0,"wght" 400,"GRAD" 0,"opsz" 24;}
 .msym.sm{font-size:17px;}
 .btn .msym{font-size:18px;margin-right:2px;}
@@ -225,7 +217,7 @@ h2,.h2{font-weight:700;letter-spacing:-.03em;}
 h3,.h3,.card-title,.modal-title{font-weight:600;letter-spacing:-.02em;}
 h4,.h4,h5,.h5,h6,.h6{font-weight:600;}
 
-/* style.css центрирует h1 и рисует линию под h2 — в M3 это лишнее */
+/* style.css центрирует h1 и рисует линию под h2, здесь это не нужно */
 h1{text-align:left !important;margin-bottom:22px !important;}
 h2{border-bottom:none !important;padding-bottom:0 !important;color:var(--m3-on-surface) !important;}
 
@@ -242,7 +234,7 @@ small,.small,.text-muted,.text-secondary,.form-hint,.form-text{
 strong,b{font-weight:600;}
 .table,.data,.metric-value,.stat-value{font-variant-numeric:tabular-nums;}
 
-/* --------------------------------------------------------- 5. Шапка ----- */
+/* 5. Шапка */
 .main-header{
   background:var(--m3-surface-container) !important;
   border:none !important;
@@ -262,7 +254,7 @@ strong,b{font-weight:600;}
   letter-spacing:-.02em !important;
   color:var(--m3-on-surface);
 }
-/* фирменный знак-снежинка, как на клиентских страницах */
+/* Знак-снежинка, как на клиентских страницах */
 .brandmark{
   width:40px;height:40px;flex-shrink:0;
   display:grid;place-items:center;
@@ -279,7 +271,7 @@ strong,b{font-weight:600;}
   color:var(--m3-on-surface-variant) !important;
 }
 
-/* Навигация — связанная группа пилюль в духе M3 Expressive */
+/* Навигация: группа кнопок-пилюль */
 .navigation{gap:4px !important;}
 .navigation .nav-link{
   border-radius:var(--m3-r-full) !important;
@@ -344,7 +336,7 @@ label.burger_img{
 }
 .bm .burger-menu a:hover{background:var(--m3-surface-container-highest) !important;}
 
-/* -------------------------------------------------------- 6. Карточки --- */
+/* 6. Карточки */
 .card,.card.glass{
   background:var(--m3-surface-container) !important;
   border:none !important;
@@ -365,9 +357,9 @@ label.burger_img{
 .card-title{font-size:1rem !important;margin:0;}
 
 /* Секции настроек и информационные блоки */
-/* .settings-section — обёртка: в settings.html внутри неё уже лежит .card,
-   а в support_bot_settings.html карточки нет. Поэтому поверхность даём
-   только тем секциям, где внутренней карточки не оказалось.              */
+/* В settings.html внутри .settings-section уже есть .card, а в
+   support_bot_settings.html нет. Поэтому фон даём только секциям без
+   внутренней карточки. */
 .settings-section{
   background:transparent !important;
   border:none !important;
@@ -379,15 +371,10 @@ label.burger_img{
   border-radius:var(--m3-r-xl) !important;
   padding:20px !important;
 }
-/* Скрытые вкладки настроек (Панель/Бот/Рефералы и т.д., когда активна
-   другая) должны полностью выпадать из потока. style.css пытался схлопнуть
-   их через opacity:0 + height:0 + overflow:hidden — но height:0 с
-   ненулевым padding (а .settings-section получает padding:20px !important
-   через правило выше) всё равно рендерится с остаточной высотой, так как
-   padding не может стать отрицательным. Из-за этого 7 невидимых, но всё
-   ещё занимающих место вкладок создавали огромный пустой отступ между
-   активной карточкой настроек и кнопкой «Сохранить все настройки».
-   display:none гарантированно убирает элемент из раскладки целиком. */
+/* Скрытые вкладки настроек должны полностью выпадать из потока.
+   В style.css они схлопывались через height:0, но padding из правила выше
+   оставлял у них высоту, и под активной вкладкой появлялся большой пустой
+   отступ. display:none убирает их целиком. */
 .settings-section.is-hidden{display:none !important;}
 .info-item,.metric-item{
   background:var(--m3-surface-container-high) !important;
@@ -404,7 +391,7 @@ label.burger_img{
   font-size:1.25rem !important;font-weight:700 !important;letter-spacing:-.03em !important;
 }
 
-/* Плитки статистики — разноцветные, как на странице подписки */
+/* Плитки статистики разного цвета, как на странице подписки */
 .stat-card{
   background:var(--m3-surface-container) !important;
   border:none !important;
@@ -430,9 +417,8 @@ label.burger_img{
 .stat-card .stat-label,.stat-card .metric-label{color:inherit !important;opacity:.75;}
 .stat-card .stat-icon{opacity:.85;}
 
-/* --------------------------------------------------------- 7. Кнопки ---- */
-/* Фирменная деталь M3 Expressive: пилюля «сжимается» в скруглённый
-   квадрат на нажатии.                                                     */
+/* 7. Кнопки */
+/* При нажатии кнопка-пилюля сжимается в скруглённый квадрат */
 .btn{
   border-radius:var(--m3-r-full) !important;
   border:none !important;
@@ -459,7 +445,7 @@ label.burger_img{
 .btn-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
 .btn-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
 
-/* Outline-варианты в M3 читаются как «тональные» */
+/* Outline-кнопки делаем тональными */
 .btn-outline-secondary,.btn-outline-primary,
 .btn-outline-danger,.btn-outline-warning,.btn-outline-success{
   background:var(--m3-surface-container-high) !important;
@@ -489,12 +475,12 @@ label.burger_img{
 .btn:disabled,.btn.disabled{opacity:.38 !important;}
 .btn-list{gap:8px !important;}
 
-/* Связанная группа кнопок */
+/* Группа связанных кнопок */
 .btn-group > .btn{border-radius:var(--m3-r-xs) !important;margin-right:3px;}
 .btn-group > .btn:first-child{border-top-left-radius:var(--m3-r-full) !important;border-bottom-left-radius:var(--m3-r-full) !important;}
 .btn-group > .btn:last-child{border-top-right-radius:var(--m3-r-full) !important;border-bottom-right-radius:var(--m3-r-full) !important;margin-right:0;}
 
-/* ---------------------------------------------------------- 8. Формы ---- */
+/* 8. Формы */
 .form-label{
   font-size:.62rem !important;
   font-weight:500 !important;
@@ -594,7 +580,7 @@ label.burger_img{
   box-shadow:none !important;
 }
 
-/* --------------------------------------------------------- 9. Таблицы -- */
+/* 9. Таблицы */
 .table{
   --tblr-table-bg:transparent;
   color:var(--m3-on-surface) !important;
@@ -621,7 +607,7 @@ label.burger_img{
 .table tbody tr:hover{background:var(--m3-surface-container-high) !important;}
 .table-responsive{border-radius:var(--m3-r-l);}
 
-/* ------------------------------------- 10. Бейджи, статусы, уведомления - */
+/* 10. Бейджи, статусы, уведомления */
 .badge{
   border-radius:var(--m3-r-full) !important;
   font-size:.58rem !important;
@@ -674,11 +660,10 @@ label.burger_img{
 .toast.text-bg-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
 .toast.text-bg-secondary{background:var(--m3-surface-container-highest) !important;color:var(--m3-on-surface) !important;}
 
-/* ------------------------------ 11. Модалки, меню, пагинация ------------ */
-/* Бэкдроп добавляется JS-ом последним ребёнком <body> — если по любой
-   причине его z-index не встанет ниже z-index самой модалки, он перехватывает
-   клики/фокус поверх полей ввода, хотя сама модалка при этом видна.
-   Фиксируем порядок явно, не полагаясь только на бандл Tabler. */
+/* 11. Модалки, меню, пагинация */
+/* Бэкдроп JS добавляет последним элементом <body>. Если его z-index
+   окажется выше модалки, он перехватывает клики по полям. Порядок
+   задаём явно. */
 .modal{z-index:1055 !important;pointer-events:auto !important;}
 .modal-backdrop{z-index:1050 !important;}
 .modal-dialog{pointer-events:auto !important;}
@@ -718,9 +703,8 @@ label.burger_img{
 }
 .dropdown-item:hover{background:var(--m3-surface-container-highest) !important;}
 
-/* Все элементы пагинации — одинаковые круги фиксированного размера:
-   номера, стрелки и многоточие. Иначе ширина плывёт от длины подписи и
-   кнопки получаются разной формы. */
+/* Все элементы пагинации — круги одного размера, иначе ширина зависит
+   от длины подписи. */
 .pagination{
   display:flex;
   justify-content:center;
@@ -774,9 +758,9 @@ label.burger_img{
 }
 .progress-bar{background:var(--m3-primary) !important;border-radius:var(--m3-r-full) !important;}
 
-/* --------------------------- 12. Индикатор загрузки (M3 Expressive) ----- */
-/* Морфирующая фигура вместо кольцевого спиннера — та же, что на
-   клиентских страницах. Разметку подставляет m3-loader.js.                */
+/* 12. Индикатор загрузки */
+/* Морфирующая фигура вместо спиннера, как на клиентских страницах.
+   Разметку подставляет m3-loader.js. */
 .m3-loader{
   width:44px;height:44px;
   color:var(--m3-primary);
@@ -798,7 +782,7 @@ label.burger_img{
   color:var(--m3-on-surface-variant);
 }
 
-/* ----------------------------------------------------- 13. Мелочи ------- */
+/* 13. Мелочи */
 :focus-visible{
   outline:3px solid var(--m3-primary);
   outline-offset:2px;
@@ -814,15 +798,9 @@ a{color:var(--m3-primary);}
 .text-warning{color:var(--m3-amber) !important;}
 .text-info{color:var(--m3-secondary) !important;}
 
-/* Плавное появление содержимого.
-   Важно: анимировать здесь можно только opacity. <main> — прямой предок
-   модалок (Bootstrap .modal с position:fixed), а элемент с ненулевым
-   transform становится containing block для своих fixed-потомков —
-   модалка тогда позиционируется/обрезается относительно <main>, а не
-   вьюпорта, и визуально "не открывается" (хотя backdrop уже показан).
-   Раньше здесь также анимировался transform:translateY — из-за этого
-   после появления m3-патча кнопки открытия модалок (например, «Ключи»)
-   переставали показывать окно. */
+/* Плавное появление содержимого. Анимируем только opacity: если задать
+   <main> transform, модалки внутри начинают позиционироваться относительно
+   него, а не окна, и перестают открываться. */
 main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 @keyframes m3-reveal{from{opacity:0;}to{opacity:1;}}
 
@@ -832,15 +810,8 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   .btn{padding:10px 18px !important;}
 }
 
-/* --- Бургер и статус бота на мобильной шапке ------------------------------
-   .header-controls везде содержит сразу несколько элементов (статус,
-   кнопка старт/стоп, признак входа, кнопка выхода, переключатель темы) —
-   для них на узких телефонах просто нет места в одну строку с брендом и
-   бургером. Попытка удержать всё на одной строке приводила к обрезанному
-   тексту кнопки и бургеру, налипающему прямо на неё. Возвращаем блок на
-   свою отдельную строку (flex-basis:100%) — вертикальный отступ между
-   строками уже даёт .main-header{gap:16px}, а бургер получает свой отступ
-   от края и не сжимается. */
+/* Мобильная шапка: элементам .header-controls не хватает места в одной
+   строке с брендом и бургером. Переносим блок на отдельную строку. */
 @media (max-width:992px){
   .main-header{align-items:center;}
   .bm{flex-shrink:0;margin-right:6px;}
@@ -855,11 +826,9 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   }
 }
 
-/* ==========================================================================
-   14. Страница настроек (settings.html / support_bot_settings.html)
-   ========================================================================== */
+/* 14. Страница настроек (settings.html, support_bot_settings.html) */
 
-/* --- Колонки и заголовки секций ----------------------------------------- */
+/* Колонки и заголовки секций */
 .settings-container{gap:18px !important;}
 .settings-column-left{min-width:340px;}
 .settings-column-right{min-width:420px;}
@@ -876,7 +845,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 }
 .settings-section:not(:has(> .card)):not(:has(.host-card)) > h2{margin-left:0 !important;}
 
-/* --- Навигация по разделам — чипы M3 ------------------------------------ */
+/* Навигация по разделам — чипы */
 .nav-pills{gap:6px !important;flex-wrap:wrap;}
 .card .nav.nav-pills .nav-link,
 .nav-pills .nav-link{
@@ -908,7 +877,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 }
 .nav-pills .nav-link:active{border-radius:var(--m3-r-s) !important;}
 
-/* --- Карточка хоста ------------------------------------------------------ */
+/* Карточка хоста */
 .host-card,
 #hosts .host-card{
   background:var(--m3-surface-container) !important;
@@ -918,7 +887,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   padding:20px !important;
   margin-bottom:12px !important;
 }
-/* вложенный блок SSH — на тон выше, чтобы отделяться от карточки хоста */
+/* Вложенный блок SSH на тон светлее карточки хоста */
 .host-card .card,
 .host-card .card.glass{
   background:var(--m3-surface-container-high) !important;
@@ -944,7 +913,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   margin-bottom:14px !important;
 }
 
-/* --- Тарифы -------------------------------------------------------------- */
+/* Тарифы */
 .plans-section h4,
 .plans-section h5,
 #hosts .plans-section h4{
@@ -962,7 +931,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   padding:0 !important;
   margin-bottom:16px !important;
 }
-/* связанный список в духе M3: крупные скругления только по краям группы */
+/* Связанный список: крупные скругления только у крайних пунктов */
 .plan-list li{
   display:block !important;
   background:var(--m3-surface-container-high) !important;
@@ -981,7 +950,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   color:var(--m3-on-surface) !important;
 }
 
-/* --- Поля без класса .form-control (форма добавления хоста) -------------- */
+/* Поля без класса .form-control (форма добавления хоста) */
 .form-group label{
   display:block;
   font-size:.62rem !important;
@@ -1021,24 +990,33 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   color:var(--m3-on-surface-variant);
 }
 
-/* --- Кнопка «показать пароль» -------------------------------------------- */
+/* Кнопка «показать пароль». Поле фиксированной высоты 46px, кнопка 30px,
+   поэтому отступ снизу 8px ставит её ровно по центру. top и transform
+   сбрасываем: мобильные правила style.css задают top:40%, и кнопка уезжала. */
+.password-wrapper input[type='password'],
+.password-wrapper input[type='text']{
+  height:46px !important;
+  line-height:20px !important;
+}
 .toggle-password{
   border-radius:var(--m3-r-full) !important;
   color:var(--m3-on-surface-variant) !important;
   width:30px !important;
   height:30px !important;
-  bottom:9px !important;
+  top:auto !important;
+  bottom:8px !important;
+  transform:none !important;
 }
 .toggle-password:hover{background:var(--m3-surface-container-highest) !important;}
 
-/* --- Инлайновые формы редактирования ------------------------------------ */
+/* Инлайновые формы редактирования */
 .form-inline{gap:8px !important;}
 .form-inline input{padding:11px 14px !important;font-size:.74rem !important;}
 .edit-row{gap:8px !important;}
 .edit-row .form-label{font-size:.6rem !important;margin:0 !important;}
 .edit-row .edit-actions{gap:6px !important;}
 
-/* --- Прочее -------------------------------------------------------------- */
+/* Прочее */
 .hr-text{border-color:var(--m3-outline-variant) !important;opacity:1 !important;}
 .button{
   border-radius:var(--m3-r-full) !important;
@@ -1052,12 +1030,8 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 .button-primary{background:var(--m3-primary) !important;color:var(--m3-on-primary) !important;}
 
 
-/* ==========================================================================
-   15. Плоский фон
-   На клиентских страницах (подписка, статус, блокировка) фон — сплошная
-   поверхность без градиентов. Панель приводим к тому же виду: убираем
-   виньетку body::before и анимированную «аврору» body::after из style.css.
-   ========================================================================== */
+/* 15. Плоский фон, как на клиентских страницах: убираем виньетку
+   body::before и «аврору» body::after из style.css. */
 html[data-bs-theme='light'] body::before,
 html[data-bs-theme='dark'] body::before{box-shadow:none !important;}
 body::before,
@@ -1069,16 +1043,11 @@ body::after{
   box-shadow:none !important;
 }
 
-/* ==========================================================================
-   16. Утраченные мобильные правила
-   Из style.css был удалён патч, содержавший в том числе мобильные
-   медиазапросы. Большую их часть закрывает сама сетка Bootstrap, поэтому
-   здесь возвращено только то, что иначе действительно ломается.
-   Блок самодостаточный — при желании удаляется целиком.
-   ========================================================================== */
+/* 16. Мобильные правила, которые иначе ломаются. Остальное закрывает
+   сетка Bootstrap. Блок можно удалить целиком. */
 @media (max-width:992px){
-  /* без этого длинная таблица или карточка даёт горизонтальную прокрутку
-     всей страницы, а не своего контейнера */
+  /* Без этого длинная таблица или карточка прокручивает всю страницу
+     по горизонтали, а не свой контейнер */
   html,body{overflow-x:hidden;}
 
   .modal-dialog{
@@ -1098,28 +1067,22 @@ body::after{
   .login-container{padding:26px 22px !important;margin:16px !important;}
 }
 
-/* ==========================================================================
-   17. Доводка цветов
-   Вместе с удалённым блоком ушёл и «anti-ghosting fix»,
-   который гасил захардкоженные тёмные цвета в светлой теме. Ниже эти места
-   закрыты через токены. Отдельная сложность: у части правил в style.css
-   специфичность (0,4,0) плюс !important, поэтому общие селекторы вроде
-   .btn-glass до них не дотягиваются — здесь специфичность повторена.
-   ========================================================================== */
+/* 17. Доводка цветов. Захардкоженные тёмные цвета style.css заменены
+   токенами. У части правил там специфичность (0,4,0) с !important,
+   поэтому здесь она повторена. */
 
-/* --- Переменная, которую style.css использует, но нигде не объявляет ------
-   Без неё 10 объявлений `color: var(--light-color)` невалидны и цвет просто
-   наследуется. Задаём явно, чтобы поведение было предсказуемым. */
+/* style.css использует --light-color, но нигде его не объявляет.
+   Задаём явно, иначе такие объявления невалидны. */
 :root,
 [data-bs-theme='light'],
 [data-bs-theme='dark']{
   --light-color:var(--m3-on-surface);
 }
-/* но внутри цветных плиток номер должен сохранять цвет самой плитки */
+/* Внутри цветных плиток число берёт цвет плитки */
 .stat-card .stat-number,
 .stat-card .stat-number small{color:inherit !important;}
 
-/* --- Мелкие glass-кнопки (btn-sm + btn-glass) ---------------------------- */
+/* Мелкие glass-кнопки (btn-sm + btn-glass) */
 .btn.btn-sm.btn-glass.btn-outline-secondary{
   background:var(--m3-surface-container-high) !important;
   color:var(--m3-on-surface) !important;
@@ -1153,12 +1116,9 @@ body::after{
   filter:brightness(1.06);
 }
 
-/* --- Кнопка «Ключи» в разделе «Пользователи» -----------------------------
-   Первая попытка ([data-toggle="keys"].btn.btn-outline-secondary, специфич-
-   ность 0,3,0) проигрывала правилу .btn.btn-sm.btn-glass.btn-outline-secondary
-   выше по файлу (0,4,0 — 4 класса) — при !important с обеих сторон побеждает
-   более специфичный селектор, а не более поздний по каскаду. Повторяем все
-   его классы + атрибут, чтобы гарантированно выиграть. */
+/* Кнопка «Ключи» в разделе «Пользователи». Селектор повторяет все классы
+   правила выше и добавляет атрибут: при !important с обеих сторон
+   побеждает более специфичный, а не более поздний. */
 [data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary{
   background:var(--m3-secondary-container) !important;
   color:var(--m3-on-secondary-container) !important;
@@ -1171,10 +1131,8 @@ body::after{
   filter:brightness(1.08);
 }
 
-/* --- Кнопка «Комментарий» (иконка чата) на карточках ключей -------------
-   Та же логика специфичности, что и у «Ключи» выше. Берём последнюю
-   свободную акцентную роль M3 (tertiary), которую не использует ни одна
-   другая кнопка в приложении. */
+/* Кнопка «Комментарий» на карточках ключей. Логика специфичности та же.
+   Цвет tertiary, его не использует ни одна другая кнопка. */
 .btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment{
   background:var(--m3-tertiary-container) !important;
   color:var(--m3-on-tertiary-container) !important;
@@ -1187,9 +1145,8 @@ body::after{
   filter:brightness(1.08);
 }
 
-/* --- Поле ответа на странице тикета -------------------------------------
-   Класса .form-control у него нет, поэтому общие правила форм его не берут,
-   а в style.css ему задан тёмный фон #343a40. */
+/* Поле ответа в тикете: у него нет .form-control, а style.css задаёт
+   ему тёмный фон #343a40. */
 .ticket-actions textarea[name="message"]{
   background:var(--m3-surface-container-high) !important;
   color:var(--m3-on-surface) !important;
@@ -1206,7 +1163,7 @@ body::after{
   outline:none;
 }
 
-/* --- Календарь flatpickr (admin_keys.html) ------------------------------- */
+/* Календарь flatpickr (admin_keys.html) */
 .flatpickr-calendar{
   background:var(--m3-surface-container-high) !important;
   border:none !important;
@@ -1226,20 +1183,17 @@ body::after{
 .flatpickr-weekdays,
 .flatpickr-weekday{background:transparent !important;color:var(--m3-on-surface-variant) !important;}
 
-/* ==========================================================================
-   18. Точечные исправления по замечаниям с реальных страниц
-   Все правила ниже адресные: конкретный компонент, конкретная ширина.
-   ========================================================================== */
+/* 18. Точечные исправления для конкретных компонентов и ширин */
 
-/* --- Колонки настроек: на узких экранах min-width их распирал ------------
-   В style.css это снимается на 600px, но m3 грузится позже и перебивал. */
+/* Колонки настроек: на узких экранах их распирал min-width.
+   style.css снимает его на 600px, но этот файл грузится позже. */
 @media (max-width:768px){
   .settings-column-left,
   .settings-column-right{min-width:0 !important;flex:1 1 100% !important;}
   .settings-container{gap:12px !important;}
 }
 
-/* --- Шапка «Пользователи»: поиск наезжал на заголовок (скрин 3) ---------- */
+/* Шапка «Пользователи»: поиск наезжал на заголовок */
 @media (max-width:768px){
   .page-header .row{row-gap:12px;}
   .page-header .col-auto.ms-auto{width:100%;margin-left:0 !important;}
@@ -1248,7 +1202,7 @@ body::after{
   #users-per-page{flex:0 0 auto;width:auto;}
 }
 
-/* --- Последний результат спидтеста вылезал за карточку (скрин 2) --------- */
+/* Последний результат спидтеста вылезал за карточку */
 #st-latest{
   display:flex;
   flex-wrap:wrap;
@@ -1257,8 +1211,8 @@ body::after{
   overflow-wrap:anywhere;
 }
 
-/* --- Группы кнопок: вкладки ключей и переключатели периода (скрины 5, 9) -
-   Две длинные подписи в btn-group не помещались в карточку. */
+/* Группы кнопок (вкладки ключей, переключатели периода):
+   длинные подписи не помещались в карточку. */
 @media (max-width:576px){
   .btn-group{display:flex;flex-wrap:wrap;width:100%;}
   .btn-group > .btn,
@@ -1268,17 +1222,16 @@ body::after{
     border-radius:var(--m3-r-full) !important;
   }
   .btn-group{gap:6px;}
-  /* заголовок карточки с кнопками справа — переносим в две строки */
+  /* Заголовок карточки с кнопками справа переносим на две строки */
   .card-header{flex-wrap:wrap;gap:10px;}
   .card-header .btn-group{width:auto;}
 }
-/* переключатели периода в мониторинге компактнее */
+/* Переключатели периода в мониторинге компактнее */
 .btn-group-sm > .btn,
 .btn-group-sm > .btn-check + .btn{padding:7px 14px !important;font-size:.64rem !important;}
 
-/* --- Индикаторы состояния хостов: были цветными квадратами (скрин 10) ----
-   Заменяем на осмысленные иконки Material через лигатуры-коды, чтобы не
-   трогать JS, который переставляет классы bg-success / bg-danger и др. */
+/* Индикаторы состояния хостов вместо цветных квадратов показывают иконки
+   через лигатуры. JS, который меняет классы bg-success и др., не трогаем. */
 .status-indicator{
   width:auto !important;
   height:auto !important;
@@ -1296,41 +1249,32 @@ body::after{
   -webkit-font-feature-settings:"liga";
   font-feature-settings:"liga";
   -webkit-font-smoothing:antialiased;
-  content:"radio_button_unchecked";     /* нет данных */
+  content:"radio_button_unchecked";     /* Нет данных */
   color:var(--m3-on-surface-variant);
 }
 .status-indicator.bg-success::before{content:"check_circle";color:var(--m3-online);}
 .status-indicator.bg-warning::before{content:"warning";color:var(--m3-amber);}
 .status-indicator.bg-danger::before{content:"error";color:var(--m3-error);}
-.status-indicator.bg-secondary::before{content:"help";}                        /* help */
+.status-indicator.bg-secondary::before{content:"help";}
 .status-indicator.pulse{animation:m3-led 2.4s var(--m3-ease-emph) infinite;}
 
-/* --- Значение аптайма было крупнее соседних (скрин 11) ------------------- */
+/* Значение аптайма было крупнее соседних */
 .metric-value-sm{
   font-size:.95rem !important;
   line-height:1.25 !important;
 }
 
-/* --- Остатки тёмной темы в рамках и шапке таблицы ------------------------
-   В style.css у них рамка вида color-mix(#ffffff …), которая в светлой теме
-   вырождается в белую, и фон шапки #343a40. */
+/* Остатки тёмной темы: в style.css рамки через color-mix(#ffffff …)
+   в светлой теме становятся белыми, а шапка таблицы — #343a40. */
 .users-table thead{background:transparent !important;}
 .chart-container,
 .chat-box,
 .login-container{border:none !important;box-shadow:none !important;}
-/* .card-body{padding:20px} уже даёт отступ — свой padding у .chart-container
-   поверх него делал график в мониторинге заметно уже/меньше, чем такие же
-   графики на Главной (там canvas лежит прямо в .card-body без обёртки). */
+/* Отступ уже даёт .card-body. Свой padding у .chart-container делал
+   графики мониторинга меньше, чем такие же на главной. */
 .chart-container{padding:0 !important;min-height:0 !important;height:280px;}
-/* --- Чат в тикете (скрины не присылали, нашли при аудите покрытия) ------
-   1) .chat-message в style.css объявлен дважды; второй (побеждающий по
-      каскаду) экземпляр хардкодит border-radius:14px мимо переменной
-      --ui-radius, которой держится форма скругления везде в остальном
-      приложении — пузыри чата были заметно "острее" всех прочих карточек.
-   2) Сообщения админа и пользователя красились в один и тот же
-      var(--bg-surface) без единого тонального различия — единственная
-      пара ролей в приложении без разделения контейнерными тонами M3
-      (кнопки, бейджи, алерты — везде есть разделение). */
+/* Чат в тикете: у пузырей в style.css радиус 14px вместо общего,
+   а сообщения админа и пользователя были одного цвета. */
 .chat-message{
   border:none !important;
   border-radius:var(--m3-r-l) !important;
@@ -1350,18 +1294,11 @@ body::after{
 .toast.text-bg-warning,
 .toast.text-bg-secondary{border:none !important;}
 
-/* ==========================================================================
-   19. Мобильная раскладка и вылеты за экран
-   Вместе с удалённым из style.css блоком ушли правила,
-   которые прятали навигацию, позиционировали бургер и схлопывали колонки
-   в одну на узких экранах. Без них страница становится шире вьюпорта:
-   контент уезжает влево, а закреплённая шапка остаётся на месте — отсюда
-   «пустота справа». Здесь это восстановлено в стиле M3.
-   ========================================================================== */
+/* 19. Мобильная раскладка. Без этих правил страница шире экрана:
+   контент уезжает, и справа появляется пустота. */
 
-/* Шапка больше не липкая: на телефоне она разворачивается в несколько рядов
-   и перекрывала контент при скролле. position:relative обязателен —
-   бургер-меню позиционируется относительно неё. */
+/* Шапка больше не липкая: на телефоне она в несколько рядов и перекрывала
+   контент. position:relative нужен для бургер-меню. */
 .main-header{
   position:relative !important;
   top:auto !important;
@@ -1379,12 +1316,8 @@ body::after{
 
   .bm,
   label.burger_img{display:flex !important;align-items:center;justify-content:center;}
-  /* position:relative — бургер остаётся частью обычного flex-потока шапки
-     (рядом с .brand), а не абсолютно спозиционирован поверх контента.
-     Выпадающее меню (.bm .burger-menu) всё равно позиционируется
-     относительно этого же элемента — для этого достаточно любого не-static
-     position, абсолютное позиционирование самой кнопки для этого не нужно
-     и как раз оно накладывало бургер прямо на .bot-control. */
+  /* Бургер остаётся в обычном потоке шапки. Для меню хватает
+     position:relative, а absolute накладывал кнопку на .bot-control. */
   .bm{
     position:relative !important;
     z-index:1010;
@@ -1397,12 +1330,10 @@ body::after{
     max-width:calc(100vw - 32px) !important;
   }
   .header-controls{gap:6px !important;}
-  /* Хвост старого дизайна с абсолютно позиционированным бургером (см.
-     style.css) — резервировал место под кнопку в правом углу шапки.
-     Бургер снова в обычном flex-потоке, этот отступ больше не нужен. */
+  /* Отступ под старый абсолютный бургер больше не нужен */
   .header-controls{padding-right:0 !important;}
 
-  /* колонки в одну */
+  /* Колонки в одну */
   .row > *,
   [class*="col-"],
   [class*="settings-column-"]{
@@ -1411,7 +1342,7 @@ body::after{
     flex:0 0 100% !important;
   }
 
-  /* таблицы прокручиваются внутри себя, а не тянут страницу */
+  /* Таблицы прокручиваются внутри себя, а не тянут страницу */
   table,
   .table-responsive{
     display:block !important;
@@ -1421,7 +1352,7 @@ body::after{
   }
 }
 
-/* --- Кнопка «Сохранить все настройки» была прибита к низу экрана -------- */
+/* Кнопка «Сохранить все настройки» была прибита к низу экрана */
 .settings-column-right form > .text-end.mt-3,
 .settings-column-right form > .text-end{
   position:static !important;
@@ -1436,12 +1367,10 @@ body::after{
   backdrop-filter:none !important;
   border:none !important;
 }
-/* style.css резервировал 84px/72px снизу формы под старую фиксированную
-   панель — кнопка выше уже переведена в обычный поток, этот отступ больше
-   не нужен и просто оставлял пустой хвост под кнопкой. */
+/* Отступ снизу формы под старую фиксированную панель больше не нужен */
 .settings-column-right form{padding-bottom:0 !important;}
 
-/* --- Спидтест: строка метрик и ряд кнопок (скрин 2) --------------------- */
+/* Спидтест: строка метрик и ряд кнопок */
 #st-latest{
   white-space:normal !important;
   overflow:visible !important;
@@ -1453,7 +1382,7 @@ body::after{
   min-width:0;
 }
 
-/* --- Поиск и счётчик записей одного роста (скрин 4) --------------------- */
+/* Поиск и счётчик записей одной высоты */
 #users-search,
 #users-per-page{height:44px !important;padding-top:0 !important;padding-bottom:0 !important;}
 #users-per-page{
@@ -1466,7 +1395,7 @@ body::after{
 }
 #users-search{flex:1 1 auto !important;min-width:0 !important;}
 
-/* --- Кнопка «Ключи» сливалась с подсветкой строки (скрин 5) ------------- */
+/* Кнопка «Ключи» сливалась с подсветкой строки */
 .btn-outline-secondary{background:var(--m3-surface-container-highest) !important;}
 .btn-outline-secondary:hover,
 .btn-outline-secondary:focus{
@@ -1474,12 +1403,12 @@ body::after{
   color:var(--m3-on-primary-container) !important;
 }
 
-/* --- Тариф и сумма в одну строку (скрин 6) ------------------------------ */
+/* Тариф и сумма в одну строку */
 .input-group > .soft-select,
 .input-group > .soft-select-toggle{min-width:0 !important;}
 .input-group > .soft-select{flex:1 1 auto;}
 
-/* --- Пагинация с текстовыми подписями: по размеру текста (скрин 8) ------ */
+/* Пагинация с текстовыми подписями: ширина по тексту */
 .pagination-text .page-item .page-link{
   width:auto !important;
   height:38px;
@@ -1488,7 +1417,7 @@ body::after{
   border-radius:var(--m3-r-full) !important;
 }
 
-/* --- Плитки метрик одной высоты (скрины 9, 10) -------------------------- */
+/* Плитки метрик одной высоты */
 .row{align-items:stretch;}
 .stat-card{height:100%;}
 .metric-item{
@@ -1508,15 +1437,8 @@ body::after{
   }
 }
 
-/* ==========================================================================
-   20. Фон панели — плоская подложка вместо «авроры»
-   На клиентских страницах (см. gistfile1) фон всегда плоский: body{background:
-   var(--surface)}. В style.css поверх этого рисуется анимированная виньетка
-   (body::before) и вращающийся conic/radial-градиент (body::after) — на части
-   устройств/масштабов это давало видимые швы и «грязные» пятна поверх
-   карточек, из-за чего фон выглядел сломанным что в светлой, что в тёмной
-   теме. Возвращаем плоский фон панели, как в исходном дизайне.
-   ========================================================================== */
+/* 20. Плоский фон панели. Анимированные body::before и body::after из
+   style.css давали швы и пятна поверх карточек в обеих темах. */
 body::before,
 body::after{
   content:none !important;
@@ -1524,12 +1446,8 @@ body::after{
 }
 body{background:var(--m3-surface) !important;}
 
-/* --------------------------------------------------- 21. Кнопка «Ключи» ---
-   При наведении на строку таблицы (.table tbody tr:hover) фон становится
-   var(--m3-surface-container-high) — почти тем же цветом, что и заливка
-   .btn-outline-secondary (surface-container-highest), поэтому кнопка
-   визуально пропадала. Даём кнопке собственную границу и более контрастную
-   заливку, не зависящую от фона строки.                                    */
+/* 21. Кнопка «Ключи»: при наведении на строку её фон почти совпадал
+   с фоном кнопки. Даём ей рамку и более контрастную заливку. */
 .btn-outline-secondary.btn-glass,
 .btn-outline-secondary{
   background:var(--m3-surface-container-highest) !important;
@@ -1545,11 +1463,8 @@ body{background:var(--m3-surface) !important;}
   color:var(--m3-on-primary-container) !important;
 }
 
-/* --------------------------------------------- 22. Границы полей ввода ----
-   .form-control/.form-select рисовались с border:1px solid transparent —
-   в карточках .glass (полупрозрачный фон) поле и подложка почти сливались
-   по тону, и границы было не видно (особенно в блоке SSH для Speedtest).
-   Возвращаем настоящую, видимую в любой теме и на любом фоне границу.       */
+/* 22. Границы полей ввода: прозрачная рамка сливалась с полупрозрачными
+   карточками .glass. Возвращаем видимую рамку. */
 .form-control,.form-select,
 .input-group .form-control,.input-group .form-select{
   border:1px solid var(--m3-outline-variant) !important;
@@ -1566,18 +1481,14 @@ body{background:var(--m3-surface) !important;}
   color:var(--m3-on-surface) !important;
 }
 
-/* ------------------------------------------- 23. Плитки статистики ---------
-   .card-body{padding:20px} уже даёт внутренний отступ; .stat-card поверх
-   добавлял ещё 18px собственного padding на внешней карточке — отступы
-   складывались (≈38px со всех сторон), из-за чего плитки показателей
-   выглядели непропорционально большими и на ПК, и на телефоне.             */
+/* 23. Плитки статистики: отступы .card-body и .stat-card складывались,
+   и плитки выглядели слишком большими. */
 .stat-card{padding:0 !important;margin-bottom:0 !important;}
 .stat-card .card-body{padding:16px !important;}
 @media (max-width:576px){
   .stat-card .card-body{padding:12px !important;}
 }
-/* Гарантированная сетка 2×2 для верхних показателей на /monitor на любой
-   ширине экрана — не полагаемся на flex-basis у col-6/col-md-3. */
+/* Сетка 2×2 для верхних показателей на /monitor при любой ширине */
 .row.g-3.mb-4{
   display:grid !important;
   grid-template-columns:repeat(2,1fr);
@@ -1590,12 +1501,8 @@ body{background:var(--m3-surface) !important;}
   width:auto;max-width:none;flex:none;padding:0;
 }
 
-/* ------------------------------------- 24. Список серверов на /monitor ----
-   .server-item / .server-header / .server-info / .server-name / .server-url /
-   .server-status / .monitor-info / .disks-section вообще не были описаны —
-   у них не было ни отступов, ни границ, ни flex-раскладки. Из-за этого
-   заголовок следующего сервера визуально «влипал» в метрики предыдущего
-   (карточки казались сломанными/наползающими друг на друга).               */
+/* 24. Список серверов на /monitor: у этих блоков не было ни отступов,
+   ни раскладки, и карточки наползали друг на друга. */
 .servers-list{display:flex;flex-direction:column;gap:12px;}
 .server-item{
   background:var(--m3-surface-container-high) !important;
@@ -1653,26 +1560,16 @@ body{background:var(--m3-surface) !important;}
   padding:10px 14px;
 }
 
-/* Иконки статуса хоста использовали кодпоинты шрифта Font Awesome
-   (\f0be, \f083, \f8b6) внутри шрифта Material Symbols Rounded — глиф
-   с таким кодом там не существует, поэтому вместо иконки показывался
-   пустой прямоугольник/«тофу». Кодпоинты Material Symbols (\e86c и т.д.)
-   тоже ненадёжны: шрифт подключён как СОКРАЩЁННЫЙ набор (icon_names=... в
-   URL Google Fonts), а при таком сабсеттинге кодовые points в Private Use
-   Area переназначаются иначе, чем в «полном» шрифте — общеизвестные
-   кодпоинты из таблиц Material Symbols могут указывать не на ту иконку.
-   Переходим на лигатуры по имени (как .msym по всему проекту) — они не
-   зависят от нумерации конкретного сабсета, только от того, что имя
-   иконки есть в icon_names (все четыре ниже там есть).                    */
+/* Иконки статуса хоста через лигатуры по имени. Кодпоинты не подходят:
+   Font Awesome-коды в Material Symbols не существуют, а в урезанном наборе
+   (icon_names=…) коды Material Symbols отличаются от полного шрифта. */
 .status-indicator.bg-success::before{content:"check_circle";color:var(--m3-online);}
 .status-indicator.bg-warning::before{content:"warning";color:var(--m3-amber);}
 .status-indicator.bg-danger::before{content:"error";color:var(--m3-error);}
-.status-indicator.bg-secondary::before{content:"help";}                        /* help */
+.status-indicator.bg-secondary::before{content:"help";}
 
-/* --------------------------------------- 25. Кнопка восстановления бэкапа --
-   На узких экранах строка «Выбрать файл» + «Восстановить» не переносилась
-   (d-flex без flex-wrap), поэтому кнопка «Восстановить» вылезала за правый
-   край экрана. На мобильном переносим её на отдельную строку на всю ширину.*/
+/* 25. Восстановление бэкапа: на узких экранах кнопка «Восстановить»
+   вылезала за край. На мобильном переносим её на отдельную строку. */
 @media (max-width:576px){
   .restore-db-row{flex-wrap:wrap !important;}
   .restore-db-row .btn-danger{
@@ -1680,3 +1577,8 @@ body{background:var(--m3-surface) !important;}
     margin-left:0 !important;
   }
 }
+
+/* 26. Страница входа. Прокрутки здесь нет, поэтому место под полосу
+   прокрутки не резервируем: из-за scrollbar-gutter:stable в style.css
+   фоновая анимация не доходила до правого края. */
+html:has(body.login-page){scrollbar-gutter:auto;}
