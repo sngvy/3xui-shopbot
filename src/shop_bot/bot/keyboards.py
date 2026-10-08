@@ -1205,7 +1205,7 @@ def create_key_info_keyboard(
     else:
         builder.button(text="🌐 Web App", callback_data=f"open_web_app_{key_id}", style="success")
     builder.button(
-        text=(get_setting("btn_extend_key") or "➕ Продлить эту подписку"),
+        text=(get_setting("btn_extend_key") or "➕ Продлить"),
         callback_data=f"extend_key_{key_id}",
         style="danger",
     )
