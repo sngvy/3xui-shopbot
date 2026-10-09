@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#FBF7FF" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#121016" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FBF8FF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131318" media="(prefers-color-scheme: dark)">
 <title>Добавление подписки</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%235B27F5'/%3E%3Cstop offset='100%25' stop-color='%23D9006C'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='m422-232 207-248H469l29-227-185 267h139l-30 208ZM320-80l40-280H160l360-520h80l-40 320h240L400-80h-80Zm151-390Z'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,42 +17,42 @@
   color-scheme: light dark;
 
   /* Цвета */
-  --surface:#FBF7FF;
-  --surface-container:#F2ECFA;
-  --surface-container-high:#EAE1F6;
-  --surface-container-highest:#E2D8F1;
-  --on-surface:#191424;
-  --on-surface-variant:#4C4459;
-  --outline-variant:#D6CCE4;
+  --surface:#FBF8FF;
+  --surface-container:#EFEDF4;
+  --surface-container-high:#E9E7EF;
+  --surface-container-highest:#E4E1E9;
+  --on-surface:#1B1B21;
+  --on-surface-variant:#454651;
+  --outline-variant:#C6C5D3;
 
-  --primary:#5B27F5;
+  --primary:#344DDB;
   --on-primary:#FFFFFF;
-  --primary-container:#E6DBFF;
-  --on-primary-container:#210079;
+  --primary-container:#DEE0FF;
+  --on-primary-container:#000F5D;
 
-  --secondary:#D9006C;
+  --secondary:#765376;
   --on-secondary:#FFFFFF;
-  --secondary-container:#FFD9E6;
-  --on-secondary-container:#470022;
+  --secondary-container:#FFD6FC;
+  --on-secondary-container:#2D102F;
 
-  --tertiary:#3F6E00;
+  --tertiary:#476646;
   --on-tertiary:#FFFFFF;
-  --tertiary-container:#C6F589;
-  --on-tertiary-container:#122200;
+  --tertiary-container:#C8ECC3;
+  --on-tertiary-container:#032108;
 
-  --amber:#7C5400;
-  --amber-container:#FFDF90;
-  --on-amber-container:#271900;
+  --amber:#84531E;
+  --amber-container:#FFDCBF;
+  --on-amber-container:#2D1600;
 
-  --error:#BC0027;
-  --error-container:#FFD9D8;
-  --on-error-container:#450009;
+  --error:#A43B33;
+  --error-container:#FFDAD6;
+  --on-error-container:#410002;
 
-  --online:#0C7A46;
-  --online-container:#A6F2C6;
-  --online-glow:rgba(12,122,70,.45);
+  --online:#2E6955;
+  --online-container:#B3EFD6;
+  --online-glow:rgba(46,105,85,.45);
 
-  --scrim:rgba(25,20,36,.10);
+  --scrim:rgba(27,27,33,.10);
 
   /* Скругления */
   --r-xs:8px;  --r-s:12px;  --r-m:16px;
@@ -68,40 +68,40 @@
 
 @media (prefers-color-scheme: dark){
   :root{
-    --surface:#121016;
-    --surface-container:#1D1A24;
-    --surface-container-high:#27232F;
-    --surface-container-highest:#322D3B;
-    --on-surface:#ECE2F6;
-    --on-surface-variant:#CBC1D9;
-    --outline-variant:#4A4356;
+    --surface:#131318;
+    --surface-container:#1F1F25;
+    --surface-container-high:#29292F;
+    --surface-container-highest:#34343A;
+    --on-surface:#E4E1E9;
+    --on-surface-variant:#C6C5D3;
+    --outline-variant:#454651;
 
-    --primary:#CBB8FF;
-    --on-primary:#320096;
-    --primary-container:#4A19D2;
-    --on-primary-container:#E9DDFF;
+    --primary:#BBC3FF;
+    --on-primary:#001D93;
+    --primary-container:#1030C4;
+    --on-primary-container:#DEE0FF;
 
-    --secondary:#FFB0CB;
-    --on-secondary:#6D0038;
-    --secondary-container:#A80053;
-    --on-secondary-container:#FFD9E6;
+    --secondary:#E4B9E2;
+    --on-secondary:#442545;
+    --secondary-container:#5C3B5D;
+    --on-secondary-container:#FFD6FC;
 
-    --tertiary:#ABD86A;
-    --on-tertiary:#1F3700;
-    --tertiary-container:#2F5200;
-    --on-tertiary-container:#C6F589;
+    --tertiary:#ACD0A9;
+    --on-tertiary:#19371B;
+    --tertiary-container:#2F4E30;
+    --on-tertiary-container:#C8ECC3;
 
-    --amber:#FFDF90;
-    --amber-container:#5D4000;
-    --on-amber-container:#FFDF90;
+    --amber:#FBB97B;
+    --amber-container:#683C07;
+    --on-amber-container:#FFDCBF;
 
-    --error:#FFB3AE;
-    --error-container:#93000F;
-    --on-error-container:#FFD9D8;
+    --error:#FFB4AB;
+    --error-container:#84241E;
+    --on-error-container:#FFDAD6;
 
-    --online:#6EE0A0;
-    --online-container:#00522E;
-    --online-glow:rgba(110,224,160,.40);
+    --online:#97D3BB;
+    --online-container:#11503E;
+    --online-glow:rgba(151,211,187,.40);
 
     --scrim:rgba(0,0,0,.35);
   }
@@ -466,9 +466,21 @@ body{justify-content:center;}
 .lead{margin:16px 0 8px;max-width:40ch;}
 .motto{margin-bottom:30px;font-size:.85rem;color:var(--on-surface-variant);opacity:.8;}
 .cta{align-self:stretch;}
+/* Фон: dotglobe */
+.bg{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none;}
+.shell,.foot{position:relative;z-index:1;}
+body{overflow-x:hidden;}
+.bg::before,.bg::after{content:"";position:absolute;}
+@media (prefers-reduced-motion: reduce){.bg *,.bg::before,.bg::after{animation:none !important;}}
+
+.bg svg{position:absolute;left:50%;top:50%;width:150vmax;height:150vmax;translate:-50% -50%;}
+.bg{--ln:#344DDB;--ln2:#765376;--g1:#344DDB;--g2:#765376;--g3:#765376;--bc:#C7D0FF;--be:#EEF0FF;}
+@media (prefers-color-scheme: dark){.bg{--ln:#BBC3FF;--ln2:#E4B9E2;--g1:#BBC3FF;--g2:#E4B9E2;--g3:#E4B9E2;--bc:#4B5FF0;--be:#1F2F72;}}
+.bg svg{left:0;top:0;width:100%;height:100%;translate:none;}.bg{--bg-a:.35;}.bg::after{display:none;}.bg svg{opacity:var(--bg-a);}
 </style>
 </head>
 <body class="loading">
+<div class="bg" aria-hidden="true"><canvas id="gl" style="position:absolute;left:0;top:0;"></canvas></div>
 <div id="page-loader">
   <svg class="m3-loader" viewBox="0 0 48 48" aria-hidden="true"><path></path></svg>
   <div class="loader-hint">Загрузка</div>
@@ -588,5 +600,24 @@ if(target){
   setTimeout(function(){ window.location.href = finalUrl; }, 1000);
 }
 </script>
+<script>(function(){var c=document.getElementById('gl');if(!c)return;var x=c.getContext('2d'),bg=document.querySelector('.bg'),cs=getComputedStyle(bg),ln=cs.getPropertyValue('--ln').trim(),ln2=cs.getPropertyValue('--ln2').trim(),W,H,Rr,dpr=Math.min(window.devicePixelRatio||1,2);
+function size(){W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(dpr,0,0,dpr,0,0);Rr=Math.min(Math.max(W*.62,H*.3),560);}size();addEventListener('resize',size);
+var P=[],n=1100,i,g=Math.PI*(3-Math.sqrt(5));for(i=0;i<n;i++){var y=1-2*(i+.5)/n,r=Math.sqrt(1-y*y),t=g*i;P.push([Math.cos(t)*r,y,Math.sin(t)*r]);}
+var C=[[.7,.3],[.2,2.2],[-.4,1.1],[.5,-1.2],[-.3,-2.4],[.1,0],[.85,-.2]],E=[[0,1],[1,2],[2,4],[3,0],[5,3],[6,3],[4,5],[0,6]];
+function ll(la,lo){return [Math.cos(la)*Math.cos(lo),Math.sin(la),Math.cos(la)*Math.sin(lo)];}
+var tilt=.42,rot=0,T=0;
+function pr(p,rot){var cy=Math.cos(rot),sy=Math.sin(rot),X=p[0]*cy+p[2]*sy,Z=-p[0]*sy+p[2]*cy,ct=Math.cos(tilt),st=Math.sin(tilt),Y=p[1]*ct-Z*st,Z2=p[1]*st+Z*ct;return [X,Y,Z2];}
+function frame(){x.clearRect(0,0,W,H);var cx=W*.5,cy=H*.44,k,j;x.fillStyle=ln;
+for(i=0;i<n;i++){var q=pr(P[i],rot);var a=q[2]>0?.4+.6*q[2]:.12;x.globalAlpha=a;x.beginPath();x.arc(cx+q[0]*Rr,cy-q[1]*Rr,q[2]>0?2.1:1.2,0,7);x.fill();}
+x.globalAlpha=.9;x.strokeStyle=ln2;x.lineWidth=2;x.setLineDash([1,7]);x.lineCap='round';
+E.forEach(function(e,ei){var a=ll(C[e[0]][0],C[e[0]][1]),b=ll(C[e[1]][0],C[e[1]][1]),d=Math.acos(Math.min(1,a[0]*b[0]+a[1]*b[1]+a[2]*b[2])),pts=[];
+for(k=0;k<=40;k++){var t=k/40,s1=Math.sin((1-t)*d)/Math.sin(d),s2=Math.sin(t*d)/Math.sin(d),h=1+.35*Math.sin(Math.PI*t)*Math.min(1,d),p=[(a[0]*s1+b[0]*s2)*h,(a[1]*s1+b[1]*s2)*h,(a[2]*s1+b[2]*s2)*h];pts.push(pr(p,rot));}
+x.beginPath();var on=false;pts.forEach(function(q,m){var px=cx+q[0]*Rr,py=cy-q[1]*Rr;if(q[2]>-.1){on?x.lineTo(px,py):x.moveTo(px,py);on=true;}else on=false;});x.stroke();
+var tt=((T*.12+ei*.37)%1),m=Math.floor(tt*40),q=pts[m];if(q&&q[2]>-.1){x.setLineDash([]);x.globalAlpha=1;x.fillStyle=ln2;x.beginPath();x.arc(cx+q[0]*Rr,cy-q[1]*Rr,5,0,7);x.fill();x.fillStyle=ln;x.setLineDash([1,7]);x.globalAlpha=.9;}});
+x.setLineDash([]);C.forEach(function(p){var q=pr(ll(p[0],p[1]),rot);if(q[2]>0){x.globalAlpha=1;x.fillStyle=ln2;x.beginPath();x.arc(cx+q[0]*Rr,cy-q[1]*Rr,6.5,0,7);x.fill();x.fillStyle=ln;}});
+x.globalAlpha=1;}
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function loop(){T+=.004;rot+=.000875;frame();requestAnimationFrame(loop);}
+if(reduce){rot=.6;frame();}else loop();})();</script>
 </body>
 </html>
