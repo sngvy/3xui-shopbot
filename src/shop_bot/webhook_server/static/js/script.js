@@ -10,7 +10,7 @@
         // всегда светлый вариант, из-за чего сетка терялась именно в
         // тёмной теме — а она в проекте стоит по умолчанию.
         var fallbackGrid = isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.10)';
-        var fallbackTick = isDark ? '#9b93a8' : '#666666';
+        var fallbackTick = isDark ? '#9e9dac' : '#666666';
         var cs = getComputedStyle(document.documentElement);
         var grid = (cs.getPropertyValue('--m3-chart-grid') || '').trim();
         var tick = (cs.getPropertyValue('--m3-chart-tick') || '').trim();
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     function m3Tick(){
         if (window.m3ChartTick) return window.m3ChartTick();
-        return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#9b93a8' : '#666666';
+        return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#9e9dac' : '#666666';
     }
     function initializeDashboardCharts() {
         const usersChartCanvas = document.getElementById('newUsersChart');
