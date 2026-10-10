@@ -8,7 +8,7 @@
   if (!c) return;
   var x = c.getContext('2d');
   var bg = document.querySelector('.bg');
-  var ln = '#344DDB', ln2 = '#765376';
+  var ln = '#5B27F5', ln2 = '#D9006C';
   var W, H, Rr, dpr = Math.min(window.devicePixelRatio || 1, 2);
 
   function readColors(){
