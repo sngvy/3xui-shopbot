@@ -8,41 +8,41 @@
 :root,
 [data-bs-theme='light']{
   /* Поверхности */
-  --m3-surface:#FBF8FF;
-  --m3-surface-container:#EFEDF4;
-  --m3-surface-container-high:#E9E7EF;
-  --m3-surface-container-highest:#E4E1E9;
-  --m3-on-surface:#1B1B21;
-  --m3-on-surface-variant:#454651;
-  --m3-outline-variant:#C6C5D3;
+  --m3-surface:#FBF7FF;
+  --m3-surface-container:#F2ECFA;
+  --m3-surface-container-high:#EAE1F6;
+  --m3-surface-container-highest:#E2D8F1;
+  --m3-on-surface:#191424;
+  --m3-on-surface-variant:#4C4459;
+  --m3-outline-variant:#D6CCE4;
 
   /* Акценты */
-  --m3-primary:#344DDB;
+  --m3-primary:#5B27F5;
   --m3-on-primary:#FFFFFF;
-  --m3-primary-container:#DEE0FF;
-  --m3-on-primary-container:#000F5D;
+  --m3-primary-container:#E6DBFF;
+  --m3-on-primary-container:#210079;
 
-  --m3-secondary:#765376;
-  --m3-secondary-container:#FFD6FC;
-  --m3-on-secondary-container:#2D102F;
+  --m3-secondary:#D9006C;
+  --m3-secondary-container:#FFD9E6;
+  --m3-on-secondary-container:#470022;
 
-  --m3-tertiary:#476646;
-  --m3-tertiary-container:#C8ECC3;
-  --m3-on-tertiary-container:#032108;
+  --m3-tertiary:#3F6E00;
+  --m3-tertiary-container:#C6F589;
+  --m3-on-tertiary-container:#122200;
 
-  --m3-amber:#84531E;
-  --m3-amber-container:#FFDCBF;
-  --m3-on-amber-container:#2D1600;
+  --m3-amber:#7C5400;
+  --m3-amber-container:#FFDF90;
+  --m3-on-amber-container:#271900;
 
-  --m3-error:#A43B33;
-  --m3-error-container:#FFDAD6;
-  --m3-on-error-container:#410002;
+  --m3-error:#BC0027;
+  --m3-error-container:#FFD9D8;
+  --m3-on-error-container:#450009;
 
-  --m3-online:#2E6955;
-  --m3-online-container:#B3EFD6;
-  --m3-online-glow:rgba(46,105,85,.45);
+  --m3-online:#0C7A46;
+  --m3-online-container:#A6F2C6;
+  --m3-online-glow:rgba(12,122,70,.45);
 
-  --m3-press:rgba(27,27,33,.07);
+  --m3-press:rgba(25,20,36,.07);
 
   /* Сетка и подписи графиков. В светлой теме совпадают с дефолтами Chart.js,
      поэтому графики на главной и в мониторинге выглядят одинаково. */
@@ -51,43 +51,43 @@
 }
 
 [data-bs-theme='dark']{
-  --m3-surface:#131318;
-  --m3-surface-container:#1F1F25;
-  --m3-surface-container-high:#29292F;
-  --m3-surface-container-highest:#34343A;
-  --m3-on-surface:#E4E1E9;
-  --m3-on-surface-variant:#C6C5D3;
-  --m3-outline-variant:#454651;
+  --m3-surface:#121016;
+  --m3-surface-container:#1D1A24;
+  --m3-surface-container-high:#27232F;
+  --m3-surface-container-highest:#322D3B;
+  --m3-on-surface:#ECE2F6;
+  --m3-on-surface-variant:#CBC1D9;
+  --m3-outline-variant:#4A4356;
 
-  --m3-primary:#BBC3FF;
-  --m3-on-primary:#001D93;
-  --m3-primary-container:#1030C4;
-  --m3-on-primary-container:#DEE0FF;
+  --m3-primary:#CBB8FF;
+  --m3-on-primary:#320096;
+  --m3-primary-container:#4A19D2;
+  --m3-on-primary-container:#E9DDFF;
 
-  --m3-secondary:#E4B9E2;
-  --m3-secondary-container:#5C3B5D;
-  --m3-on-secondary-container:#FFD6FC;
+  --m3-secondary:#FFB0CB;
+  --m3-secondary-container:#A80053;
+  --m3-on-secondary-container:#FFD9E6;
 
-  --m3-tertiary:#ACD0A9;
-  --m3-tertiary-container:#2F4E30;
-  --m3-on-tertiary-container:#C8ECC3;
+  --m3-tertiary:#ABD86A;
+  --m3-tertiary-container:#2F5200;
+  --m3-on-tertiary-container:#C6F589;
 
-  --m3-amber:#FBB97B;
-  --m3-amber-container:#683C07;
-  --m3-on-amber-container:#FFDCBF;
+  --m3-amber:#FFDF90;
+  --m3-amber-container:#5D4000;
+  --m3-on-amber-container:#FFDF90;
 
-  --m3-error:#FFB4AB;
-  --m3-error-container:#84241E;
-  --m3-on-error-container:#FFDAD6;
+  --m3-error:#FFB3AE;
+  --m3-error-container:#93000F;
+  --m3-on-error-container:#FFD9D8;
 
-  --m3-online:#97D3BB;
-  --m3-online-container:#11503E;
-  --m3-online-glow:rgba(151,211,187,.40);
+  --m3-online:#6EE0A0;
+  --m3-online-container:#00522E;
+  --m3-online-glow:rgba(110,224,160,.40);
 
   --m3-press:rgba(255,255,255,.09);
 
   --m3-chart-grid:rgba(255,255,255,.12);
-  --m3-chart-tick:#9e9dac;
+  --m3-chart-tick:#9b93a8;
 }
 
 :root{
@@ -157,8 +157,8 @@
    bg-primary-lt). Поэтому значения прописаны отдельно для каждой темы. */
 :root,
 [data-bs-theme='light']{
-  --tblr-primary-rgb:52,77,219;
-  --bs-primary-rgb:52,77,219;
+  --tblr-primary-rgb:91,39,245;
+  --bs-primary-rgb:91,39,245;
 }
 [data-bs-theme='dark']{
   --tblr-primary-rgb:203,184,255;
@@ -1590,9 +1590,9 @@ html:has(body.login-page){scrollbar-gutter:auto;}
    панели без глобуса, «аврору» (body::after из style.css) гасит раздел 15. */
 .bg{
   position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none;
-  --ln:#344DDB;--ln2:#765376;--veil:#ffffff;
+  --ln:#5B27F5;--ln2:#D9006C;--veil:#ffffff;
 }
-[data-bs-theme='dark'] .bg{--ln:#BBC3FF;--ln2:#E4B9E2;--veil:#000000;}
+[data-bs-theme='dark'] .bg{--ln:#CBB8FF;--ln2:#FFB0CB;--veil:#000000;}
 .bg canvas{position:absolute;left:0;top:0;opacity:1;}
 .bg::after{content:"";position:absolute;inset:0;background:var(--veil);opacity:.5;}
 .login-page{overflow-x:hidden;}
