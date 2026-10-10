@@ -512,7 +512,7 @@ def initialize_db():
                 "btn_back_to_plans": "⬅️ Назад к тарифам",
                 "btn_back_to_key": "⬅️ Назад к подписке",
                 "btn_back_to_keys": "⬅️ Назад к списку подписок",
-                "btn_extend_key": "➕ Продлить эту подписку",
+                "btn_extend_key": "➕ Продлить",
                 "btn_show_qr": "📱 Показать QR-код",
                 "btn_instruction": "📖 Инструкция",
                 "btn_switch_server": "🌍 Сменить сервер",
