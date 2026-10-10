@@ -23,13 +23,15 @@
 		</script>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>{% block title %}Панель управления Ботом{% endblock %}</title>
+		<!-- Фавикон: щит. SVG меняет цвет сам (#344DDB / #BBC3FF) через prefers-color-scheme -->
+		<link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml" />
 		<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}" />
 		<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}" />
 		<link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon-32x32.png') }}" />
-		<link rel="icon" href="{{ url_for('static', filename='img/safari-pinned-tab.svg') }}" type="image/svg+xml" />
-		<link rel="mask-icon" href="{{ url_for('static', filename='img/safari-pinned-tab.svg') }}" color="#5B27F5" />
+		<link rel="mask-icon" href="{{ url_for('static', filename='img/safari-pinned-tab.svg') }}" color="#344DDB" />
 		<link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" />
-		<meta name="theme-color" content="#5B27F5" />
+		<meta name="theme-color" content="#FBF7FF" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#121016" media="(prefers-color-scheme: dark)" />
 		<meta name="csrf-token" content="{{ csrf_token() }}" />
 		<!-- Tabler CSS (Bootstrap 5-based) -->
 		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
