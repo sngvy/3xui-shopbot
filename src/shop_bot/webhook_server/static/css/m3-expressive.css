@@ -8,41 +8,41 @@
 :root,
 [data-bs-theme='light']{
   /* Поверхности */
-  --m3-surface:#FBF7FF;
-  --m3-surface-container:#F2ECFA;
-  --m3-surface-container-high:#EAE1F6;
-  --m3-surface-container-highest:#E2D8F1;
-  --m3-on-surface:#191424;
-  --m3-on-surface-variant:#4C4459;
-  --m3-outline-variant:#D6CCE4;
+  --m3-surface:#FBF8FF;
+  --m3-surface-container:#EFEDF4;
+  --m3-surface-container-high:#E9E7EF;
+  --m3-surface-container-highest:#E4E1E9;
+  --m3-on-surface:#1B1B21;
+  --m3-on-surface-variant:#454651;
+  --m3-outline-variant:#C6C5D3;
 
   /* Акценты */
-  --m3-primary:#5B27F5;
+  --m3-primary:#344DDB;
   --m3-on-primary:#FFFFFF;
-  --m3-primary-container:#E6DBFF;
-  --m3-on-primary-container:#210079;
+  --m3-primary-container:#DEE0FF;
+  --m3-on-primary-container:#000F5D;
 
-  --m3-secondary:#D9006C;
-  --m3-secondary-container:#FFD9E6;
-  --m3-on-secondary-container:#470022;
+  --m3-secondary:#765376;
+  --m3-secondary-container:#FFD6FC;
+  --m3-on-secondary-container:#2D102F;
 
-  --m3-tertiary:#3F6E00;
-  --m3-tertiary-container:#C6F589;
-  --m3-on-tertiary-container:#122200;
+  --m3-tertiary:#476646;
+  --m3-tertiary-container:#C8ECC3;
+  --m3-on-tertiary-container:#032108;
 
-  --m3-amber:#7C5400;
-  --m3-amber-container:#FFDF90;
-  --m3-on-amber-container:#271900;
+  --m3-amber:#84531E;
+  --m3-amber-container:#FFDCBF;
+  --m3-on-amber-container:#2D1600;
 
-  --m3-error:#BC0027;
-  --m3-error-container:#FFD9D8;
-  --m3-on-error-container:#450009;
+  --m3-error:#A43B33;
+  --m3-error-container:#FFDAD6;
+  --m3-on-error-container:#410002;
 
-  --m3-online:#0C7A46;
-  --m3-online-container:#A6F2C6;
-  --m3-online-glow:rgba(12,122,70,.45);
+  --m3-online:#2E6955;
+  --m3-online-container:#B3EFD6;
+  --m3-online-glow:rgba(46,105,85,.45);
 
-  --m3-press:rgba(25,20,36,.07);
+  --m3-press:rgba(27,27,33,.07);
 
   /* Сетка и подписи графиков. В светлой теме совпадают с дефолтами Chart.js,
      поэтому графики на главной и в мониторинге выглядят одинаково. */
@@ -51,43 +51,43 @@
 }
 
 [data-bs-theme='dark']{
-  --m3-surface:#121016;
-  --m3-surface-container:#1D1A24;
-  --m3-surface-container-high:#27232F;
-  --m3-surface-container-highest:#322D3B;
-  --m3-on-surface:#ECE2F6;
-  --m3-on-surface-variant:#CBC1D9;
-  --m3-outline-variant:#4A4356;
+  --m3-surface:#131318;
+  --m3-surface-container:#1F1F25;
+  --m3-surface-container-high:#29292F;
+  --m3-surface-container-highest:#34343A;
+  --m3-on-surface:#E4E1E9;
+  --m3-on-surface-variant:#C6C5D3;
+  --m3-outline-variant:#454651;
 
-  --m3-primary:#CBB8FF;
-  --m3-on-primary:#320096;
-  --m3-primary-container:#4A19D2;
-  --m3-on-primary-container:#E9DDFF;
+  --m3-primary:#BBC3FF;
+  --m3-on-primary:#001D93;
+  --m3-primary-container:#1030C4;
+  --m3-on-primary-container:#DEE0FF;
 
-  --m3-secondary:#FFB0CB;
-  --m3-secondary-container:#A80053;
-  --m3-on-secondary-container:#FFD9E6;
+  --m3-secondary:#E4B9E2;
+  --m3-secondary-container:#5C3B5D;
+  --m3-on-secondary-container:#FFD6FC;
 
-  --m3-tertiary:#ABD86A;
-  --m3-tertiary-container:#2F5200;
-  --m3-on-tertiary-container:#C6F589;
+  --m3-tertiary:#ACD0A9;
+  --m3-tertiary-container:#2F4E30;
+  --m3-on-tertiary-container:#C8ECC3;
 
-  --m3-amber:#FFDF90;
-  --m3-amber-container:#5D4000;
-  --m3-on-amber-container:#FFDF90;
+  --m3-amber:#FBB97B;
+  --m3-amber-container:#683C07;
+  --m3-on-amber-container:#FFDCBF;
 
-  --m3-error:#FFB3AE;
-  --m3-error-container:#93000F;
-  --m3-on-error-container:#FFD9D8;
+  --m3-error:#FFB4AB;
+  --m3-error-container:#84241E;
+  --m3-on-error-container:#FFDAD6;
 
-  --m3-online:#6EE0A0;
-  --m3-online-container:#00522E;
-  --m3-online-glow:rgba(110,224,160,.40);
+  --m3-online:#97D3BB;
+  --m3-online-container:#11503E;
+  --m3-online-glow:rgba(151,211,187,.40);
 
   --m3-press:rgba(255,255,255,.09);
 
   --m3-chart-grid:rgba(255,255,255,.12);
-  --m3-chart-tick:#9b93a8;
+  --m3-chart-tick:#9e9dac;
 }
 
 :root{
@@ -157,8 +157,8 @@
    bg-primary-lt). Поэтому значения прописаны отдельно для каждой темы. */
 :root,
 [data-bs-theme='light']{
-  --tblr-primary-rgb:91,39,245;
-  --bs-primary-rgb:91,39,245;
+  --tblr-primary-rgb:52,77,219;
+  --bs-primary-rgb:52,77,219;
 }
 [data-bs-theme='dark']{
   --tblr-primary-rgb:203,184,255;
@@ -236,7 +236,7 @@ strong,b{font-weight:600;}
 
 /* 5. Шапка */
 .main-header{
-  background:var(--m3-surface-container) !important;
+  background:color-mix(in srgb,var(--m3-surface-container) 75%,transparent) !important;
   border:none !important;
   border-radius:var(--m3-r-xxl) !important;
   padding:12px 18px !important;
@@ -258,7 +258,7 @@ strong,b{font-weight:600;}
 .brandmark{
   width:40px;height:40px;flex-shrink:0;
   display:grid;place-items:center;
-  background:var(--m3-primary) !important;
+  background:color-mix(in srgb,var(--m3-primary) 75%,transparent) !important;
   color:var(--m3-on-primary) !important;
   border-radius:14px 20px 14px 20px;
 }
@@ -266,7 +266,7 @@ strong,b{font-weight:600;}
 
 #brand-edit{
   border-radius:var(--m3-r-full) !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:none !important;
   color:var(--m3-on-surface-variant) !important;
 }
@@ -287,12 +287,12 @@ strong,b{font-weight:600;}
              border-radius var(--m3-dur-med) var(--m3-ease-spring);
 }
 .navigation .nav-link:hover{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
   box-shadow:none !important;
 }
 .navigation .nav-link.active{
-  background:var(--m3-primary-container) !important;
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;
   color:var(--m3-on-primary-container) !important;
   font-weight:600 !important;
   box-shadow:none !important;
@@ -302,7 +302,7 @@ strong,b{font-weight:600;}
 .header-controls{gap:10px !important;}
 .bot-control{
   display:flex;align-items:center;gap:10px;
-  background:var(--m3-surface-container-high);
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent);
   border-radius:var(--m3-r-full);
   padding:6px 8px 6px 14px;
 }
@@ -318,7 +318,7 @@ strong,b{font-weight:600;}
 label.burger_img{
   border-radius:var(--m3-r-m) !important;
   border:none !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   box-shadow:none !important;
 }
 .bm .burger-menu{
@@ -338,7 +338,7 @@ label.burger_img{
 
 /* 6. Карточки */
 .card,.card.glass{
-  background:var(--m3-surface-container) !important;
+  background:color-mix(in srgb,var(--m3-surface-container) 75%,transparent) !important;
   border:none !important;
   border-radius:var(--m3-r-xl) !important;
   box-shadow:none !important;
@@ -367,7 +367,7 @@ label.burger_img{
   margin-bottom:18px;
 }
 .settings-section:not(:has(> .card)):not(:has(.host-card)){
-  background:var(--m3-surface-container) !important;
+  background:color-mix(in srgb,var(--m3-surface-container) 75%,transparent) !important;
   border-radius:var(--m3-r-xl) !important;
   padding:20px !important;
 }
@@ -377,7 +377,7 @@ label.burger_img{
    отступ. display:none убирает их целиком. */
 .settings-section.is-hidden{display:none !important;}
 .info-item,.metric-item{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:none !important;
   border-radius:var(--m3-r-m) !important;
   padding:14px 16px !important;
@@ -393,25 +393,25 @@ label.burger_img{
 
 /* Плитки статистики разного цвета, как на странице подписки */
 .stat-card{
-  background:var(--m3-surface-container) !important;
+  background:color-mix(in srgb,var(--m3-surface-container) 75%,transparent) !important;
   border:none !important;
   border-radius:var(--m3-r-l) !important;
   padding:18px !important;
 }
 .row > [class*="col"]:nth-child(4n+1) .stat-card{
-  background:var(--m3-primary-container) !important;color:var(--m3-on-primary-container) !important;
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;color:var(--m3-on-primary-container) !important;
   border-radius:var(--m3-r-xxl) var(--m3-r-l) var(--m3-r-l) var(--m3-r-l) !important;
 }
 .row > [class*="col"]:nth-child(4n+2) .stat-card{
-  background:var(--m3-secondary-container) !important;color:var(--m3-on-secondary-container) !important;
+  background:color-mix(in srgb,var(--m3-secondary-container) 75%,transparent) !important;color:var(--m3-on-secondary-container) !important;
   border-radius:var(--m3-r-l) var(--m3-r-xxl) var(--m3-r-l) var(--m3-r-l) !important;
 }
 .row > [class*="col"]:nth-child(4n+3) .stat-card{
-  background:var(--m3-tertiary-container) !important;color:var(--m3-on-tertiary-container) !important;
+  background:color-mix(in srgb,var(--m3-tertiary-container) 75%,transparent) !important;color:var(--m3-on-tertiary-container) !important;
   border-radius:var(--m3-r-l) var(--m3-r-l) var(--m3-r-l) var(--m3-r-xxl) !important;
 }
 .row > [class*="col"]:nth-child(4n+4) .stat-card{
-  background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;
+  background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;color:var(--m3-on-amber-container) !important;
   border-radius:var(--m3-r-l) var(--m3-r-l) var(--m3-r-xxl) var(--m3-r-l) !important;
 }
 .stat-card .stat-label,.stat-card .metric-label{color:inherit !important;opacity:.75;}
@@ -438,17 +438,17 @@ label.burger_img{
 .btn.btn-xs{padding:5px 12px !important;font-size:.62rem !important;border-radius:var(--m3-r-full) !important;}
 .btn-icon{padding:9px !important;}
 
-.btn-primary{background:var(--m3-primary) !important;color:var(--m3-on-primary) !important;}
+.btn-primary{background:color-mix(in srgb,var(--m3-primary) 75%,transparent) !important;color:var(--m3-on-primary) !important;}
 .btn-primary:hover{filter:brightness(1.08);}
-.btn-secondary{background:var(--m3-surface-container-highest) !important;color:var(--m3-on-surface) !important;}
-.btn-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
-.btn-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
-.btn-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+.btn-secondary{background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;color:var(--m3-on-surface) !important;}
+.btn-success{background:color-mix(in srgb,var(--m3-online-container) 75%,transparent) !important;color:var(--m3-on-tertiary-container) !important;}
+.btn-danger{background:color-mix(in srgb,var(--m3-error-container) 75%,transparent) !important;color:var(--m3-on-error-container) !important;}
+.btn-warning{background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;color:var(--m3-on-amber-container) !important;}
 
 /* Outline-кнопки делаем тональными */
 .btn-outline-secondary,.btn-outline-primary,
 .btn-outline-danger,.btn-outline-warning,.btn-outline-success{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:none !important;
 }
 .btn-outline-secondary{color:var(--m3-on-surface) !important;}
@@ -458,19 +458,19 @@ label.burger_img{
 .btn-outline-success{color:var(--m3-online) !important;}
 .btn-outline-secondary:hover,.btn-outline-primary:hover,
 .btn-outline-danger:hover,.btn-outline-warning:hover,.btn-outline-success:hover{
-  background:var(--m3-surface-container-highest) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;
 }
 
 /* btn-glass из style.css переводим на тональные поверхности */
 .btn-glass{
   backdrop-filter:none !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:none !important;
 }
-.btn-glass.btn-primary{background:var(--m3-primary-container) !important;color:var(--m3-on-primary-container) !important;}
-.btn-glass.btn-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
-.btn-glass.btn-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
-.btn-glass.btn-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+.btn-glass.btn-primary{background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;color:var(--m3-on-primary-container) !important;}
+.btn-glass.btn-success{background:color-mix(in srgb,var(--m3-online-container) 75%,transparent) !important;color:var(--m3-on-tertiary-container) !important;}
+.btn-glass.btn-danger{background:color-mix(in srgb,var(--m3-error-container) 75%,transparent) !important;color:var(--m3-on-error-container) !important;}
+.btn-glass.btn-warning{background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;color:var(--m3-on-amber-container) !important;}
 
 .btn:disabled,.btn.disabled{opacity:.38 !important;}
 .btn-list{gap:8px !important;}
@@ -491,7 +491,7 @@ label.burger_img{
 }
 .form-control,.form-select,
 .input-group .form-control,.input-group .form-select{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:1px solid transparent !important;
   border-radius:var(--m3-r-m) !important;
   color:var(--m3-on-surface) !important;
@@ -504,7 +504,7 @@ label.burger_img{
              background var(--m3-dur-short) var(--m3-ease-emph) !important;
 }
 .form-control:focus,.form-select:focus{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border-color:var(--m3-primary) !important;
   box-shadow:0 0 0 3px color-mix(in oklab, var(--m3-primary) 22%, transparent) !important;
 }
@@ -517,7 +517,7 @@ label.burger_img{
   margin-top:6px !important;
 }
 .input-group-text{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:none !important;
   color:var(--m3-on-surface-variant) !important;
   border-radius:var(--m3-r-m) 0 0 var(--m3-r-m) !important;
@@ -525,7 +525,7 @@ label.burger_img{
 .input-group.seamless > .btn,
 .input-group.seamless > .form-control,
 .input-group.seamless > .form-select{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border-color:transparent !important;
 }
 
@@ -549,7 +549,7 @@ label.burger_img{
 
 /* Soft-select из style.css */
 .soft-select .soft-select-toggle{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:1px solid transparent !important;
   border-radius:var(--m3-r-m) !important;
   padding:12px 16px !important;
@@ -604,7 +604,7 @@ label.burger_img{
   vertical-align:middle;
 }
 .table tbody tr{transition:background var(--m3-dur-short) var(--m3-ease-emph);}
-.table tbody tr:hover{background:var(--m3-surface-container-high) !important;}
+.table tbody tr:hover{background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;}
 .table-responsive{border-radius:var(--m3-r-l);}
 
 /* 10. Бейджи, статусы, уведомления */
@@ -614,17 +614,17 @@ label.burger_img{
   font-weight:500 !important;
   letter-spacing:.04em;
   padding:5px 11px !important;
-  background:var(--m3-surface-container-highest) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
 }
 .badge.bg-green,.badge.bg-green-lt,.bg-success{
-  background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
+  background:color-mix(in srgb,var(--m3-online-container) 75%,transparent) !important;color:var(--m3-on-tertiary-container) !important;}
 .badge.bg-red,.badge.bg-red-lt,.bg-danger{
-  background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
+  background:color-mix(in srgb,var(--m3-error-container) 75%,transparent) !important;color:var(--m3-on-error-container) !important;}
 .badge.bg-yellow,.badge.bg-yellow-lt,.bg-warning{
-  background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+  background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;color:var(--m3-on-amber-container) !important;}
 .badge.bg-blue,.badge.bg-blue-lt,.badge.bg-purple,.bg-primary{
-  background:var(--m3-primary-container) !important;color:var(--m3-on-primary-container) !important;}
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;color:var(--m3-on-primary-container) !important;}
 
 .status-dot{background:var(--m3-on-surface-variant) !important;}
 .status-dot.bg-green{background:var(--m3-online) !important;}
@@ -641,13 +641,13 @@ label.burger_img{
   border-radius:var(--m3-r-l) !important;
   font-size:.74rem;font-weight:300;
   padding:14px 18px !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
   box-shadow:none !important;
 }
-.alert-success{background:var(--m3-online-container) !important;color:var(--m3-on-tertiary-container) !important;}
-.alert-danger{background:var(--m3-error-container) !important;color:var(--m3-on-error-container) !important;}
-.alert-warning{background:var(--m3-amber-container) !important;color:var(--m3-on-amber-container) !important;}
+.alert-success{background:color-mix(in srgb,var(--m3-online-container) 75%,transparent) !important;color:var(--m3-on-tertiary-container) !important;}
+.alert-danger{background:color-mix(in srgb,var(--m3-error-container) 75%,transparent) !important;color:var(--m3-on-error-container) !important;}
+.alert-warning{background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;color:var(--m3-on-amber-container) !important;}
 
 .toast{
   border:none !important;
@@ -726,7 +726,7 @@ label.burger_img{
   justify-content:center;
   border:none !important;
   border-radius:var(--m3-r-full) !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
   font-family:inherit;
   font-size:.68rem;
@@ -738,10 +738,10 @@ label.burger_img{
 }
 .pagination .page-item .page-link{box-sizing:border-box;}
 .pagination .page-item:not(.active):not(.disabled) .page-link:hover{
-  background:var(--m3-surface-container-highest) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;
 }
 .pagination .page-item.active .page-link{
-  background:var(--m3-primary) !important;
+  background:color-mix(in srgb,var(--m3-primary) 75%,transparent) !important;
   color:var(--m3-on-primary) !important;
 }
 .pagination .page-item.disabled .page-link{
@@ -851,7 +851,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 .nav-pills .nav-link{
   border:none !important;
   border-radius:var(--m3-r-full) !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface-variant) !important;
   padding:9px 16px !important;
   font-size:.66rem !important;
@@ -864,13 +864,13 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 }
 .card .nav.nav-pills .nav-link:hover,
 .nav-pills .nav-link:hover{
-  background:var(--m3-surface-container-highest) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
   box-shadow:none !important;
 }
 .card .nav.nav-pills .nav-link.active,
 .nav-pills .nav-link.active{
-  background:var(--m3-primary-container) !important;
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;
   color:var(--m3-on-primary-container) !important;
   font-weight:600 !important;
   box-shadow:none !important;
@@ -880,7 +880,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 /* Карточка хоста */
 .host-card,
 #hosts .host-card{
-  background:var(--m3-surface-container) !important;
+  background:color-mix(in srgb,var(--m3-surface-container) 75%,transparent) !important;
   border:none !important;
   border-radius:var(--m3-r-xl) !important;
   box-shadow:none !important;
@@ -890,7 +890,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 /* Вложенный блок SSH на тон светлее карточки хоста */
 .host-card .card,
 .host-card .card.glass{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border-radius:var(--m3-r-l) !important;
   box-shadow:none !important;
 }
@@ -934,7 +934,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 /* Связанный список: крупные скругления только у крайних пунктов */
 .plan-list li{
   display:block !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border-bottom:none !important;
   border-radius:var(--m3-r-xs) !important;
   padding:12px 14px !important;
@@ -966,7 +966,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 .form-group input[type='number'],
 .form-group select,
 .form-group textarea{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border:1px solid transparent !important;
   border-radius:var(--m3-r-m) !important;
   color:var(--m3-on-surface) !important;
@@ -1007,7 +1007,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
   bottom:8px !important;
   transform:none !important;
 }
-.toggle-password:hover{background:var(--m3-surface-container-highest) !important;}
+.toggle-password:hover{background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;}
 
 /* Инлайновые формы редактирования */
 .form-inline{gap:8px !important;}
@@ -1027,7 +1027,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
              transform var(--m3-dur-short) var(--m3-ease-emph);
 }
 .button:active{border-radius:var(--m3-r-m) !important;transform:scale(.96);}
-.button-primary{background:var(--m3-primary) !important;color:var(--m3-on-primary) !important;}
+.button-primary{background:color-mix(in srgb,var(--m3-primary) 75%,transparent) !important;color:var(--m3-on-primary) !important;}
 
 
 /* 15. Плоский фон, как на клиентских страницах: убираем виньетку
@@ -1084,34 +1084,34 @@ body::after{
 
 /* Мелкие glass-кнопки (btn-sm + btn-glass) */
 .btn.btn-sm.btn-glass.btn-outline-secondary{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
   border-color:transparent !important;
 }
 .btn.btn-sm.btn-glass.btn-outline-secondary:hover,
 .btn.btn-sm.btn-glass.btn-outline-secondary:focus{
-  background:var(--m3-surface-container-highest) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;
   border-color:transparent !important;
 }
 .btn.btn-sm.btn-glass.btn-danger{
-  background:var(--m3-error-container) !important;
+  background:color-mix(in srgb,var(--m3-error-container) 75%,transparent) !important;
   color:var(--m3-on-error-container) !important;
   border-color:transparent !important;
 }
 .btn.btn-sm.btn-glass.btn-danger:hover,
 .btn.btn-sm.btn-glass.btn-danger:focus{
-  background:var(--m3-error-container) !important;
+  background:color-mix(in srgb,var(--m3-error-container) 75%,transparent) !important;
   border-color:transparent !important;
   filter:brightness(1.06);
 }
 .btn.btn-sm.btn-glass.btn-outline-warning{
-  background:var(--m3-amber-container) !important;
+  background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;
   color:var(--m3-on-amber-container) !important;
   border-color:transparent !important;
 }
 .btn.btn-sm.btn-glass.btn-outline-warning:hover,
 .btn.btn-sm.btn-glass.btn-outline-warning:focus{
-  background:var(--m3-amber-container) !important;
+  background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent) !important;
   border-color:transparent !important;
   filter:brightness(1.06);
 }
@@ -1120,13 +1120,13 @@ body::after{
    правила выше и добавляет атрибут: при !important с обеих сторон
    побеждает более специфичный, а не более поздний. */
 [data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary{
-  background:var(--m3-secondary-container) !important;
+  background:color-mix(in srgb,var(--m3-secondary-container) 75%,transparent) !important;
   color:var(--m3-on-secondary-container) !important;
   border-color:transparent !important;
 }
 [data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary:hover,
 [data-toggle="keys"].btn.btn-sm.btn-glass.btn-outline-secondary:focus{
-  background:var(--m3-secondary-container) !important;
+  background:color-mix(in srgb,var(--m3-secondary-container) 75%,transparent) !important;
   border-color:transparent !important;
   filter:brightness(1.08);
 }
@@ -1134,13 +1134,13 @@ body::after{
 /* Кнопка «Комментарий» на карточках ключей. Логика специфичности та же.
    Цвет tertiary, его не использует ни одна другая кнопка. */
 .btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment{
-  background:var(--m3-tertiary-container) !important;
+  background:color-mix(in srgb,var(--m3-tertiary-container) 75%,transparent) !important;
   color:var(--m3-on-tertiary-container) !important;
   border-color:transparent !important;
 }
 .btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment:hover,
 .btn.btn-sm.btn-glass.btn-outline-secondary.btn-edit-comment:focus{
-  background:var(--m3-tertiary-container) !important;
+  background:color-mix(in srgb,var(--m3-tertiary-container) 75%,transparent) !important;
   border-color:transparent !important;
   filter:brightness(1.08);
 }
@@ -1148,7 +1148,7 @@ body::after{
 /* Поле ответа в тикете: у него нет .form-control, а style.css задаёт
    ему тёмный фон #343a40. */
 .ticket-actions textarea[name="message"]{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
   border:1px solid transparent !important;
   border-radius:var(--m3-r-m) !important;
@@ -1281,11 +1281,11 @@ body::after{
   box-shadow:none !important;
 }
 .chat-message.from-user{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
 }
 .chat-message.from-admin{
-  background:var(--m3-primary-container) !important;
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;
   color:var(--m3-on-primary-container) !important;
 }
 .chat-message .meta{color:inherit !important;opacity:.65;}
@@ -1396,10 +1396,10 @@ body::after{
 #users-search{flex:1 1 auto !important;min-width:0 !important;}
 
 /* Кнопка «Ключи» сливалась с подсветкой строки */
-.btn-outline-secondary{background:var(--m3-surface-container-highest) !important;}
+.btn-outline-secondary{background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;}
 .btn-outline-secondary:hover,
 .btn-outline-secondary:focus{
-  background:var(--m3-primary-container) !important;
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;
   color:var(--m3-on-primary-container) !important;
 }
 
@@ -1450,7 +1450,7 @@ body{background:var(--m3-surface) !important;}
    с фоном кнопки. Даём ей рамку и более контрастную заливку. */
 .btn-outline-secondary.btn-glass,
 .btn-outline-secondary{
-  background:var(--m3-surface-container-highest) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-highest) 75%,transparent) !important;
   border:1.5px solid var(--m3-outline-variant) !important;
   color:var(--m3-on-surface-variant) !important;
 }
@@ -1458,7 +1458,7 @@ body{background:var(--m3-surface) !important;}
 .btn-outline-secondary.btn-glass:focus,
 .btn-outline-secondary:hover,
 .btn-outline-secondary:focus{
-  background:var(--m3-primary-container) !important;
+  background:color-mix(in srgb,var(--m3-primary-container) 75%,transparent) !important;
   border-color:var(--m3-primary) !important;
   color:var(--m3-on-primary-container) !important;
 }
@@ -1477,7 +1477,7 @@ body{background:var(--m3-surface) !important;}
 .modal .form-control,
 .modal .form-select{
   border:1px solid var(--m3-outline-variant) !important;
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   color:var(--m3-on-surface) !important;
 }
 
@@ -1505,7 +1505,7 @@ body{background:var(--m3-surface) !important;}
    ни раскладки, и карточки наползали друг на друга. */
 .servers-list{display:flex;flex-direction:column;gap:12px;}
 .server-item{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border-radius:var(--m3-r-l) !important;
   padding:14px 16px;
 }
@@ -1555,7 +1555,7 @@ body{background:var(--m3-surface) !important;}
 .monitor-info{display:flex;flex-direction:column;gap:8px;}
 .monitor-info .info-item{display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
 .disks-section{
-  background:var(--m3-surface-container-high) !important;
+  background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent) !important;
   border-radius:var(--m3-r-m) !important;
   padding:10px 14px;
 }
@@ -1582,3 +1582,40 @@ body{background:var(--m3-surface) !important;}
    прокрутки не резервируем: из-за scrollbar-gutter:stable в style.css
    фоновая анимация не доходила до правого края. */
 html:has(body.login-page){scrollbar-gutter:auto;}
+
+/* 20. Фон: канвас с глобусом (dotglobe) вместо «авроры».
+   Глобус показывается на 100%. Поверх него лежит слой: белый 50% в светлой
+   теме и чёрный 50% в тёмной. Тема берётся из data-bs-theme. Рисует
+   static/js/dotglobe.js. */
+.bg{
+  position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none;
+  --ln:#344DDB;--ln2:#765376;--veil:#ffffff;
+}
+[data-bs-theme='dark'] .bg{--ln:#BBC3FF;--ln2:#E4B9E2;--veil:#000000;}
+.bg canvas{position:absolute;left:0;top:0;opacity:1;}
+.bg::after{content:"";position:absolute;inset:0;background:var(--veil);opacity:.5;}
+/* Контент поверх фона. z-index не задаём: контейнер не должен становиться
+   отдельным контекстом наложения, иначе модалки окажутся под бэкдропом. */
+body > .container,
+.main-footer{position:relative;}
+body{overflow-x:hidden;}
+@media (prefers-reduced-motion: reduce){.bg *{animation:none !important;}}
+
+/* 21. Страница входа: карточка и уведомления на 75% (как остальные плитки) */
+.login-container{background:color-mix(in srgb,var(--m3-surface-container) 75%,transparent) !important;}
+.flash{background:color-mix(in srgb,var(--m3-surface-container-high) 75%,transparent);}
+.flash-danger,.flash-error{background:color-mix(in srgb,var(--m3-error-container) 75%,transparent);}
+.flash-success{background:color-mix(in srgb,var(--m3-online-container) 75%,transparent);}
+.flash-warning{background:color-mix(in srgb,var(--m3-amber-container) 75%,transparent);}
+
+/* 22. Иконка бургера берётся из img/burger.svg и красится в цвет текста,
+   поэтому одинаково читается в светлой и тёмной теме (раньше был серый PNG
+   на белом квадрате, а поверх него рисовался символ ☰). */
+label.burger_img{background-image:none !important;}
+label.burger_img::before{
+  content:"" !important;
+  display:block;width:22px;height:22px;font-size:0 !important;
+  background:var(--m3-on-surface);
+  -webkit-mask:url('../img/burger.svg') center/contain no-repeat;
+  mask:url('../img/burger.svg') center/contain no-repeat;
+}
