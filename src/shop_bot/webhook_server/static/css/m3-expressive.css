@@ -418,9 +418,12 @@ label.burger_img{
 .stat-card .stat-icon{opacity:.85;}
 
 /* 7. Кнопки */
-/* При нажатии кнопка-пилюля сжимается в скруглённый квадрат */
+/* При нажатии кнопка-пилюля сжимается в скруглённый квадрат.
+   Радиус в покое конечный (r-xl), а не 999px: иначе анимация border-radius
+   почти вся «проскакивает» невидимо, и при отпускании кнопка долго остаётся
+   прямоугольной, а потом резко возвращается (так же сделано в redir и mon). */
 .btn{
-  border-radius:var(--m3-r-full) !important;
+  border-radius:var(--m3-r-xl) !important;
   border:none !important;
   font-family:inherit !important;
   font-size:.76rem !important;
@@ -434,8 +437,8 @@ label.burger_img{
              filter var(--m3-dur-short) var(--m3-ease-emph) !important;
 }
 .btn:active{border-radius:var(--m3-r-m) !important;transform:scale(.96);}
-.btn-sm{padding:8px 16px !important;font-size:.68rem !important;border-radius:var(--m3-r-full) !important;}
-.btn.btn-xs{padding:5px 12px !important;font-size:.62rem !important;border-radius:var(--m3-r-full) !important;}
+.btn-sm{padding:8px 16px !important;font-size:.68rem !important;border-radius:var(--m3-r-xl) !important;}
+.btn.btn-xs{padding:5px 12px !important;font-size:.62rem !important;border-radius:var(--m3-r-xl) !important;}
 .btn-icon{padding:9px !important;}
 
 .btn-primary{background:var(--m3-primary) !important;color:var(--m3-on-primary) !important;}
@@ -1019,7 +1022,7 @@ main{animation:m3-reveal 520ms var(--m3-ease-emph) both;}
 /* Прочее */
 .hr-text{border-color:var(--m3-outline-variant) !important;opacity:1 !important;}
 .button{
-  border-radius:var(--m3-r-full) !important;
+  border-radius:var(--m3-r-xl) !important;
   font-family:inherit !important;
   font-size:.8rem !important;
   font-weight:500 !important;
