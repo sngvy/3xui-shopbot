@@ -1583,10 +1583,11 @@ body{background:var(--m3-surface) !important;}
    фоновая анимация не доходила до правого края. */
 html:has(body.login-page){scrollbar-gutter:auto;}
 
-/* 20. Фон: канвас с глобусом (dotglobe) вместо «авроры».
+/* 20. Фон страницы входа: канвас с глобусом (dotglobe) вместо «авроры».
    Глобус показывается на 100%. Поверх него лежит слой: белый 50% в светлой
    теме и чёрный 50% в тёмной. Тема берётся из data-bs-theme. Рисует
-   static/js/dotglobe.js. */
+   static/js/dotglobe.js, подключён только в login.html. Остальные страницы
+   панели без глобуса, «аврору» (body::after из style.css) гасит раздел 15. */
 .bg{
   position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none;
   --ln:#344DDB;--ln2:#765376;--veil:#ffffff;
@@ -1594,11 +1595,7 @@ html:has(body.login-page){scrollbar-gutter:auto;}
 [data-bs-theme='dark'] .bg{--ln:#BBC3FF;--ln2:#E4B9E2;--veil:#000000;}
 .bg canvas{position:absolute;left:0;top:0;opacity:1;}
 .bg::after{content:"";position:absolute;inset:0;background:var(--veil);opacity:.5;}
-/* Контент поверх фона. z-index не задаём: контейнер не должен становиться
-   отдельным контекстом наложения, иначе модалки окажутся под бэкдропом. */
-body > .container,
-.main-footer{position:relative;}
-body{overflow-x:hidden;}
+.login-page{overflow-x:hidden;}
 @media (prefers-reduced-motion: reduce){.bg *{animation:none !important;}}
 
 /* 21. Страница входа: карточка и уведомления на 75% (как остальные плитки) */
