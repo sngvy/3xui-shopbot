@@ -110,7 +110,10 @@ STRIKE_THRESHOLD = env_int("STRIKE_THRESHOLD", 3, 1, 100)  # Кол-во про�
 USER_ALERT_MIN_ACTIVE = env_int("TRAFFIC_USER_ALERT_MIN_ACTIVE", 10, 0, 1000)
 # Пауза между повторными предупреждениями одному пользователю, часов.
 USER_ALERT_COOLDOWN_HOURS = env_int("TRAFFIC_USER_ALERT_COOLDOWN_HOURS", 6, 1, 168)
+# 1 — предупреждать и без аномалии трафика, если активных email'ов >= TRAFFIC_USER_ALERT_MIN_ACTIVE (шеринг).
+USER_ALERT_SHARING = env_int("TRAFFIC_USER_ALERT_SHARING", 1, 0, 1)
 user_alert_last_sent: dict[int, float] = {}  # user_id -> time.monotonic() последней отправки
+sharing_admin_last_sent: dict[tuple[str, str], float] = {}  # (host, uuid) -> последний алерт админу о шеринге
 
 # Множитель пауз шедулера между мутациями панели.
 try:
@@ -2292,30 +2295,84 @@ def format_emails_short(emails, limit: int = 1, code: bool = False) -> str:
     return shown
 
 
-async def _notify_user_about_traffic(bot: Bot, c_uuid: str, delta_mb: float) -> bool:
-    """Предупреждает владельца подписки об аномальном трафике.
+def _plural_ru(n: int, one: str, few: str, many: str) -> str:
+    """Склонение по числу: 1 подключение, 2 подключения, 5 подключений."""
+    n = abs(int(n))
+    if 11 <= n % 100 <= 14:
+        return many
+    last = n % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
 
-    Возвращает True, только если сообщение реально доставлено. Не шлёт, если:
-    ключ не найден или без владельца, владелец — админ или забанен, с прошлого
-    предупреждения не прошла пауза TRAFFIC_USER_ALERT_COOLDOWN_HOURS, пользователь
-    заблокировал бота. Любая ошибка логируется и не мешает алерту админу.
+
+_USER_ALERT_TAIL = (
+    "Прекратите передавать ключ другим. Если нагрузка не уменьшится, мы ограничим "
+    "скорость или отключим подписку без возврата средств.\n\n"
+    "Если считаете, что произошла ошибка, свяжитесь с поддержкой."
+)
+
+
+def _user_alert_text_traffic(delta_mb: float) -> str:
+    """Текст пользователю: аномальный объём трафика за интервал."""
+    minutes = max(1, round(CHECK_INTERVAL_SECONDS / 60))
+    return (
+        "🚨 <b>Аномальный трафик на вашей подписке</b>\n\n"
+        f"{delta_mb / 1024:.1f} ГБ за {minutes} мин. — это не личное использование.\n\n"
+        + _USER_ALERT_TAIL
+    )
+
+
+def _user_alert_text_sharing(active_count: int) -> str:
+    """Текст пользователю: много одновременно активных подключений (шеринг), без аномалии трафика."""
+    word = _plural_ru(active_count, "активное подключение", "активных подключения", "активных подключений")
+    return (
+        "🚨 <b>Аномальная активность на вашей подписке</b>\n\n"
+        f"{active_count} {word} одновременно — это не личное использование.\n\n"
+        + _USER_ALERT_TAIL
+    )
+
+
+# Статусы _send_user_warning -> что показать админу (cooldown не показываем: алерт не нужен)
+_USER_WARN_STATUS_TEXT = {
+    "sent": "✉️ Пользователю отправлено предупреждение",
+    "blocked": "✉️ Не отправлено: пользователь заблокировал бота",
+    "no_owner": "✉️ Не отправлено: у ключа нет владельца",
+    "admin": "✉️ Не отправлено: владелец — админ",
+    "banned": "✉️ Не отправлено: пользователь забанен",
+    "error": "✉️ Не отправлено: ошибка отправки (см. лог)",
+}
+
+
+async def _send_user_warning(bot: Bot, c_uuid: str, text: str) -> str:
+    """Отправляет предупреждение владельцу подписки с кнопкой «Поддержка».
+
+    Возвращает статус: "sent" (доставлено), "cooldown" (с прошлого предупреждения
+    не прошла пауза TRAFFIC_USER_ALERT_COOLDOWN_HOURS, она общая для обоих видов
+    предупреждений), "no_owner" (ключ не найден или без владельца), "admin"
+    (владелец — админ), "banned", "blocked" (пользователь заблокировал бота),
+    "error". Любая ошибка логируется и не мешает остальной работе мониторинга.
     """
     try:
         key = await asyncio.to_thread(database.get_key_by_uuid, str(c_uuid))
         if not key or not key.get("user_id"):
-            return False
+            return "no_owner"
         user_id = int(key["user_id"])
-
-        if await asyncio.to_thread(database.is_admin, user_id):
-            return False
-        user = await asyncio.to_thread(database.get_user, user_id)
-        if not user or user.get("is_banned"):
-            return False
 
         now = time.monotonic()
         last = user_alert_last_sent.get(user_id)
         if last is not None and now - last < USER_ALERT_COOLDOWN_HOURS * 3600:
-            return False
+            return "cooldown"
+
+        if await asyncio.to_thread(database.is_admin, user_id):
+            return "admin"
+        user = await asyncio.to_thread(database.get_user, user_id)
+        if not user:
+            return "no_owner"
+        if user.get("is_banned"):
+            return "banned"
 
         from aiogram.types import InlineKeyboardMarkup
 
@@ -2325,16 +2382,6 @@ async def _notify_user_about_traffic(bot: Bot, c_uuid: str, delta_mb: float) -> 
         support_kb = await asyncio.to_thread(create_support_keyboard)
         markup = InlineKeyboardMarkup(inline_keyboard=support_kb.inline_keyboard[:1])
 
-        minutes = max(1, round(CHECK_INTERVAL_SECONDS / 60))
-        text = (
-            "🚨 <b>Аномальный трафик на вашей подписке</b>\n\n"
-            f"За {minutes} мин. расход составил {delta_mb / 1024:.1f} ГБ — "
-            "это значительно превышает нормальный уровень.\n\n"
-            "Пожалуйста, убедитесь, что подпиской пользуетесь только вы. "
-            "При повторении подобной нагрузки мы можем ограничить скорость или "
-            "временно приостановить доступ, чтобы не пострадали остальные пользователи.\n\n"
-            "Если считаете, что это ошибка, свяжитесь с поддержкой."
-        )
         try:
             await bot.send_message(
                 chat_id=user_id, text=text, parse_mode="HTML", reply_markup=markup
@@ -2343,14 +2390,24 @@ async def _notify_user_about_traffic(bot: Bot, c_uuid: str, delta_mb: float) -> 
             # Не долбимся в закрытый чат каждые 5 минут
             user_alert_last_sent[user_id] = now
             logger.info(f"Предупреждение о трафике: пользователь {user_id} заблокировал бота")
-            return False
+            return "blocked"
 
         user_alert_last_sent[user_id] = now
         logger.info(f"Предупреждение о трафике отправлено пользователю {user_id} (UUID {c_uuid})")
-        return True
+        return "sent"
     except Exception as e:
         logger.warning(f"Не удалось отправить предупреждение о трафике (UUID {c_uuid}): {e}")
-        return False
+        return "error"
+
+
+async def _notify_user_about_traffic(bot: Bot, c_uuid: str, delta_mb: float) -> str:
+    """Предупреждение пользователю об аномальном трафике. Возвращает статус _send_user_warning."""
+    return await _send_user_warning(bot, c_uuid, _user_alert_text_traffic(delta_mb))
+
+
+async def _notify_user_about_sharing(bot: Bot, c_uuid: str, active_count: int) -> str:
+    """Предупреждение пользователю о множестве активных подключений. Возвращает статус _send_user_warning."""
+    return await _send_user_warning(bot, c_uuid, _user_alert_text_sharing(active_count))
 
 
 async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | None = None):
@@ -2445,6 +2502,7 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                 display_emails_html = format_emails_short(_emails_src, code=True)
 
                 snapshot_key = f"uuid:{host_name}:{c_uuid}"
+                user_warn_checked = False  # пользователю уже предложили предупреждение в этом цикле
 
                 if snapshot_key in traffic_snapshots:
                     last_total = traffic_snapshots[snapshot_key]
@@ -2483,8 +2541,9 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
 
                             # Только реально активные за интервал email'ы (без запасного варианта)
                             if USER_ALERT_MIN_ACTIVE and len(data["active_emails"]) >= USER_ALERT_MIN_ACTIVE:
-                                if await _notify_user_about_traffic(bot, c_uuid, delta_mb):
-                                    alert_text += "\n\n✉️ Пользователю отправлено предупреждение"
+                                user_warn_checked = True
+                                if await _notify_user_about_traffic(bot, c_uuid, delta_mb) == "sent":
+                                    alert_text += "\n\n" + _USER_WARN_STATUS_TEXT["sent"]
 
                             try:
                                 await bot.send_message(
@@ -2492,6 +2551,43 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                                 )
                             except Exception as e:
                                 logger.error(f"Ошибка отправки алерта админу: {e}")
+
+                # Шеринг: много одновременно активных email'ов (мастер + клоны), но аномалии трафика нет.
+                # Пауза с аномальным предупреждением общая, поэтому дублей не будет.
+                active_count = len(data["active_emails"])
+                if (
+                    USER_ALERT_SHARING
+                    and USER_ALERT_MIN_ACTIVE
+                    and not user_warn_checked
+                    and active_count >= USER_ALERT_MIN_ACTIVE
+                ):
+                    logger.info(
+                        f"Шеринг: {display_emails} [{c_uuid}] на {host_name}, активных email: {active_count}"
+                    )
+                    status = await _notify_user_about_sharing(bot, c_uuid, active_count)
+
+                    # Админу: когда предупреждение ушло, либо когда оно не может уйти (бан, нет владельца и т.п.),
+                    # но не чаще одного раза за паузу на подписку. "cooldown" — пользователю уже писали, алерт не нужен.
+                    admin_key = (host_name, str(c_uuid))
+                    admin_last = sharing_admin_last_sent.get(admin_key)
+                    admin_due = admin_last is None or (
+                        time.monotonic() - admin_last >= USER_ALERT_COOLDOWN_HOURS * 3600
+                    )
+                    if status == "sent" or (status != "cooldown" and admin_due):
+                        share_text = (
+                            f"🔗 <b>Подозрение на шеринг</b>\n\n"
+                            f"🗺️ <b>Сервер:</b> {host_name}\n"
+                            f"👤 <b>Клиент:</b> {display_emails_html}\n"
+                            f"🆔 <b>UUID:</b> <code>{html.escape(str(c_uuid))}</code>\n"
+                            f"👥 <b>Активных подключений:</b> {active_count}\n"
+                            f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин.\n\n"
+                            + _USER_WARN_STATUS_TEXT.get(status, _USER_WARN_STATUS_TEXT["error"])
+                        )
+                        sharing_admin_last_sent[admin_key] = time.monotonic()
+                        try:
+                            await bot.send_message(chat_id=admin_id, text=share_text, parse_mode="HTML")
+                        except Exception as e:
+                            logger.error(f"Ошибка отправки алерта админу о шеринге: {e}")
 
                 traffic_snapshots[snapshot_key] = current_total
 
