@@ -534,7 +534,7 @@ def create_webhook_app(bot_controller_instance):
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
 
-    @flask_app.route("/monitor/host/<host_name>/metrics.json")
+    @flask_app.route("/monitor/host/<path:host_name>/metrics.json")
     @login_required
     def monitor_host_metrics_json(host_name: str):
         try:
@@ -657,7 +657,7 @@ def create_webhook_app(bot_controller_instance):
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
 
-    @flask_app.route("/monitor/host/<host_name>.json")
+    @flask_app.route("/monitor/host/<path:host_name>.json")
     @login_required
     def monitor_host_json(host_name: str):
         try:
@@ -853,7 +853,7 @@ def create_webhook_app(bot_controller_instance):
             keys = []
         return render_template("partials/admin_keys_table.html", keys=keys)
 
-    @flask_app.route("/admin/hosts/<host_name>/plans")
+    @flask_app.route("/admin/hosts/<path:host_name>/plans")
     @login_required
     def admin_get_plans_for_host_json(host_name: str):
         try:
@@ -1586,7 +1586,7 @@ def create_webhook_app(bot_controller_instance):
         return redirect(request.referrer or url_for("settings_page"))
 
     # --- Host speedtest run & fetch ---
-    @flask_app.route("/admin/hosts/<host_name>/speedtest/run", methods=["POST"])
+    @flask_app.route("/admin/hosts/<path:host_name>/speedtest/run", methods=["POST"])
     @login_required
     def run_host_speedtest_route(host_name: str):
         method = (request.form.get("method") or "").strip().lower()
@@ -1622,7 +1622,7 @@ def create_webhook_app(bot_controller_instance):
         )
         return redirect(request.referrer or url_for("settings_page"))
 
-    @flask_app.route("/admin/hosts/<host_name>/speedtests.json")
+    @flask_app.route("/admin/hosts/<path:host_name>/speedtests.json")
     @login_required
     def host_speedtests_json(host_name: str):
         try:
@@ -1684,7 +1684,7 @@ def create_webhook_app(bot_controller_instance):
         return redirect(request.referrer or url_for("dashboard_page"))
 
     # --- Host speedtest auto-install ---
-    @flask_app.route("/admin/hosts/<host_name>/speedtest/install", methods=["POST"])
+    @flask_app.route("/admin/hosts/<path:host_name>/speedtest/install", methods=["POST"])
     @login_required
     def auto_install_speedtest_route(host_name: str):
         # Supports both HTML form and AJAX
@@ -2424,7 +2424,7 @@ def create_webhook_app(bot_controller_instance):
         flash(f"Сервер '{request.form['host_name']}' успешно добавлен.", "success")
         return redirect(url_for("settings_page", tab="hosts"))
 
-    @flask_app.route("/delete-host/<host_name>", methods=["POST"])
+    @flask_app.route("/delete-host/<path:host_name>", methods=["POST"])
     @login_required
     def delete_host_route(host_name):
         delete_host(host_name)
