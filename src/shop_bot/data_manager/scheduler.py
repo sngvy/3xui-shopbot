@@ -2412,7 +2412,8 @@ async def _notify_user_about_sharing(bot: Bot, c_uuid: str, active_count: int) -
 
 async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | None = None):
     """
-    Мониторинг резких скачков трафика и уведомление админа.
+    Мониторинг резких скачков трафика (только WL-инбаунды 🏳️) и шеринга (число активных
+    email'ов подписки на всех инбаундах бота 🌍/🏳️), уведомление админа и владельца подписки.
 
     host_sessions (опционально): {host_name: (api, all_inbounds)}, уже
     полученные в sync_keys_with_panels в этом же цикле — если передан и
@@ -2454,16 +2455,21 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                 if not _api:
                     continue
 
+            # Аномалии трафика считаем только по WL-инбаундам (🏳️), как раньше.
+            # Шеринг (число активных email'ов) считаем по всем инбаундам бота: 🌍 и 🏳️.
             all_inbounds = [
                 ib
                 for ib in (all_inbounds_raw or [])
-                if hasattr(ib, "remark") and "🏳️" in (ib.remark or "")
+                if hasattr(ib, "remark") and ("🏳️" in (ib.remark or "") or "🌍" in (ib.remark or ""))
             ]
 
-            host_stats = {}
+            host_stats = {}  # только WL: объём трафика и активные email'ы для аномалий
+            share_stats = {}  # все инбаунды бота: email'ы и активные email'ы для шеринга
+            anomaly_user_warned = set()  # UUID, по которым пользователю уже предложили аномальное предупреждение
 
             for ib in all_inbounds:
                 ib_id = getattr(ib, "id", ib.remark)
+                is_wl = "🏳️" in (ib.remark or "")
 
                 email_to_uuid = {}
                 if ib.settings and ib.settings.clients:
@@ -2475,7 +2481,9 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                 for stat in ib.client_stats:
                     c_uuid = email_to_uuid.get(stat.email, str(stat.email))
 
-                    if c_uuid not in host_stats:
+                    if c_uuid not in share_stats:
+                        share_stats[c_uuid] = {"emails": set(), "active_emails": set()}
+                    if is_wl and c_uuid not in host_stats:
                         host_stats[c_uuid] = {
                             "total": 0,
                             "emails": set(),
@@ -2483,15 +2491,20 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                         }
 
                     client_current_total = stat.up + stat.down
-                    host_stats[c_uuid]["total"] += client_current_total
                     if stat.email:
-                        host_stats[c_uuid]["emails"].add(stat.email)
+                        share_stats[c_uuid]["emails"].add(stat.email)
+                    if is_wl:
+                        host_stats[c_uuid]["total"] += client_current_total
+                        if stat.email:
+                            host_stats[c_uuid]["emails"].add(stat.email)
 
                     email_snapshot_key = f"email:{host_name}:{ib_id}:{stat.email}"
 
                     if email_snapshot_key in traffic_snapshots:
                         if client_current_total > traffic_snapshots[email_snapshot_key]:
-                            host_stats[c_uuid]["active_emails"].add(stat.email)
+                            share_stats[c_uuid]["active_emails"].add(stat.email)
+                            if is_wl:
+                                host_stats[c_uuid]["active_emails"].add(stat.email)
 
                     traffic_snapshots[email_snapshot_key] = client_current_total
 
@@ -2502,7 +2515,6 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                 display_emails_html = format_emails_short(_emails_src, code=True)
 
                 snapshot_key = f"uuid:{host_name}:{c_uuid}"
-                user_warn_checked = False  # пользователю уже предложили предупреждение в этом цикле
 
                 if snapshot_key in traffic_snapshots:
                     last_total = traffic_snapshots[snapshot_key]
@@ -2541,7 +2553,7 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
 
                             # Только реально активные за интервал email'ы (без запасного варианта)
                             if USER_ALERT_MIN_ACTIVE and len(data["active_emails"]) >= USER_ALERT_MIN_ACTIVE:
-                                user_warn_checked = True
+                                anomaly_user_warned.add(c_uuid)
                                 if await _notify_user_about_traffic(bot, c_uuid, delta_mb) == "sent":
                                     alert_text += "\n\n" + _USER_WARN_STATUS_TEXT["sent"]
 
@@ -2552,44 +2564,49 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                             except Exception as e:
                                 logger.error(f"Ошибка отправки алерта админу: {e}")
 
-                # Шеринг: много одновременно активных email'ов (мастер + клоны), но аномалии трафика нет.
-                # Пауза с аномальным предупреждением общая, поэтому дублей не будет.
-                active_count = len(data["active_emails"])
-                if (
-                    USER_ALERT_SHARING
-                    and USER_ALERT_MIN_ACTIVE
-                    and not user_warn_checked
-                    and active_count >= USER_ALERT_MIN_ACTIVE
-                ):
-                    logger.info(
-                        f"Шеринг: {display_emails} [{c_uuid}] на {host_name}, активных email: {active_count}"
-                    )
-                    status = await _notify_user_about_sharing(bot, c_uuid, active_count)
-
-                    # Админу: когда предупреждение ушло, либо когда оно не может уйти (бан, нет владельца и т.п.),
-                    # но не чаще одного раза за паузу на подписку. "cooldown" — пользователю уже писали, алерт не нужен.
-                    admin_key = (host_name, str(c_uuid))
-                    admin_last = sharing_admin_last_sent.get(admin_key)
-                    admin_due = admin_last is None or (
-                        time.monotonic() - admin_last >= USER_ALERT_COOLDOWN_HOURS * 3600
-                    )
-                    if status == "sent" or (status != "cooldown" and admin_due):
-                        share_text = (
-                            f"🔗 <b>Подозрение на шеринг</b>\n\n"
-                            f"🗺️ <b>Сервер:</b> {host_name}\n"
-                            f"👤 <b>Клиент:</b> {display_emails_html}\n"
-                            f"🆔 <b>UUID:</b> <code>{html.escape(str(c_uuid))}</code>\n"
-                            f"👥 <b>Активных подключений:</b> {active_count}\n"
-                            f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин.\n\n"
-                            + _USER_WARN_STATUS_TEXT.get(status, _USER_WARN_STATUS_TEXT["error"])
-                        )
-                        sharing_admin_last_sent[admin_key] = time.monotonic()
-                        try:
-                            await bot.send_message(chat_id=admin_id, text=share_text, parse_mode="HTML")
-                        except Exception as e:
-                            logger.error(f"Ошибка отправки алерта админу о шеринге: {e}")
-
                 traffic_snapshots[snapshot_key] = current_total
+
+            # Шеринг: много одновременно активных email'ов (мастер + клоны) на любых инбаундах бота,
+            # аномалии трафика по этой подписке нет. Пауза с аномальным предупреждением общая, дублей не будет.
+            for c_uuid, sdata in share_stats.items():
+                active_count = len(sdata["active_emails"])
+                if (
+                    not USER_ALERT_SHARING
+                    or not USER_ALERT_MIN_ACTIVE
+                    or c_uuid in anomaly_user_warned
+                    or active_count < USER_ALERT_MIN_ACTIVE
+                ):
+                    continue
+
+                display_emails = format_emails_short(sdata["active_emails"])
+                display_emails_html = format_emails_short(sdata["active_emails"], code=True)
+                logger.info(
+                    f"Шеринг: {display_emails} [{c_uuid}] на {host_name}, активных email: {active_count}"
+                )
+                status = await _notify_user_about_sharing(bot, c_uuid, active_count)
+
+                # Админу: когда предупреждение ушло, либо когда оно не может уйти (бан, нет владельца и т.п.),
+                # но не чаще одного раза за паузу на подписку. "cooldown" — пользователю уже писали, алерт не нужен.
+                admin_key = (host_name, str(c_uuid))
+                admin_last = sharing_admin_last_sent.get(admin_key)
+                admin_due = admin_last is None or (
+                    time.monotonic() - admin_last >= USER_ALERT_COOLDOWN_HOURS * 3600
+                )
+                if status == "sent" or (status != "cooldown" and admin_due):
+                    share_text = (
+                        f"🔗 <b>Подозрение на шеринг</b>\n\n"
+                        f"🗺️ <b>Сервер:</b> {host_name}\n"
+                        f"👤 <b>Клиент:</b> {display_emails_html}\n"
+                        f"🆔 <b>UUID:</b> <code>{html.escape(str(c_uuid))}</code>\n"
+                        f"👥 <b>Активных подключений:</b> {active_count}\n"
+                        f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин.\n\n"
+                        + _USER_WARN_STATUS_TEXT.get(status, _USER_WARN_STATUS_TEXT["error"])
+                    )
+                    sharing_admin_last_sent[admin_key] = time.monotonic()
+                    try:
+                        await bot.send_message(chat_id=admin_id, text=share_text, parse_mode="HTML")
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки алерта админу о шеринге: {e}")
 
         except Exception as e:
             logger.error(f"Scheduler: Ошибка мониторинга трафика на {host_name}: {e}")
