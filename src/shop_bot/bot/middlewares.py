@@ -30,7 +30,7 @@ class BanMiddleware(BaseMiddleware):
 
         user_data = get_user(user.id)
         if user_data and user_data.get("is_banned"):
-            ban_message_text = "🚫 Вы заблокированы и не можете использовать этого бота."
+            ban_message_text = "🚫 <b>Вы заблокированы и не можете использовать этого бота</b>"
             # Соберём клавиатуру поддержки без кнопки "Назад в меню"
             try:
                 support = (
