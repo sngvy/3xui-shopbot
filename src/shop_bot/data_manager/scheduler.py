@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -102,6 +103,14 @@ traffic_strikes = {}
 TRAFFIC_THRESHOLD_MB = env_int("TRAFFIC_THRESHOLD_MB", 6000, 1)  # Порог объема за интервал в МБ (детект разовых тяжелых закачек)
 SPEED_THRESHOLD_MBPS = env_float("SPEED_THRESHOLD_MBPS", 110.0, 1.0)  # Порог скорости (стабильная полка для детекта провода)
 STRIKE_THRESHOLD = env_int("STRIKE_THRESHOLD", 3, 1, 100)  # Кол-во проверок подряд для подтверждения аномалии
+
+# Предупреждение владельцу подписки при аномальном трафике (см. _notify_user_about_traffic).
+# Шлётся, только если в интервале была активность минимум у стольких email'ов (мастер + клоны).
+# 0 — не предупреждать пользователей вообще.
+USER_ALERT_MIN_ACTIVE = env_int("TRAFFIC_USER_ALERT_MIN_ACTIVE", 10, 0, 1000)
+# Пауза между повторными предупреждениями одному пользователю, часов.
+USER_ALERT_COOLDOWN_HOURS = env_int("TRAFFIC_USER_ALERT_COOLDOWN_HOURS", 6, 1, 168)
+user_alert_last_sent: dict[int, float] = {}  # user_id -> time.monotonic() последней отправки
 
 # Множитель пауз шедулера между мутациями панели.
 try:
@@ -2283,6 +2292,67 @@ def format_emails_short(emails, limit: int = 1, code: bool = False) -> str:
     return shown
 
 
+async def _notify_user_about_traffic(bot: Bot, c_uuid: str, delta_mb: float) -> bool:
+    """Предупреждает владельца подписки об аномальном трафике.
+
+    Возвращает True, только если сообщение реально доставлено. Не шлёт, если:
+    ключ не найден или без владельца, владелец — админ или забанен, с прошлого
+    предупреждения не прошла пауза TRAFFIC_USER_ALERT_COOLDOWN_HOURS, пользователь
+    заблокировал бота. Любая ошибка логируется и не мешает алерту админу.
+    """
+    try:
+        key = await asyncio.to_thread(database.get_key_by_uuid, str(c_uuid))
+        if not key or not key.get("user_id"):
+            return False
+        user_id = int(key["user_id"])
+
+        if await asyncio.to_thread(database.is_admin, user_id):
+            return False
+        user = await asyncio.to_thread(database.get_user, user_id)
+        if not user or user.get("is_banned"):
+            return False
+
+        now = time.monotonic()
+        last = user_alert_last_sent.get(user_id)
+        if last is not None and now - last < USER_ALERT_COOLDOWN_HOURS * 3600:
+            return False
+
+        from aiogram.types import InlineKeyboardMarkup
+
+        from shop_bot.bot.keyboards import create_support_keyboard
+
+        # В клавиатуре поддержки две кнопки; нужна только первая («Поддержка»)
+        support_kb = await asyncio.to_thread(create_support_keyboard)
+        markup = InlineKeyboardMarkup(inline_keyboard=support_kb.inline_keyboard[:1])
+
+        minutes = max(1, round(CHECK_INTERVAL_SECONDS / 60))
+        text = (
+            "🚨 <b>Аномальный трафик на вашей подписке</b>\n\n"
+            f"За {minutes} мин. расход составил {delta_mb / 1024:.1f} ГБ — "
+            "это значительно превышает нормальный уровень.\n\n"
+            "Пожалуйста, убедитесь, что подпиской пользуетесь только вы. "
+            "При повторении подобной нагрузки мы можем ограничить скорость или "
+            "временно приостановить доступ, чтобы не пострадали остальные пользователи.\n\n"
+            "Если считаете, что это ошибка, свяжитесь с поддержкой."
+        )
+        try:
+            await bot.send_message(
+                chat_id=user_id, text=text, parse_mode="HTML", reply_markup=markup
+            )
+        except TelegramForbiddenError:
+            # Не долбимся в закрытый чат каждые 5 минут
+            user_alert_last_sent[user_id] = now
+            logger.info(f"Предупреждение о трафике: пользователь {user_id} заблокировал бота")
+            return False
+
+        user_alert_last_sent[user_id] = now
+        logger.info(f"Предупреждение о трафике отправлено пользователю {user_id} (UUID {c_uuid})")
+        return True
+    except Exception as e:
+        logger.warning(f"Не удалось отправить предупреждение о трафике (UUID {c_uuid}): {e}")
+        return False
+
+
 async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | None = None):
     """
     Мониторинг резких скачков трафика и уведомление админа.
@@ -2410,6 +2480,12 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                                 f"🚀 <b>Скорость:</b> {mbps:.1f} Мбит/с\n"
                                 f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин."
                             )
+
+                            # Только реально активные за интервал email'ы (без запасного варианта)
+                            if USER_ALERT_MIN_ACTIVE and len(data["active_emails"]) >= USER_ALERT_MIN_ACTIVE:
+                                if await _notify_user_about_traffic(bot, c_uuid, delta_mb):
+                                    alert_text += "\n\n✉️ Пользователю отправлено предупреждение"
+
                             try:
                                 await bot.send_message(
                                     chat_id=admin_id, text=alert_text, parse_mode="HTML"
