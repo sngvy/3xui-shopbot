@@ -120,6 +120,64 @@ sharing_admin_last_sent: dict[tuple[str, str], float] = {}  # (host, uuid) -> п
 ACTIVE_MIN_KB = env_int("TRAFFIC_ACTIVE_MIN_KB", 1024, 0, 1024 * 1024)
 USER_ALERT_SHARING_CHECKS = env_int("TRAFFIC_USER_ALERT_SHARING_CHECKS", 2, 1, 100)
 sharing_strikes: dict[tuple[str, str], int] = {}  # (host, uuid) -> проверок подряд с шерингом
+# Шеринг подтверждаем числом уникальных IP клиента (по записям 3x-ui clientIps, нужен limitIp > 0 у клиентов).
+# Один человек: 1–2 IP (мобильная сеть + Wi-Fi). 0 — не проверять IP (считать только email'ы).
+USER_ALERT_MIN_IPS = env_int("TRAFFIC_USER_ALERT_MIN_IPS", 3, 0, 1000)
+# За какое окно (мин.) считать IP: берутся записи, не старше самой свежей минус это окно.
+USER_ALERT_IP_WINDOW_MIN = env_int("TRAFFIC_USER_ALERT_IP_WINDOW_MIN", 10, 1, 1440)
+USER_ALERT_IP_MAX_EMAILS = 30  # сколько email'ов подписки опрашивать за проверку
+_IP_RECORD_RE = re.compile(r"^\s*(\S+?)\s*\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\)\s*$")
+
+
+def _parse_ip_records(records) -> list[tuple[str, float | None]]:
+    """Записи clientIps панели -> [(ip, время в секундах или None)].
+    Понимает "1.2.3.4 (2026-10-12 11:55:13)", {"ip":..., "timestamp":...} и просто "1.2.3.4".
+    Время локальное для ноды; сравниваются только значения между собой, часовой пояс не важен."""
+    out: list[tuple[str, float | None]] = []
+    for rec in records or []:
+        ip, ts = None, None
+        if isinstance(rec, dict):
+            ip = rec.get("ip")
+            t = rec.get("timestamp")
+            if isinstance(t, (int, float)):
+                ts = float(t) / 1000 if t > 1e11 else float(t)
+        elif isinstance(rec, str):
+            m = _IP_RECORD_RE.match(rec)
+            if m:
+                ip = m.group(1)
+                try:
+                    ts = datetime.strptime(m.group(2), "%Y-%m-%d %H:%M:%S").timestamp()
+                except ValueError:
+                    ts = None
+            else:
+                ip = rec.strip()
+        if ip:
+            out.append((str(ip), ts))
+    return out
+
+
+def _recent_unique_ips(per_email_records: list, window_min: int) -> set[str] | None:
+    """Уникальные IP за окно. Опорное «сейчас» — самая свежая запись по подписке: email
+    уже признан активным в этом интервале, поэтому она свежая. None — записей IP нет вовсе."""
+    parsed = [r for recs in per_email_records for r in _parse_ip_records(recs)]
+    if not parsed:
+        return None
+    stamps = [ts for _, ts in parsed if ts is not None]
+    if not stamps:
+        return {ip for ip, _ in parsed}  # без времени окно применить нельзя — считаем все
+    border = max(stamps) - window_min * 60
+    return {ip for ip, ts in parsed if ts is None or ts >= border}
+
+
+async def _count_subscription_ips(api, emails) -> set[str] | None:
+    """Уникальные IP подписки за окно по списку её email'ов. None — панель IP не отдаёт."""
+    records = []
+    for email in sorted(emails)[:USER_ALERT_IP_MAX_EMAILS]:
+        try:
+            records.append(await xui_api.run_in_xui_pool(api.client.get_ips, email))
+        except Exception as e:
+            logger.warning(f"Шеринг: не удалось получить IP для {email}: {e}")
+    return _recent_unique_ips(records, USER_ALERT_IP_WINDOW_MIN)
 
 # Множитель пауз шедулера между мутациями панели.
 try:
@@ -2590,6 +2648,22 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                 if sharing_strikes[strike_key] < USER_ALERT_SHARING_CHECKS or c_uuid in anomaly_user_warned:
                     continue
 
+                # Подтверждение по IP: один человек с множеством конфигов (балансировка, автовыбор) — не шеринг.
+                ip_set = None
+                if USER_ALERT_MIN_IPS:
+                    ip_set = await _count_subscription_ips(_api, sdata["active_emails"])
+                    if ip_set is not None and len(ip_set) < USER_ALERT_MIN_IPS:
+                        logger.info(
+                            f"Шеринг не подтверждён: {c_uuid} на {host_name}, активных email: {active_count}, "
+                            f"уникальных IP: {len(ip_set)} (< {USER_ALERT_MIN_IPS})"
+                        )
+                        continue
+                    if ip_set is None:
+                        logger.warning(
+                            f"Шеринг: панель {host_name} не отдаёт IP клиента (limitIp=0 или нет access.log) — "
+                            f"решение только по числу email'ов"
+                        )
+
                 display_emails = format_emails_short(sdata["active_emails"])
                 display_emails_html = format_emails_short(sdata["active_emails"], code=True)
                 logger.info(
@@ -2611,7 +2685,8 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                         f"👤 <b>Клиент:</b> {display_emails_html}\n"
                         f"🆔 <b>UUID:</b> <code>{html.escape(str(c_uuid))}</code>\n"
                         f"👥 <b>Активных подключений:</b> {active_count}\n"
-                        f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин.\n\n"
+                        + (f"🌐 <b>Уникальных IP:</b> {len(ip_set)} за {USER_ALERT_IP_WINDOW_MIN} мин.\n" if ip_set is not None else "")
+                        + f"🕒 <b>Интервал:</b> {CHECK_INTERVAL_SECONDS // 60} мин.\n\n"
                         + _USER_WARN_STATUS_TEXT.get(status, _USER_WARN_STATUS_TEXT["error"])
                     )
                     sharing_admin_last_sent[admin_key] = time.monotonic()
