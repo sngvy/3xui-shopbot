@@ -2406,6 +2406,7 @@ _USER_WARN_STATUS_TEXT = {
     "no_owner": "✉️ Не отправлено: у ключа нет владельца",
     "admin": "✉️ Не отправлено: владелец — админ",
     "banned": "✉️ Не отправлено: пользователь забанен",
+    "cooldown": "✉️ Не отправлено: пользователя уже предупреждали (пауза между предупреждениями)",
     "error": "✉️ Не отправлено: ошибка отправки (см. лог)",
 }
 
@@ -2621,8 +2622,10 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                             heavy_active = len(share_stats.get(c_uuid, {}).get("active_emails", ()))
                             if USER_ALERT_MIN_ACTIVE and heavy_active >= USER_ALERT_MIN_ACTIVE:
                                 anomaly_user_warned.add(c_uuid)
-                                if await _notify_user_about_traffic(bot, c_uuid, delta_mb) == "sent":
-                                    alert_text += "\n\n" + _USER_WARN_STATUS_TEXT["sent"]
+                                warn_status = await _notify_user_about_traffic(bot, c_uuid, delta_mb)
+                                alert_text += "\n\n" + _USER_WARN_STATUS_TEXT.get(
+                                    warn_status, _USER_WARN_STATUS_TEXT["error"]
+                                )
 
                             try:
                                 await bot.send_message(
