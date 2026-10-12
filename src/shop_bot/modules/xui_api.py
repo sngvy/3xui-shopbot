@@ -84,6 +84,9 @@ emails_in_transition: set[str] = set()
 # значение/переменная не задана = пустой кортеж, нормализация в
 # scheduler.py просто не найдёт кандидатов и ничего не тронет
 EMAIL_DOMAIN = os.environ.get("EMAIL_DOMAIN", "snowyservices_bot").strip().lower()
+# Лимит одновременных IP, с которым создаются новые ключи (3x-ui limitIp). Нужен и для учёта IP
+# клиентов (проверка шеринга), и для блокировки через fail2ban. 0 — без лимита.
+CLIENT_LIMIT_IP = env_int("CLIENT_LIMIT_IP", 10, 0, 1000)
 LEGACY_EMAIL_DOMAINS = tuple(
     d.strip().lower()
     for d in os.environ.get("LEGACY_EMAIL_DOMAINS", "bot.local").split(",")
@@ -1096,6 +1099,7 @@ def update_or_create_client_on_panel(
                 enable=True,
                 flow="",
                 expiry_time=new_expiry_ms,
+                limit_ip=CLIENT_LIMIT_IP,
             )
 
             # Сброс счётчиков трафика
@@ -1466,6 +1470,7 @@ def _create_or_update_key_on_host_sync(
                     enable=True,
                     expiry_time=new_expiry_ms,
                     flow="",
+                    limit_ip=CLIENT_LIMIT_IP,
                 )
 
                 # Устанавливаем токен подписки
