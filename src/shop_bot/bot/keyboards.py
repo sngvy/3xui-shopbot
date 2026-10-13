@@ -1336,6 +1336,10 @@ def create_qr_client_keyboard(key_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+HOWTO_ROUTERS_BTN_DEFAULT = "🔀 Роутеры"
+HOWTO_ROUTERS_URL_DEFAULT = "https://telegra.ph/Podklyuchenie-na-routerah-OpenWrt-i-Keenetic-10-13"
+
+
 def create_howto_vless_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру выбора платформы для общей инструкции по подключению VLESS."""
     builder = InlineKeyboardBuilder()
@@ -1350,10 +1354,14 @@ def create_howto_vless_keyboard() -> InlineKeyboardMarkup:
     )
     builder.button(text=(get_setting("btn_howto_linux") or "🐧 Linux"), callback_data="howto_linux")
     builder.button(
+        text=(get_setting("btn_howto_routers") or HOWTO_ROUTERS_BTN_DEFAULT),
+        url=(get_setting("howto_routers_url") or HOWTO_ROUTERS_URL_DEFAULT),
+    )
+    builder.button(
         text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
         callback_data="back_to_main_menu",
     )
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
 
 
@@ -1371,10 +1379,14 @@ def create_howto_vless_keyboard_key(key_id: int) -> InlineKeyboardMarkup:
     )
     builder.button(text=(get_setting("btn_howto_linux") or "🐧 Linux"), callback_data="howto_linux")
     builder.button(
+        text=(get_setting("btn_howto_routers") or HOWTO_ROUTERS_BTN_DEFAULT),
+        url=(get_setting("howto_routers_url") or HOWTO_ROUTERS_URL_DEFAULT),
+    )
+    builder.button(
         text=(get_setting("btn_back_to_key") or "⬅️ Назад к подписке"),
         callback_data=f"show_key_{key_id}",
     )
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
 
 
