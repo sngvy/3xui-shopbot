@@ -3213,6 +3213,13 @@ def _yk_has_matching_transaction(user_id: int, amount: float, created_local: dat
     return row is not None
 
 
+_YK_ACTION_LABELS = {
+    "new": "Новая подписка",
+    "extend": "Продление подписки",
+    "top_up": "Пополнение баланса",
+}
+
+
 def _yk_user_markup(user_id: int):
     kb = InlineKeyboardBuilder()
     kb.button(text="👤 Перейти к пользователю", callback_data=f"admin_view_user_{int(user_id)}")
@@ -3280,8 +3287,10 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
 
         refunded = getattr(getattr(p, "refunded_amount", None), "value", None)
         header = (
-            f"Платёж <code>{html.escape(pid)}</code>, пользователь <code>{user_id}</code>, "
-            f"{amount:.2f} ₽, действие: {html.escape(str(metadata.get('action') or '?'))}"
+            f"💳 <b>Платёж:</b> <code>{html.escape(pid)}</code>\n"
+            f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
+            f"💰 <b>Сумма:</b> {amount:.2f} ₽\n"
+            f"⚙️ <b>Действие:</b> {_YK_ACTION_LABELS.get(str(metadata.get('action') or ''), html.escape(str(metadata.get('action') or '?')))}"
         )
 
         skip_reason = None
@@ -3325,7 +3334,8 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
             logger.error(f"Сверка ЮKassa: обработка платежа {pid} упала: {e}", exc_info=True)
             text = (
                 "❌ <b>Сверка ЮKassa</b>: платёж не был обработан вебхуком, а при попытке выдачи "
-                f"произошла ошибка: <code>{html.escape(repr(e))[:300]}</code>\n\n{header}\n\n"
+                f"произошла ошибка.\n\n{header}\n\n"
+                f"🛑 <b>Ошибка:</b> <code>{html.escape(f'{type(e).__name__}: {e}'[:300])}</code>\n\n"
                 "Нужна ручная выдача."
             )
         _yk_reported_ids.add(pid)
