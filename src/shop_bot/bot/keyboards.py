@@ -1336,7 +1336,7 @@ def create_qr_client_keyboard(key_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-HOWTO_ROUTERS_BTN_DEFAULT = "🔀 Роутеры"
+HOWTO_ROUTERS_BTN_DEFAULT = "🛜 Роутеры"
 HOWTO_ROUTERS_URL_DEFAULT = "https://telegra.ph/Podklyuchenie-na-routerah-OpenWrt-i-Keenetic-10-13"
 
 
