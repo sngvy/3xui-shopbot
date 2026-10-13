@@ -458,6 +458,17 @@ def initialize_db():
                 "CREATE INDEX IF NOT EXISTS idx_resource_metrics_scope_time ON resource_metrics(scope, object_name, created_at DESC)"
             )
 
+            # Внешний чёрный список (ban-vpn): какие ID мы уже видели и что с ними сделали
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS external_blacklist (
+                    telegram_id INTEGER PRIMARY KEY,
+                    reason TEXT,
+                    added_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    decided INTEGER NOT NULL DEFAULT 0,
+                    banned_by_us INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+
             # Таблица для конфигураций кнопок
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS button_configs (
@@ -3822,6 +3833,170 @@ def ban_user(telegram_id: int):
             conn.commit()
     except sqlite3.Error as e:
         logging.error(f"Не удалось заблокировать пользователя {telegram_id}: {e}")
+
+
+def is_in_external_blacklist(telegram_id: int) -> bool:
+    """True, если ID есть в таблице внешнего чёрного списка (для блокировки ещё не
+    зарегистрированных пользователей в BanMiddleware)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM external_blacklist WHERE telegram_id = ?", (telegram_id,))
+            return cur.fetchone() is not None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось проверить внешний чёрный список для {telegram_id}: {e}")
+        return False
+
+
+def count_external_blacklist() -> int:
+    """Сколько ID сейчас хранится из внешнего чёрного списка."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM external_blacklist")
+            return int(cur.fetchone()[0] or 0)
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось посчитать внешний чёрный список: {e}")
+        return 0
+
+
+def sync_external_blacklist(
+    entries: dict[int, str],
+    ignore_ids: set[int] | None = None,
+    auto_unban: bool = True,
+    max_bans: int = 0,
+) -> dict:
+    """Сверяет внешний чёрный список (telegram_id -> причина) с базой и применяет баны.
+
+    Всё выполняется одной транзакцией. Правила:
+      * ID, которого мы раньше не видели, запоминается. Если такой пользователь уже есть
+        в users и ещё не забанен — ставим is_banned=1 (banned_by_us=1). Если уже забанен
+        (вручную) — ничего не меняем и позже не снимаем.
+      * Если пользователя в users нет, ID просто хранится в external_blacklist: BanMiddleware
+        не пустит его при первом обращении, а если он всё же появится в users — забаним
+        на следующей сверке.
+      * Если админ вручную разбанил того, кого забанили мы, повторно НЕ баним (banned_by_us
+        сбрасывается): ручное решение главнее списка.
+      * ID, исчезнувший из списка: если бан выставляли мы и он всё ещё стоит — снимаем
+        (при auto_unban), запись удаляем.
+      * ignore_ids (админы) не банятся и не запоминаются.
+      * Если новых банов за один проход больше max_bans (0 — без лимита), транзакция
+        откатывается и результат помечается blocked_by_limit — защита от испорченного списка.
+
+    Возвращает словарь со списками: banned, unbanned, already_banned, skipped_ignored,
+    а также счётчики new, pending, removed, overridden, total.
+    """
+    ignore_ids = set(ignore_ids or ())
+    result: dict = {
+        "total": len(entries),
+        "new": 0,
+        "pending": 0,
+        "removed": 0,
+        "overridden": 0,
+        "banned": [],
+        "unbanned": [],
+        "already_banned": [],
+        "skipped_ignored": [],
+        "blocked_by_limit": False,
+    }
+
+    def _chunks(items: list[int], size: int = 400):
+        for i in range(0, len(items), size):
+            yield items[i : i + size]
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT telegram_id, reason, decided, banned_by_us FROM external_blacklist")
+        known = {
+            int(r[0]): {"reason": r[1], "decided": int(r[2]), "by_us": int(r[3])}
+            for r in cur.fetchall()
+        }
+
+        wanted = list(set(entries) | set(known))
+        users: dict[int, dict] = {}
+        for chunk in _chunks(wanted):
+            q = ",".join("?" * len(chunk))
+            cur.execute(
+                f"SELECT telegram_id, username, is_banned FROM users WHERE telegram_id IN ({q})",
+                chunk,
+            )
+            for r in cur.fetchall():
+                users[int(r[0])] = {"username": r[1], "is_banned": bool(r[2])}
+
+        def _keys_count(uid: int) -> int:
+            cur.execute("SELECT COUNT(*) FROM vpn_keys WHERE user_id = ?", (uid,))
+            return int(cur.fetchone()[0] or 0)
+
+        def _info(uid: int, reason: str) -> dict:
+            u = users.get(uid) or {}
+            return {
+                "id": uid,
+                "username": u.get("username"),
+                "reason": reason,
+                "keys": _keys_count(uid),
+            }
+
+        for uid, reason in entries.items():
+            if uid in ignore_ids:
+                result["skipped_ignored"].append(uid)
+                continue
+            row = known.get(uid)
+            if row is None:
+                cur.execute(
+                    "INSERT INTO external_blacklist (telegram_id, reason, decided, banned_by_us) "
+                    "VALUES (?, ?, 0, 0)",
+                    (uid, reason),
+                )
+                row = {"reason": reason, "decided": 0, "by_us": 0}
+                result["new"] += 1
+            elif row["reason"] != reason:
+                cur.execute(
+                    "UPDATE external_blacklist SET reason = ? WHERE telegram_id = ?", (reason, uid)
+                )
+
+            user = users.get(uid)
+            if row["decided"] == 0:
+                if user is None:
+                    result["pending"] += 1
+                elif user["is_banned"]:
+                    cur.execute(
+                        "UPDATE external_blacklist SET decided = 1, banned_by_us = 0 "
+                        "WHERE telegram_id = ?",
+                        (uid,),
+                    )
+                    result["already_banned"].append(uid)
+                else:
+                    cur.execute("UPDATE users SET is_banned = 1 WHERE telegram_id = ?", (uid,))
+                    cur.execute(
+                        "UPDATE external_blacklist SET decided = 1, banned_by_us = 1 "
+                        "WHERE telegram_id = ?",
+                        (uid,),
+                    )
+                    result["banned"].append(_info(uid, reason))
+            elif row["by_us"] == 1 and user is not None and not user["is_banned"]:
+                # Админ вручную разбанил — уважаем и больше не трогаем
+                cur.execute(
+                    "UPDATE external_blacklist SET banned_by_us = 0 WHERE telegram_id = ?", (uid,)
+                )
+                result["overridden"] += 1
+
+        # ID, пропавшие из списка
+        for uid, row in known.items():
+            if uid in entries or uid in ignore_ids:
+                continue
+            user = users.get(uid)
+            if auto_unban and row["by_us"] == 1 and user is not None and user["is_banned"]:
+                cur.execute("UPDATE users SET is_banned = 0 WHERE telegram_id = ?", (uid,))
+                result["unbanned"].append(_info(uid, row["reason"] or ""))
+            cur.execute("DELETE FROM external_blacklist WHERE telegram_id = ?", (uid,))
+            result["removed"] += 1
+
+        if max_bans > 0 and len(result["banned"]) > max_bans:
+            conn.rollback()
+            result["blocked_by_limit"] = True
+            return result
+        conn.commit()
+    return result
 
 
 def unban_user(telegram_id: int):
