@@ -9,6 +9,8 @@ import os
 import re
 import secrets
 import time
+import urllib.error
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -770,6 +772,7 @@ async def _restore_missing_master(
         expiry_time=expiry_ms,
         total_gb=0,
         sub_id=saved_sub_id,
+        limit_ip=xui_api.CLIENT_LIMIT_IP,
     )
 
     try:
@@ -1605,6 +1608,7 @@ async def _sync_clones_for_host(
                 expiry_time=expiry_ms_adjusted,
                 total_gb=server_client.total_gb,
                 sub_id=master_sub_id,
+                limit_ip=xui_api.CLIENT_LIMIT_IP,
             )
             # Резервируем слот в bookkeeping сразу (чтобы следующий кандидат в
             # этом же проходе не выбрал тот же email), но помним: это ещё не
@@ -2375,7 +2379,7 @@ def _plural_ru(n: int, one: str, few: str, many: str) -> str:
 _USER_ALERT_TAIL = (
     "Прекратите передавать подписку другим. Если нагрузка не уменьшится, мы ограничим "
     "скорость или отключим подписку без возврата средств.\n\n"
-    "Если вы считаете, что произошла ошибка, свяжитесь с поддержкой."
+    "Если считаете, что произошла ошибка, свяжитесь с поддержкой."
 )
 
 
@@ -2898,6 +2902,245 @@ async def _maybe_send_scheduled_broadcasts(bot: Bot):
                     pass
 
 
+# -------------------------------------------------------------------------
+# Внешний чёрный список (github.com/Blin4ickUSE/ban-vpn): одна строка = один
+# Telegram ID, после «#» — причина. Периодически скачиваем, баним совпадения
+# среди пользователей бота и блокируем ещё не зарегистрированные ID (см.
+# database.sync_external_blacklist и BanMiddleware).
+# -------------------------------------------------------------------------
+BLACKLIST_ENABLED = env_int("BLACKLIST_ENABLED", 1, 0, 1)
+BLACKLIST_GITHUB_URL = (
+    os.getenv("BLACKLIST_GITHUB_URL")
+    or "https://raw.githubusercontent.com/Blin4ickUSE/ban-vpn/refs/heads/main/blacklist.txt"
+).strip()
+# Как часто сверяться, часов (README списка рекомендует раз в час)
+BLACKLIST_UPDATE_INTERVAL_HOURS = env_float("BLACKLIST_UPDATE_INTERVAL_HOURS", 1.0, 0.25, 168.0)
+# 1 — администраторов бота никогда не банить
+BLACKLIST_IGNORE_ADMINS = env_int("BLACKLIST_IGNORE_ADMINS", 1, 0, 1)
+# 1 — снимать бан, выставленный по списку, если ID пропал из списка
+BLACKLIST_AUTO_UNBAN = env_int("BLACKLIST_AUTO_UNBAN", 1, 0, 1)
+# Защита от испорченного списка: если за один проход нужно забанить больше стольких
+# пользователей, ничего не применяем и пишем админу (0 — без лимита)
+BLACKLIST_MAX_BANS_PER_RUN = env_int("BLACKLIST_MAX_BANS_PER_RUN", 100, 0, 100000)
+BLACKLIST_LAST_RUN_SETTING = "blacklist_last_run_at"
+BLACKLIST_MIN_ENTRIES = 10  # меньше — считаем, что файл пуст/повреждён
+BLACKLIST_MAX_BYTES = 4 * 1024 * 1024
+_BLACKLIST_LINE_RE = re.compile(r"^(\d{1,13})\s*(?:#\s*(.*))?$")
+_blacklist_last_fail_at: datetime | None = None
+_blacklist_etag: str | None = None
+_blacklist_cache: dict[int, str] | None = None
+_blacklist_alert_at: dict[str, float] = {}  # тип алерта -> time.monotonic() последней отправки
+BLACKLIST_ALERT_PAUSE_SECONDS = 24 * 3600
+BLACKLIST_RETRY_AFTER_FAILURE_SECONDS = 600
+
+
+def _parse_blacklist(text: str) -> dict[int, str]:
+    """Разбирает blacklist.txt: «ID # причина», пустые строки и строки-комментарии пропускаются."""
+    entries: dict[int, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip().lstrip("\ufeff")
+        if not line or line.startswith("#"):
+            continue
+        m = _BLACKLIST_LINE_RE.match(line)
+        if not m:
+            continue
+        uid = int(m.group(1))
+        if uid <= 0:
+            continue
+        entries.setdefault(uid, (m.group(2) or "").strip()[:120])
+    return entries
+
+
+def _download_blacklist(url: str, etag: str | None) -> tuple[int, bytes, str | None]:
+    """Скачивает список по HTTPS (без прокси из окружения). Возвращает (статус, тело, etag).
+    Статус 304 означает «не менялся» (тело пустое)."""
+    if not url.lower().startswith("https://"):
+        raise ValueError("BLACKLIST_GITHUB_URL должен начинаться с https://")
+    headers = {"User-Agent": "3xui-shopbot-blacklist-sync"}
+    if etag:
+        headers["If-None-Match"] = etag
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with opener.open(req, timeout=20) as resp:
+            body = resp.read(BLACKLIST_MAX_BYTES + 1)
+            if len(body) > BLACKLIST_MAX_BYTES:
+                raise ValueError("файл списка больше допустимого размера")
+            return resp.status, body, resp.headers.get("ETag")
+    except urllib.error.HTTPError as e:
+        if e.code == 304:
+            return 304, b"", etag
+        raise
+
+
+def _blacklist_alert_allowed(kind: str) -> bool:
+    """Не чаще раза в сутки на каждый тип служебного алерта (ошибка загрузки, подозрительный список)."""
+    now = time.monotonic()
+    last = _blacklist_alert_at.get(kind)
+    if last is not None and now - last < BLACKLIST_ALERT_PAUSE_SECONDS:
+        return False
+    _blacklist_alert_at[kind] = now
+    return True
+
+
+async def _notify_admins(bot: Bot, text: str, markup=None) -> None:
+    try:
+        admin_ids = await asyncio.to_thread(database.get_admin_ids)
+    except Exception:
+        admin_ids = set()
+    for admin_id in admin_ids:
+        try:
+            await bot.send_message(
+                chat_id=admin_id, text=text, parse_mode="HTML", reply_markup=markup
+            )
+        except Exception as e:
+            logger.error(f"Scheduler: не удалось отправить сообщение админу {admin_id}: {e}")
+
+
+def _fmt_blacklist_user(info: dict) -> str:
+    uname = info.get("username")
+    who = f"@{html.escape(str(uname))}" if uname else "без username"
+    reason = html.escape(info.get("reason") or "причина не указана")
+    return f"• <code>{info['id']}</code> {who} — {reason} (ключей: {info.get('keys', 0)})"
+
+
+async def _maybe_sync_external_blacklist(bot: Bot) -> None:
+    """Раз в BLACKLIST_UPDATE_INTERVAL_HOURS скачивает внешний чёрный список и применяет баны.
+    Время последней успешной сверки хранится в bot_settings и переживает рестарт."""
+    global _blacklist_last_fail_at, _blacklist_etag, _blacklist_cache
+
+    if not BLACKLIST_ENABLED or not BLACKLIST_GITHUB_URL:
+        return
+
+    now = datetime.now()
+    interval = BLACKLIST_UPDATE_INTERVAL_HOURS * 3600
+    try:
+        stored = await asyncio.to_thread(database.get_setting, BLACKLIST_LAST_RUN_SETTING)
+        last_ok = datetime.fromisoformat(stored) if stored else None
+    except Exception:
+        last_ok = None
+    if last_ok and (now - last_ok).total_seconds() < interval - 30:
+        return
+    # После неудачи не долбим GitHub каждый цикл планировщика
+    if (
+        _blacklist_last_fail_at
+        and (now - _blacklist_last_fail_at).total_seconds() < BLACKLIST_RETRY_AFTER_FAILURE_SECONDS
+    ):
+        return
+
+    try:
+        status, body, etag = await asyncio.to_thread(
+            _download_blacklist, BLACKLIST_GITHUB_URL, _blacklist_etag if _blacklist_cache else None
+        )
+        if status == 304 and _blacklist_cache is not None:
+            entries = _blacklist_cache
+        elif status == 200:
+            entries = _parse_blacklist(body.decode("utf-8", errors="replace"))
+        else:
+            raise RuntimeError(f"HTTP {status}")
+    except Exception as e:
+        _blacklist_last_fail_at = now
+        logger.error(f"Scheduler: не удалось загрузить чёрный список: {e}")
+        if _blacklist_alert_allowed("fetch"):
+            await _notify_admins(
+                bot,
+                "⚠️ <b>Чёрный список (ban-vpn)</b>: не удалось загрузить файл\n"
+                f"<code>{html.escape(str(e))[:300]}</code>\n"
+                "Повторю попытку автоматически.",
+            )
+        return
+
+    # Защита от пустого/усечённого файла: баны не трогаем
+    prev_count = await asyncio.to_thread(database.count_external_blacklist)
+    if len(entries) < BLACKLIST_MIN_ENTRIES or (prev_count >= 50 and len(entries) < prev_count * 0.5):
+        _blacklist_last_fail_at = now
+        logger.warning(
+            f"Scheduler: чёрный список выглядит повреждённым ({len(entries)} записей, было {prev_count}) — пропускаю."
+        )
+        if _blacklist_alert_allowed("suspicious"):
+            await _notify_admins(
+                bot,
+                "⚠️ <b>Чёрный список (ban-vpn)</b>: файл выглядит повреждённым "
+                f"({len(entries)} записей, было {prev_count}). Сверка пропущена, баны не менялись.",
+            )
+        return
+
+    ignore: set[int] = set()
+    if BLACKLIST_IGNORE_ADMINS:
+        try:
+            ignore = set(await asyncio.to_thread(database.get_admin_ids))
+        except Exception:
+            ignore = set()
+
+    try:
+        res = await asyncio.to_thread(
+            database.sync_external_blacklist,
+            entries,
+            ignore,
+            bool(BLACKLIST_AUTO_UNBAN),
+            BLACKLIST_MAX_BANS_PER_RUN,
+        )
+    except Exception as e:
+        logger.error(f"Scheduler: ошибка применения чёрного списка: {e}", exc_info=True)
+        return
+
+    _blacklist_last_fail_at = None
+    if etag:
+        _blacklist_etag = etag
+    _blacklist_cache = entries
+    # Время сверки пишем и при срабатывании лимита: следующая попытка через интервал, а не каждые 10 минут
+    await asyncio.to_thread(database.update_setting, BLACKLIST_LAST_RUN_SETTING, now.isoformat())
+
+    if res.get("blocked_by_limit"):
+        n = len(res["banned"])
+        logger.warning(
+            f"Scheduler: чёрный список потребовал {n} банов за раз (лимит {BLACKLIST_MAX_BANS_PER_RUN}) — не применён."
+        )
+        if _blacklist_alert_allowed("limit"):
+            await _notify_admins(
+                bot,
+                "⚠️ <b>Чёрный список (ban-vpn)</b>: нужно забанить "
+                f"<b>{n}</b> пользователей за один проход (лимит {BLACKLIST_MAX_BANS_PER_RUN}). "
+                "Баны не применены. Проверьте список, и если всё верно, увеличьте "
+                "<code>BLACKLIST_MAX_BANS_PER_RUN</code> в .env и перезапустите бота.",
+            )
+        return
+
+    logger.info(
+        "Scheduler: чёрный список: записей %s, новых %s, забанено %s, уже были забанены %s, "
+        "разбанено %s, ожидают регистрации %s, ручных разбанов учтено %s",
+        res["total"],
+        res["new"],
+        len(res["banned"]),
+        len(res["already_banned"]),
+        len(res["unbanned"]),
+        res["pending"],
+        res["overridden"],
+    )
+
+    if res["banned"] or res["unbanned"]:
+        lines = ["🚫 <b>Чёрный список (ban-vpn)</b>"]
+        if res["banned"]:
+            lines.append(f"\nЗаблокировано: <b>{len(res['banned'])}</b>")
+            lines += [_fmt_blacklist_user(i) for i in res["banned"][:20]]
+            if len(res["banned"]) > 20:
+                lines.append(f"… и ещё {len(res['banned']) - 20}")
+        if res["unbanned"]:
+            lines.append(f"\nРазблокировано (удалены из списка): <b>{len(res['unbanned'])}</b>")
+            lines += [_fmt_blacklist_user(i) for i in res["unbanned"][:20]]
+            if len(res["unbanned"]) > 20:
+                lines.append(f"… и ещё {len(res['unbanned']) - 20}")
+        markup = None
+        if res["banned"]:
+            kb = InlineKeyboardBuilder()
+            for info in res["banned"][:10]:
+                kb.button(text=f"✅ Разбанить {info['id']}", callback_data=f"admin_unban_user_{info['id']}")
+            kb.adjust(1)
+            markup = kb.as_markup()
+            lines.append("\nОшибочный бан можно снять кнопкой: повторно по списку не забаним.")
+        await _notify_admins(bot, "\n".join(lines), markup)
+
+
 async def periodic_subscription_check(bot_controller: BotController):
     """Главный бесконечный цикл фонового планировщика (запускается один раз при старте бота)."""
     logger.info("Scheduler: Планировщик фоновых задач запущен.")
@@ -2909,6 +3152,9 @@ async def periodic_subscription_check(bot_controller: BotController):
             if bot_controller.get_status().get("is_running"):
                 bot = bot_controller.get_bot_instance()
                 if bot:
+                    # Внешний чёрный список: баны применяем до синхронизации, чтобы ключи
+                    # забаненных отключились на панелях в этом же проходе
+                    await _maybe_sync_external_blacklist(bot)
                     # Синхронизация подписок: возвращает {host_name: (api, all_inbounds)},
                     # полученные в этом же проходе — переиспользуем их ниже в
                     # check_traffic_anomalies, чтобы не логиниться в панели второй раз
