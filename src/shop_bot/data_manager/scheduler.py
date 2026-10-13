@@ -2921,7 +2921,7 @@ BLACKLIST_IGNORE_ADMINS = env_int("BLACKLIST_IGNORE_ADMINS", 1, 0, 1)
 BLACKLIST_AUTO_UNBAN = env_int("BLACKLIST_AUTO_UNBAN", 1, 0, 1)
 # Защита от испорченного списка: если за один проход нужно забанить больше стольких
 # пользователей, ничего не применяем и пишем админу (0 — без лимита)
-BLACKLIST_MAX_BANS_PER_RUN = env_int("BLACKLIST_MAX_BANS_PER_RUN", 100, 0, 100000)
+BLACKLIST_MAX_BANS_PER_RUN = env_int("BLACKLIST_MAX_BANS_PER_RUN", 0, 0, 1000000)
 BLACKLIST_LAST_RUN_SETTING = "blacklist_last_run_at"
 BLACKLIST_MIN_ENTRIES = 10  # меньше — считаем, что файл пуст/повреждён
 BLACKLIST_MAX_BYTES = 4 * 1024 * 1024
@@ -3130,15 +3130,7 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
             lines += [_fmt_blacklist_user(i) for i in res["unbanned"][:20]]
             if len(res["unbanned"]) > 20:
                 lines.append(f"... и ещё {len(res['unbanned']) - 20}")
-        markup = None
-        if res["banned"]:
-            kb = InlineKeyboardBuilder()
-            for info in res["banned"][:10]:
-                kb.button(text=f"✅ Разбанить {info['id']}", callback_data=f"admin_unban_user_{info['id']}")
-            kb.adjust(1)
-            markup = kb.as_markup()
-            lines.append("\nОшибочный бан можно снять кнопкой: повторно по списку не забаним.")
-        await _notify_admins(bot, "\n".join(lines), markup)
+        await _notify_admins(bot, "\n".join(lines))
 
 
 async def periodic_subscription_check(bot_controller: BotController):
