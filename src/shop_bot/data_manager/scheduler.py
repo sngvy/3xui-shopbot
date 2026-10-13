@@ -3000,8 +3000,21 @@ async def _notify_admins(bot: Bot, text: str, markup=None) -> None:
 def _fmt_blacklist_user(info: dict) -> str:
     uname = info.get("username")
     who = f"@{html.escape(str(uname))}" if uname else "без username"
-    reason = html.escape(info.get("reason") or "причина не указана")
-    return f"▪️ <code>{info['id']}</code> {who} — {reason} (ключей: {info.get('keys', 0)})"
+    reason = html.escape((info.get("reason") or "причина не указана")[:60])
+    return (
+        f"👤 <b>Пользователь:</b> <code>{info['id']}</code> ({who})\n"
+        f"📋 <b>Причина:</b> {reason}\n"
+        f"🔑 <b>Ключей:</b> {info.get('keys', 0)}"
+    )
+
+
+def _fmt_blacklist_report(title: str, users: list[dict], limit: int = 20) -> str:
+    """Сообщение админам: заголовок, затем блок на каждого пользователя (первые limit)."""
+    blocks = [_fmt_blacklist_user(i) for i in users[:limit]]
+    text = f"{title} ({len(users)})\n\n" + "\n\n".join(blocks)
+    if len(users) > limit:
+        text += f"\n\n… и ещё {len(users) - limit}"
+    return text
 
 
 async def _maybe_sync_external_blacklist(bot: Bot) -> None:
@@ -3044,9 +3057,9 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
         if _blacklist_alert_allowed("fetch"):
             await _notify_admins(
                 bot,
-                "⚠️ <b>Чёрный список (ban-vpn)</b>: не удалось загрузить файл\n"
-                f"<code>{html.escape(str(e))[:300]}</code>\n"
-                "Повторю попытку автоматически.",
+                "⚠️ <b>Чёрный список (ban-vpn)</b>: не удалось загрузить файл\n\n"
+                f"🛑 <b>Ошибка:</b> <code>{html.escape(str(e))[:300]}</code>\n\n"
+                "Повторю попытку автоматически",
             )
         return
 
@@ -3060,8 +3073,11 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
         if _blacklist_alert_allowed("suspicious"):
             await _notify_admins(
                 bot,
-                "⚠️ <b>Чёрный список (ban-vpn)</b>: файл выглядит повреждённым "
-                f"({len(entries)} записей, было {prev_count}). Сверка пропущена, баны не менялись.",
+                "⚠️ <b>Чёрный список (ban-vpn)</b>: файл выглядит повреждённым, "
+                "сверка пропущена, баны не менялись\n\n"
+                f"📊 <b>Записей в файле:</b> {len(entries)}\n"
+                f"📊 <b>Было при прошлой сверке:</b> {prev_count}\n\n"
+                "Проверьте источник списка",
             )
         return
 
@@ -3099,10 +3115,12 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
         if _blacklist_alert_allowed("limit"):
             await _notify_admins(
                 bot,
-                "⚠️ <b>Чёрный список (ban-vpn)</b>: нужно забанить "
-                f"<b>{n}</b> пользователей за один проход (лимит {BLACKLIST_MAX_BANS_PER_RUN}). "
-                "Баны не применены. Проверьте список, и если всё верно, увеличьте "
-                "<code>BLACKLIST_MAX_BANS_PER_RUN</code> в .env и перезапустите бота.",
+                "⚠️ <b>Чёрный список (ban-vpn)</b>: превышен лимит за один проход, "
+                "баны не применены\n\n"
+                f"📊 <b>Нужно забанить:</b> {n}\n"
+                f"🚧 <b>Лимит:</b> {BLACKLIST_MAX_BANS_PER_RUN}\n\n"
+                "Проверьте список, если всё верно — увеличьте "
+                "<code>BLACKLIST_MAX_BANS_PER_RUN</code> в .env и перезапустите бота",
             )
         return
 
@@ -3118,19 +3136,21 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
         res["overridden"],
     )
 
-    if res["banned"] or res["unbanned"]:
-        lines = ["🚫 <b>Чёрный список (ban-vpn)</b>"]
-        if res["banned"]:
-            lines.append(f"\nЗаблокировано: <b>{len(res['banned'])}</b>")
-            lines += [_fmt_blacklist_user(i) for i in res["banned"][:20]]
-            if len(res["banned"]) > 20:
-                lines.append(f"... и ещё {len(res['banned']) - 20}")
-        if res["unbanned"]:
-            lines.append(f"\nРазблокировано (удалены из списка): <b>{len(res['unbanned'])}</b>")
-            lines += [_fmt_blacklist_user(i) for i in res["unbanned"][:20]]
-            if len(res["unbanned"]) > 20:
-                lines.append(f"... и ещё {len(res['unbanned']) - 20}")
-        await _notify_admins(bot, "\n".join(lines))
+    if res["banned"]:
+        await _notify_admins(
+            bot,
+            _fmt_blacklist_report(
+                "🚫 <b>Чёрный список (ban-vpn)</b>: заблокированы пользователи", res["banned"]
+            ),
+        )
+    if res["unbanned"]:
+        await _notify_admins(
+            bot,
+            _fmt_blacklist_report(
+                "✅ <b>Чёрный список (ban-vpn)</b>: пользователи удалены из списка и разблокированы",
+                res["unbanned"],
+            ),
+        )
 
 
 # -------------------------------------------------------------------------
@@ -3313,7 +3333,7 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
                 await _notify_admins(
                     bot,
                     "⚠️ <b>Сверка ЮKassa</b>: найден платёж, которого нет в обработанных, "
-                    f"но выдача не запущена ({skip_reason}).\n\n{header}\n\nПроверьте вручную.",
+                    f"но выдача не запущена ({skip_reason})\n\n{header}\n\nПроверьте вручную",
                     _yk_user_markup(user_id),
                 )
             continue
@@ -3327,16 +3347,16 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
         try:
             await process_successful_payment(bot, metadata)
             text = (
-                "🔁 <b>Сверка ЮKassa</b>: найден платёж, вебхук по которому не дошёл. "
-                f"Выдача запущена.\n\n{header}\n\nПроверьте результат в карточке пользователя."
+                "🔁 <b>Сверка ЮKassa</b>: найден платёж, вебхук по которому не дошёл — "
+                f"выдача запущена\n\n{header}\n\nПроверьте результат в карточке пользователя"
             )
         except Exception as e:
             logger.error(f"Сверка ЮKassa: обработка платежа {pid} упала: {e}", exc_info=True)
             text = (
                 "❌ <b>Сверка ЮKassa</b>: платёж не был обработан вебхуком, а при попытке выдачи "
-                f"произошла ошибка.\n\n{header}\n\n"
+                f"произошла ошибка\n\n{header}\n\n"
                 f"🛑 <b>Ошибка:</b> <code>{html.escape(f'{type(e).__name__}: {e}'[:300])}</code>\n\n"
-                "Нужна ручная выдача."
+                "Нужна ручная выдача"
             )
         _yk_reported_ids.add(pid)
         await _notify_admins(bot, text, _yk_user_markup(user_id))
