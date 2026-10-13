@@ -35,11 +35,11 @@ class BanMiddleware(BaseMiddleware):
 
         user_data = get_user(user.id)
         # Незарегистрированный пользователь из внешнего чёрного списка (ban-vpn) блокируется
-        # до регистрации — иначе он успел бы взять триал до ближайшей сверки.
+        # до регистрации, иначе он успел бы взять триал до ближайшей сверки.
         if user_data is None and not is_admin(user.id) and is_in_external_blacklist(user.id):
             user_data = {"is_banned": True}
         if user_data and user_data.get("is_banned"):
-            ban_message_text = "🚫 Вы заблокированы и не можете использовать этого бота."
+            ban_message_text = "🚫 <b>Вы заблокированы и не можете использовать этого бота</b>"
             # Соберём клавиатуру поддержки без кнопки "Назад в меню"
             try:
                 support = (
