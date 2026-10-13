@@ -4704,6 +4704,8 @@ def get_admin_router() -> Router:
         # 2. Получение и обработка текста логов
         # -------------------------------------------------------------------------
         raw_logs = await get_docker_logs(lines_count=25)
+        # Убираем ANSI-цвета консоли (\x1b[32m и т.п.); Telegram съедает ESC и остаётся "[32m"
+        raw_logs = re.sub(r"(?:\x1b)?\[[0-9;]*m", "", raw_logs or "")
 
         # Безопасно экранируем HTML-символы, чтобы бот не упал из-за кривых логов
         safe_logs = html_escape.escape(raw_logs)
