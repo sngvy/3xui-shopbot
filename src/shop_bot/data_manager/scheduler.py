@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from aiogram import Bot
@@ -3133,6 +3133,208 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
         await _notify_admins(bot, "\n".join(lines))
 
 
+# -------------------------------------------------------------------------
+# Сверка платежей ЮKassa: страховка на случай, когда вебхук не дошёл
+# -------------------------------------------------------------------------
+YOOKASSA_RECONCILE_ENABLED = env_int("YOOKASSA_RECONCILE_ENABLED", 1, 0, 1) == 1
+YOOKASSA_RECONCILE_INTERVAL_MINUTES = env_int("YOOKASSA_RECONCILE_INTERVAL_MINUTES", 10, 1, 1440)
+YOOKASSA_RECONCILE_LOOKBACK_HOURS = env_int("YOOKASSA_RECONCILE_LOOKBACK_HOURS", 24, 1, 168)
+# Платёж моложе этого возраста пропускаем: вебхук может быть просто в пути
+YOOKASSA_RECONCILE_MIN_AGE_MINUTES = env_int("YOOKASSA_RECONCILE_MIN_AGE_MINUTES", 5, 0, 120)
+# 1 — выдавать пропущенные платежи, 0 — только сообщать админам
+YOOKASSA_RECONCILE_RESTORE = env_int("YOOKASSA_RECONCILE_RESTORE", 1, 0, 1) == 1
+
+_yk_last_reconcile_at: datetime | None = None
+_yk_reported_ids: set[str] = set()  # о чём уже сообщили админам (в памяти, до перезапуска)
+
+
+def _yk_parse_dt(value) -> datetime | None:
+    """ЮKassa отдаёт время в UTC: '2026-10-13T12:00:00.123Z'."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _yk_fetch_succeeded(since_utc: datetime) -> list:
+    """Успешные платежи ЮKassa, созданные начиная с since_utc (синхронно, для to_thread)."""
+    from yookassa import Payment
+
+    since_s = since_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    out: list = []
+    cursor = None
+    for _ in range(50):  # страховка от бесконечной пагинации: максимум 5000 платежей
+        params = {"created_at.gte": since_s, "status": "succeeded", "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        resp = Payment.list(params)
+        items = list(getattr(resp, "items", None) or [])
+        out.extend(items)
+        cursor = getattr(resp, "next_cursor", None)
+        if not cursor or not items:
+            break
+    return out
+
+
+def _yk_unprocessed_ids(ids: list[str]) -> set[str]:
+    """Какие из payment_id ещё нет в processed_payments."""
+    if not ids:
+        return set()
+    known: set[str] = set()
+    with database.get_db_connection() as conn:
+        for i in range(0, len(ids), 500):
+            chunk = ids[i : i + 500]
+            marks = ",".join("?" * len(chunk))
+            rows = conn.execute(
+                f"SELECT external_id FROM processed_payments "
+                f"WHERE provider = 'yookassa' AND external_id IN ({marks})",
+                chunk,
+            ).fetchall()
+            known.update(str(r[0]) for r in rows)
+    return set(ids) - known
+
+
+def _yk_has_matching_transaction(user_id: int, amount: float, created_local: datetime) -> bool:
+    """Есть ли уже оплаченная ЮKassa-транзакция этого пользователя на ту же сумму после
+    создания платежа. Страховка от двойной выдачи, если processed_payments потеряла записи."""
+    since = (created_local - timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+    with database.get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM transactions "
+            "WHERE user_id = ? AND status = 'paid' AND lower(payment_method) = 'yookassa' "
+            "AND ABS(amount_rub - ?) < 0.01 AND created_date >= ? LIMIT 1",
+            (int(user_id), float(amount), since),
+        ).fetchone()
+    return row is not None
+
+
+def _yk_user_markup(user_id: int):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="👤 Перейти к пользователю", callback_data=f"admin_view_user_{int(user_id)}")
+    return kb.as_markup()
+
+
+async def _maybe_reconcile_yookassa(bot: Bot) -> None:
+    """Раз в YOOKASSA_RECONCILE_INTERVAL_MINUTES сверяет успешные платежи ЮKassa за последние
+    сутки с processed_payments. Для платежей, которых там нет (вебхук не дошёл), запускает
+    ту же обработку, что и вебхук, и сообщает админам."""
+    global _yk_last_reconcile_at
+
+    if not YOOKASSA_RECONCILE_ENABLED:
+        return
+    now = datetime.now()
+    if _yk_last_reconcile_at and now - _yk_last_reconcile_at < timedelta(
+        minutes=YOOKASSA_RECONCILE_INTERVAL_MINUTES
+    ):
+        return
+    _yk_last_reconcile_at = now  # и при ошибке: повтор через интервал, а не каждый проход
+
+    shop_id = await asyncio.to_thread(database.get_setting, "yookassa_shop_id")
+    secret = await asyncio.to_thread(database.get_setting, "yookassa_secret_key")
+    if not shop_id or not secret:
+        return
+
+    from shop_bot.bot.handlers import process_successful_payment
+
+    since = datetime.now(timezone.utc) - timedelta(hours=YOOKASSA_RECONCILE_LOOKBACK_HOURS)
+    try:
+        payments = await asyncio.to_thread(_yk_fetch_succeeded, since)
+    except Exception as e:
+        logger.warning(f"Сверка ЮKassa: не удалось получить список платежей: {e}")
+        return
+    if not payments:
+        return
+
+    by_id = {str(p.id): p for p in payments if getattr(p, "id", None)}
+    try:
+        missing = await asyncio.to_thread(_yk_unprocessed_ids, list(by_id))
+    except Exception as e:
+        logger.error(f"Сверка ЮKassa: не удалось прочитать processed_payments: {e}", exc_info=True)
+        return
+
+    min_age = timedelta(minutes=YOOKASSA_RECONCILE_MIN_AGE_MINUTES)
+    now_utc = datetime.now(timezone.utc)
+    restored = 0
+    for pid in sorted(missing):
+        p = by_id[pid]
+        created = _yk_parse_dt(getattr(p, "created_at", None))
+        if created is None or now_utc - created < min_age:
+            continue
+        if getattr(p, "status", None) != "succeeded" or getattr(p, "paid", True) is False:
+            continue
+        metadata = dict(getattr(p, "metadata", None) or {})
+        if not metadata.get("user_id") or not metadata.get("price"):
+            continue  # платёж не из бота (другой магазин на том же аккаунте и т.п.)
+
+        try:
+            amount = float(getattr(getattr(p, "amount", None), "value", None) or metadata["price"])
+            user_id = int(metadata["user_id"])
+        except (TypeError, ValueError):
+            logger.warning(f"Сверка ЮKassa: платёж {pid} с битой metadata пропущен: {metadata}")
+            continue
+
+        refunded = getattr(getattr(p, "refunded_amount", None), "value", None)
+        header = (
+            f"Платёж <code>{html.escape(pid)}</code>, пользователь <code>{user_id}</code>, "
+            f"{amount:.2f} ₽, действие: {html.escape(str(metadata.get('action') or '?'))}"
+        )
+
+        skip_reason = None
+        try:
+            if refunded and float(refunded) > 0:
+                skip_reason = "по платежу был возврат"
+            elif await asyncio.to_thread(
+                _yk_has_matching_transaction, user_id, amount, created.astimezone().replace(tzinfo=None)
+            ):
+                skip_reason = "в истории уже есть оплата на эту сумму — возможно, он уже обработан"
+            elif not YOOKASSA_RECONCILE_RESTORE:
+                skip_reason = "автовыдача отключена (YOOKASSA_RECONCILE_RESTORE=0)"
+        except Exception as e:
+            logger.warning(f"Сверка ЮKassa: проверка платежа {pid} не удалась: {e}")
+            continue
+
+        if skip_reason:
+            if pid not in _yk_reported_ids:
+                _yk_reported_ids.add(pid)
+                await _notify_admins(
+                    bot,
+                    "⚠️ <b>Сверка ЮKassa</b>: найден платёж, которого нет в обработанных, "
+                    f"но выдача не запущена ({skip_reason}).\n\n{header}\n\nПроверьте вручную.",
+                    _yk_user_markup(user_id),
+                )
+            continue
+
+        # Атомарно занимаем платёж: если параллельно сработал вебхук, claim вернёт False
+        if not await asyncio.to_thread(database.claim_payment, "yookassa", pid):
+            continue
+
+        restored += 1
+        logger.warning(f"Сверка ЮKassa: платёж {pid} не был обработан вебхуком — запускаю выдачу.")
+        try:
+            await process_successful_payment(bot, metadata)
+            text = (
+                "🔁 <b>Сверка ЮKassa</b>: найден платёж, вебхук по которому не дошёл. "
+                f"Выдача запущена.\n\n{header}\n\nПроверьте результат в карточке пользователя."
+            )
+        except Exception as e:
+            logger.error(f"Сверка ЮKassa: обработка платежа {pid} упала: {e}", exc_info=True)
+            text = (
+                "❌ <b>Сверка ЮKassa</b>: платёж не был обработан вебхуком, а при попытке выдачи "
+                f"произошла ошибка: <code>{html.escape(repr(e))[:300]}</code>\n\n{header}\n\n"
+                "Нужна ручная выдача."
+            )
+        _yk_reported_ids.add(pid)
+        await _notify_admins(bot, text, _yk_user_markup(user_id))
+
+    if restored:
+        logger.info(f"Сверка ЮKassa: обработано пропущенных платежей: {restored}")
+
+
 async def periodic_subscription_check(bot_controller: BotController):
     """Главный бесконечный цикл фонового планировщика (запускается один раз при старте бота)."""
     logger.info("Scheduler: Планировщик фоновых задач запущен.")
@@ -3147,6 +3349,11 @@ async def periodic_subscription_check(bot_controller: BotController):
                     # Внешний чёрный список: баны применяем до синхронизации, чтобы ключи
                     # забаненных отключились на панелях в этом же проходе
                     await _maybe_sync_external_blacklist(bot)
+                    # Страховка: успешные платежи ЮKassa, по которым не дошёл вебхук
+                    try:
+                        await _maybe_reconcile_yookassa(bot)
+                    except Exception as e:
+                        logger.error(f"Scheduler: сверка ЮKassa завершилась ошибкой: {e}", exc_info=True)
                     # Синхронизация подписок: возвращает {host_name: (api, all_inbounds)},
                     # полученные в этом же проходе — переиспользуем их ниже в
                     # check_traffic_anomalies, чтобы не логиниться в панели второй раз
