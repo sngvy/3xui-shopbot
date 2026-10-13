@@ -9,7 +9,12 @@ from aiogram.filters import BaseFilter
 from aiogram.types import CallbackQuery, Message, TelegramObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from shop_bot.data_manager.database import get_setting, get_user, is_admin
+from shop_bot.data_manager.database import (
+    get_setting,
+    get_user,
+    is_admin,
+    is_in_external_blacklist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +34,12 @@ class BanMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         user_data = get_user(user.id)
+        # Незарегистрированный пользователь из внешнего чёрного списка (ban-vpn) блокируется
+        # до регистрации — иначе он успел бы взять триал до ближайшей сверки.
+        if user_data is None and not is_admin(user.id) and is_in_external_blacklist(user.id):
+            user_data = {"is_banned": True}
         if user_data and user_data.get("is_banned"):
-            ban_message_text = "🚫 <b>Вы заблокированы и не можете использовать этого бота</b>"
+            ban_message_text = "🚫 Вы заблокированы и не можете использовать этого бота."
             # Соберём клавиатуру поддержки без кнопки "Назад в меню"
             try:
                 support = (
