@@ -2379,7 +2379,7 @@ def _plural_ru(n: int, one: str, few: str, many: str) -> str:
 _USER_ALERT_TAIL = (
     "Прекратите передавать подписку другим. Если нагрузка не уменьшится, мы ограничим "
     "скорость или отключим подписку без возврата средств.\n\n"
-    "Если считаете, что произошла ошибка, свяжитесь с поддержкой."
+    "Если вы считаете, что произошла ошибка, свяжитесь с поддержкой."
 )
 
 
@@ -3001,7 +3001,7 @@ def _fmt_blacklist_user(info: dict) -> str:
     uname = info.get("username")
     who = f"@{html.escape(str(uname))}" if uname else "без username"
     reason = html.escape(info.get("reason") or "причина не указана")
-    return f"• <code>{info['id']}</code> {who} — {reason} (ключей: {info.get('keys', 0)})"
+    return f"▪️ <code>{info['id']}</code> {who} — {reason} (ключей: {info.get('keys', 0)})"
 
 
 async def _maybe_sync_external_blacklist(bot: Bot) -> None:
@@ -3124,12 +3124,12 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
             lines.append(f"\nЗаблокировано: <b>{len(res['banned'])}</b>")
             lines += [_fmt_blacklist_user(i) for i in res["banned"][:20]]
             if len(res["banned"]) > 20:
-                lines.append(f"… и ещё {len(res['banned']) - 20}")
+                lines.append(f"... и ещё {len(res['banned']) - 20}")
         if res["unbanned"]:
             lines.append(f"\nРазблокировано (удалены из списка): <b>{len(res['unbanned'])}</b>")
             lines += [_fmt_blacklist_user(i) for i in res["unbanned"][:20]]
             if len(res["unbanned"]) > 20:
-                lines.append(f"… и ещё {len(res['unbanned']) - 20}")
+                lines.append(f"... и ещё {len(res['unbanned']) - 20}")
         markup = None
         if res["banned"]:
             kb = InlineKeyboardBuilder()
