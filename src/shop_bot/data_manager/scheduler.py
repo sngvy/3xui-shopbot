@@ -2921,7 +2921,7 @@ BLACKLIST_IGNORE_ADMINS = env_int("BLACKLIST_IGNORE_ADMINS", 1, 0, 1)
 BLACKLIST_AUTO_UNBAN = env_int("BLACKLIST_AUTO_UNBAN", 1, 0, 1)
 # Защита от испорченного списка: если за один проход нужно забанить больше стольких
 # пользователей, ничего не применяем и пишем админу (0 — без лимита)
-BLACKLIST_MAX_BANS_PER_RUN = env_int("BLACKLIST_MAX_BANS_PER_RUN", 0, 0, 1000000)
+BLACKLIST_MAX_BANS_PER_RUN = env_int("BLACKLIST_MAX_BANS_PER_RUN", 0, 0, 100000)
 BLACKLIST_LAST_RUN_SETTING = "blacklist_last_run_at"
 BLACKLIST_MIN_ENTRIES = 10  # меньше — считаем, что файл пуст/повреждён
 BLACKLIST_MAX_BYTES = 4 * 1024 * 1024
