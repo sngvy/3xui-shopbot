@@ -2479,6 +2479,10 @@ def create_webhook_app(bot_controller_instance):
         оно вырвется из process_successful_payment (сам claim при этом остаётся —
         повторная автоматическая обработка создает риск двойного зачисления, поэтому
         такие случаи нужно сверять вручную по логу)."""
+        # Откуда пришёл платёж — нужно для записи проблемных платежей и закрытия попыток оплаты
+        metadata = dict(metadata)
+        metadata["_provider"] = provider
+        metadata["_external_id"] = str(external_id) if external_id is not None else None
         fut = asyncio.run_coroutine_threadsafe(processor(bot, metadata), loop)
 
         def _log_failure(f):
