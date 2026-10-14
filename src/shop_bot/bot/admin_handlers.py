@@ -211,7 +211,7 @@ def get_admin_router() -> Router:
             f"💸 <b>Всего потратил:</b> {float(total_spent):.2f} ₽\n"
             f"💰 <b>Баланс:</b> {float(balance):.2f} ₽\n"
             f"⛔ <b>Забанен:</b> {'да' if is_banned else 'нет'}\n"
-            f"👥 <b>Приглашён:</b> {referred_by if referred_by else '—'}\n"
+            f"👥 <b>Приглашён:</b> {f'<code>{referred_by}</code>' if referred_by else '—'}\n"
             f"🔑 <b>Подписок:</b> {keys_count}"
         )
         if note:
