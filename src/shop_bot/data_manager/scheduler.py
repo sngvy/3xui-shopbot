@@ -255,10 +255,33 @@ def format_time_left(hours: int) -> str:
     return f"{hours} {get_suffix(hours, ['час', 'часа', 'часов'])}"
 
 
+def _is_bot_blocked(user_id: int) -> bool:
+    """True, если пользователь ранее заблокировал бота (флаг снимается, когда он снова пишет)."""
+    try:
+        user = database.get_user(int(user_id))
+        return bool(user and user.get("bot_blocked"))
+    except Exception:
+        return False
+
+
+def _note_send_error(user_id: int, exc: Exception) -> bool:
+    """Если отправка упала из-за блокировки бота — помечает пользователя. True — это блокировка."""
+    if isinstance(exc, TelegramForbiddenError):
+        try:
+            if database.mark_bot_blocked(int(user_id)):
+                logger.info(f"Пользователь {user_id} заблокировал бота — помечен в базе")
+        except Exception:
+            pass
+        return True
+    return False
+
+
 async def send_subscription_notification(
     bot: Bot, user_id: int, key_id: int, time_left_hours: int, expiry_date: datetime
 ):
     """Отправляет пользователю уведомление о скором истечении подписки с кнопкой продления."""
+    if await asyncio.to_thread(_is_bot_blocked, user_id):
+        return
     try:
         time_text = format_time_left(time_left_hours)
         expiry_str = expiry_date.strftime("%d.%m.%Y в %H:%M")
@@ -290,6 +313,8 @@ async def send_subscription_notification(
         )
 
     except Exception as e:
+        if _note_send_error(user_id, e):
+            return
         logger.error(f"Scheduler: Ошибка отправки уведомления пользователю {user_id}: {e}")
 
 
@@ -624,7 +649,8 @@ async def _cleanup_expired_keys_for_host(
                     parse_mode="HTML",
                 )
             except Exception as notify_err:
-                logger.warning(f"Не удалось уведомить {tg_id} о просрочке: {notify_err}")
+                if not _note_send_error(tg_id, notify_err):
+                    logger.warning(f"Не удалось уведомить {tg_id} о просрочке: {notify_err}")
 
     if deleted_any:
         return await xui_api.run_in_xui_pool(api.inbound.get_list)
@@ -1968,7 +1994,8 @@ async def _sync_clones_for_host(
             await bot.send_message(chat_id=user_tg_id, text=text, parse_mode="HTML")
             await asyncio.sleep(0.05)
         except Exception as e:
-            logger.error(f"Ошибка отправки уведомления {user_tg_id}: {e}")
+            if not _note_send_error(user_tg_id, e):
+                logger.error(f"Ошибка отправки уведомления {user_tg_id}: {e}")
 
     return total_affected_records, total_clones_created
 
@@ -2442,6 +2469,9 @@ async def _send_user_warning(bot: Bot, c_uuid: str, text: str) -> str:
             return "no_owner"
         if user.get("is_banned"):
             return "banned"
+        if user.get("bot_blocked"):
+            user_alert_last_sent[user_id] = now
+            return "blocked"
 
         from aiogram.types import InlineKeyboardMarkup
 
@@ -2458,6 +2488,7 @@ async def _send_user_warning(bot: Bot, c_uuid: str, text: str) -> str:
         except TelegramForbiddenError:
             # Не долбимся в закрытый чат каждые 5 минут
             user_alert_last_sent[user_id] = now
+            await asyncio.to_thread(database.mark_bot_blocked, user_id)
             logger.info(f"Предупреждение о трафике: пользователь {user_id} заблокировал бота")
             return "blocked"
 
@@ -2743,12 +2774,16 @@ async def execute_broadcast(
     failed_count = 0
     banned_count = 0
     blocked_by_user = 0
+    already_blocked = 0
     promo_failed_count = 0
 
     for user in users:
         user_id = user["telegram_id"]
         if user.get("is_banned"):
             banned_count += 1
+            continue
+        if user.get("bot_blocked"):
+            already_blocked += 1
             continue
 
         personal_code = None
@@ -2816,8 +2851,9 @@ async def execute_broadcast(
                 failed_count += 1
                 logger.error(f"Повторная отправка пользователю {user_id} не удалась: {internal_e}")
 
-        except TelegramForbiddenError:
+        except TelegramForbiddenError as e:
             blocked_by_user += 1
+            _note_send_error(user_id, e)
             logger.info(f"Пользователь {user_id} заблокировал бота")
 
         except Exception as e:
@@ -2829,6 +2865,7 @@ async def execute_broadcast(
         "failed": failed_count,
         "banned": banned_count,
         "blocked_by_user": blocked_by_user,
+        "already_blocked": already_blocked,
         "promo_failed": promo_failed_count if promo_discount else None,
     }
 
@@ -2842,6 +2879,7 @@ def format_broadcast_summary(result: dict) -> str:
         f"👎 <b>Не удалось отправить:</b> {result['failed']}",
         f"🚫 <b>Пропущено (забанены):</b> {result['banned']}",
         f"🗑️ <b>Пропущено (забанили):</b> {result['blocked_by_user']}",
+        f"📊 <b>Пропущено (заблокировали бота):</b> {result.get('already_blocked', 0)}",
     ]
     if result.get("promo_failed") is not None:
         lines.append(f"🎁 <b>Не удалось создать промокод:</b> {result['promo_failed']}")
@@ -3201,7 +3239,7 @@ def _yk_fetch_succeeded(since_utc: datetime) -> list:
     return out
 
 
-def _yk_unprocessed_ids(ids: list[str]) -> set[str]:
+def _yk_unprocessed_ids(ids: list[str], provider: str = "yookassa") -> set[str]:
     """Какие из payment_id ещё нет в processed_payments."""
     if not ids:
         return set()
@@ -3212,23 +3250,26 @@ def _yk_unprocessed_ids(ids: list[str]) -> set[str]:
             marks = ",".join("?" * len(chunk))
             rows = conn.execute(
                 f"SELECT external_id FROM processed_payments "
-                f"WHERE provider = 'yookassa' AND external_id IN ({marks})",
-                chunk,
+                f"WHERE provider = ? AND external_id IN ({marks})",
+                [provider, *chunk],
             ).fetchall()
             known.update(str(r[0]) for r in rows)
     return set(ids) - known
 
 
-def _yk_has_matching_transaction(user_id: int, amount: float, created_local: datetime) -> bool:
-    """Есть ли уже оплаченная ЮKassa-транзакция этого пользователя на ту же сумму после
-    создания платежа. Страховка от двойной выдачи, если processed_payments потеряла записи."""
+def _yk_has_matching_transaction(
+    user_id: int, amount: float, created_local: datetime, method: str = "yookassa"
+) -> bool:
+    """Есть ли уже оплаченная транзакция этого пользователя способом method на ту же сумму
+    после создания платежа. Страховка от двойной выдачи, если processed_payments потеряла
+    записи."""
     since = (created_local - timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
     with database.get_db_connection() as conn:
         row = conn.execute(
             "SELECT 1 FROM transactions "
-            "WHERE user_id = ? AND status = 'paid' AND lower(payment_method) = 'yookassa' "
+            "WHERE user_id = ? AND status = 'paid' AND lower(payment_method) = ? "
             "AND ABS(amount_rub - ?) < 0.01 AND created_date >= ? LIMIT 1",
-            (int(user_id), float(amount), since),
+            (int(user_id), method.lower(), float(amount), since),
         ).fetchone()
     return row is not None
 
@@ -3237,6 +3278,7 @@ _YK_ACTION_LABELS = {
     "new": "Новая подписка",
     "extend": "Продление подписки",
     "top_up": "Пополнение баланса",
+    "gift": "Подарочная подписка",
 }
 
 
@@ -3345,6 +3387,8 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
         restored += 1
         logger.warning(f"Сверка ЮKassa: платёж {pid} не был обработан вебхуком — запускаю выдачу.")
         try:
+            metadata["_provider"] = "yookassa"
+            metadata["_external_id"] = pid
             await process_successful_payment(bot, metadata)
             text = (
                 "🔁 <b>Сверка ЮKassa</b>: найден платёж, вебхук по которому не дошёл — "
@@ -3363,6 +3407,268 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
 
     if restored:
         logger.info(f"Сверка ЮKassa: обработано пропущенных платежей: {restored}")
+
+
+# -------------------------------------------------------------------------
+# Сверка платежей CryptoBot: тот же принцип, что и для ЮKassa
+# -------------------------------------------------------------------------
+CRYPTOBOT_RECONCILE_ENABLED = env_int("CRYPTOBOT_RECONCILE_ENABLED", 1, 0, 1) == 1
+CRYPTOBOT_RECONCILE_INTERVAL_MINUTES = env_int("CRYPTOBOT_RECONCILE_INTERVAL_MINUTES", 10, 1, 1440)
+CRYPTOBOT_RECONCILE_LOOKBACK_HOURS = env_int("CRYPTOBOT_RECONCILE_LOOKBACK_HOURS", 24, 1, 168)
+# Инвойс, оплаченный позже этого срока назад, пропускаем: вебхук может быть просто в пути
+CRYPTOBOT_RECONCILE_MIN_AGE_MINUTES = env_int("CRYPTOBOT_RECONCILE_MIN_AGE_MINUTES", 5, 0, 120)
+# 1 — выдавать пропущенные платежи, 0 — только сообщать админам
+CRYPTOBOT_RECONCILE_RESTORE = env_int("CRYPTOBOT_RECONCILE_RESTORE", 1, 0, 1) == 1
+
+_cb_last_reconcile_at: datetime | None = None
+_cb_reported_ids: set[str] = set()
+
+
+def _cb_metadata_from_payload(payload: str | None) -> dict | None:
+    """Разбирает payload инвойса так же, как это делает вебхук /cryptobot-webhook."""
+    parts = (payload or "").split(":")
+    if len(parts) < 9:
+        return None
+    return {
+        "user_id": parts[0],
+        "months": parts[1],
+        "price": parts[2],
+        "action": parts[3],
+        "key_id": parts[4] if parts[4] != "None" else None,
+        "host_name": parts[5],
+        "plan_id": parts[6] if parts[6] != "None" else None,
+        "customer_email": parts[7] if parts[7] != "None" else None,
+        "payment_method": parts[8],
+        "promo_code": parts[9] if len(parts) > 9 and parts[9] and parts[9] != "None" else None,
+    }
+
+
+async def _cb_fetch_paid(token: str, since_utc: datetime) -> list:
+    """Оплаченные инвойсы CryptoBot, созданные начиная с since_utc."""
+    from aiosend import CryptoPay
+
+    cp = CryptoPay(token)
+    out: list = []
+    for page in range(20):  # максимум 2000 инвойсов
+        items = await cp.get_invoices(status="paid", count=100, offset=page * 100)
+        if not items:
+            break
+        out.extend(items)
+        if len(items) < 100:
+            break
+    result = []
+    for inv in out:
+        created = getattr(inv, "created_at", None)
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created is None or created >= since_utc:
+            result.append(inv)
+    return result
+
+
+async def _maybe_reconcile_cryptobot(bot: Bot) -> None:
+    """Раз в CRYPTOBOT_RECONCILE_INTERVAL_MINUTES сверяет оплаченные инвойсы CryptoBot за
+    последние сутки с processed_payments и запускает выдачу по тем, о которых вебхук не сообщил."""
+    global _cb_last_reconcile_at
+
+    if not CRYPTOBOT_RECONCILE_ENABLED:
+        return
+    now = datetime.now()
+    if _cb_last_reconcile_at and now - _cb_last_reconcile_at < timedelta(
+        minutes=CRYPTOBOT_RECONCILE_INTERVAL_MINUTES
+    ):
+        return
+    _cb_last_reconcile_at = now
+
+    token = await asyncio.to_thread(database.get_setting, "cryptobot_token")
+    if not token:
+        return
+
+    from shop_bot.bot.handlers import process_successful_payment
+
+    since = datetime.now(timezone.utc) - timedelta(hours=CRYPTOBOT_RECONCILE_LOOKBACK_HOURS)
+    try:
+        invoices = await _cb_fetch_paid(token, since)
+    except Exception as e:
+        logger.warning(f"Сверка CryptoBot: не удалось получить список инвойсов: {e}")
+        return
+    if not invoices:
+        return
+
+    by_id = {str(i.invoice_id): i for i in invoices if getattr(i, "invoice_id", None) is not None}
+    try:
+        missing = await asyncio.to_thread(_yk_unprocessed_ids, list(by_id), "cryptobot")
+    except Exception as e:
+        logger.error(f"Сверка CryptoBot: не удалось прочитать processed_payments: {e}", exc_info=True)
+        return
+
+    min_age = timedelta(minutes=CRYPTOBOT_RECONCILE_MIN_AGE_MINUTES)
+    now_utc = datetime.now(timezone.utc)
+    restored = 0
+    for iid in sorted(missing, key=int):
+        inv = by_id[iid]
+        paid_at = getattr(inv, "paid_at", None) or getattr(inv, "created_at", None)
+        if paid_at is not None and paid_at.tzinfo is None:
+            paid_at = paid_at.replace(tzinfo=timezone.utc)
+        if paid_at is None or now_utc - paid_at < min_age:
+            continue
+        metadata = _cb_metadata_from_payload(getattr(inv, "payload", None))
+        if not metadata:
+            continue  # инвойс не из бота
+
+        try:
+            amount = float(metadata["price"])
+            user_id = int(metadata["user_id"])
+        except (TypeError, ValueError):
+            logger.warning(f"Сверка CryptoBot: инвойс {iid} с битым payload пропущен")
+            continue
+
+        header = (
+            f"💳 <b>Платёж:</b> <code>{html.escape(iid)}</code>\n"
+            f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
+            f"💰 <b>Сумма:</b> {amount:.2f} ₽\n"
+            f"⚙️ <b>Действие:</b> {_YK_ACTION_LABELS.get(str(metadata.get('action') or ''), html.escape(str(metadata.get('action') or '?')))}"
+        )
+
+        skip_reason = None
+        try:
+            if await asyncio.to_thread(
+                _yk_has_matching_transaction,
+                user_id,
+                amount,
+                paid_at.astimezone().replace(tzinfo=None) - timedelta(hours=1),
+                "cryptobot",
+            ):
+                skip_reason = "в истории уже есть оплата на эту сумму — возможно, он уже обработан"
+            elif not CRYPTOBOT_RECONCILE_RESTORE:
+                skip_reason = "автовыдача отключена (CRYPTOBOT_RECONCILE_RESTORE=0)"
+        except Exception as e:
+            logger.warning(f"Сверка CryptoBot: проверка инвойса {iid} не удалась: {e}")
+            continue
+
+        if skip_reason:
+            if iid not in _cb_reported_ids:
+                _cb_reported_ids.add(iid)
+                await _notify_admins(
+                    bot,
+                    "⚠️ <b>Сверка CryptoBot</b>: найден платёж, которого нет в обработанных, "
+                    f"но выдача не запущена ({skip_reason})\n\n{header}\n\nПроверьте вручную",
+                    _yk_user_markup(user_id),
+                )
+            continue
+
+        if not await asyncio.to_thread(database.claim_payment, "cryptobot", iid):
+            continue
+
+        restored += 1
+        logger.warning(f"Сверка CryptoBot: инвойс {iid} не был обработан вебхуком — запускаю выдачу.")
+        try:
+            metadata["_provider"] = "cryptobot"
+            metadata["_external_id"] = iid
+            await process_successful_payment(bot, metadata)
+            text = (
+                "🔁 <b>Сверка CryptoBot</b>: найден платёж, вебхук по которому не дошёл — "
+                f"выдача запущена\n\n{header}\n\nПроверьте результат в карточке пользователя"
+            )
+        except Exception as e:
+            logger.error(f"Сверка CryptoBot: обработка инвойса {iid} упала: {e}", exc_info=True)
+            text = (
+                "❌ <b>Сверка CryptoBot</b>: платёж не был обработан вебхуком, а при попытке выдачи "
+                f"произошла ошибка\n\n{header}\n\n"
+                f"🛑 <b>Ошибка:</b> <code>{html.escape(f'{type(e).__name__}: {e}'[:300])}</code>\n\n"
+                "Нужна ручная выдача"
+            )
+        _cb_reported_ids.add(iid)
+        await _notify_admins(bot, text, _yk_user_markup(user_id))
+
+    if restored:
+        logger.info(f"Сверка CryptoBot: обработано пропущенных платежей: {restored}")
+
+
+# -------------------------------------------------------------------------
+# Напоминание о неоплаченном счёте ЮKassa
+# -------------------------------------------------------------------------
+PAYMENT_REMINDER_ENABLED = env_int("PAYMENT_REMINDER_ENABLED", 1, 0, 1) == 1
+# Через сколько минут после создания счёта напоминать
+PAYMENT_REMINDER_DELAY_MINUTES = env_int("PAYMENT_REMINDER_DELAY_MINUTES", 45, 5, 720)
+# Тихие часы по Москве: [START, END). Напоминания, попавшие в это окно, уходят утром
+PAYMENT_REMINDER_QUIET_START_HOUR = env_int("PAYMENT_REMINDER_QUIET_START_HOUR", 0, 0, 23)
+PAYMENT_REMINDER_QUIET_END_HOUR = env_int("PAYMENT_REMINDER_QUIET_END_HOUR", 8, 0, 23)
+
+_MSK = timezone(timedelta(hours=3))
+
+
+def _in_quiet_hours(hour: int, start: int, end: int) -> bool:
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end  # окно через полночь
+
+
+async def _maybe_send_payment_reminders(bot: Bot) -> None:
+    """Напоминает о неоплаченном счёте ЮKassa: один раз на попытку, не чаще раза в сутки
+    на пользователя, не ночью. Платёж перепроверяется в ЮKassa: оплаченный или отменённый
+    счёт напоминания не получает."""
+    if not PAYMENT_REMINDER_ENABLED:
+        return
+    hour = datetime.now(_MSK).hour
+    if _in_quiet_hours(hour, PAYMENT_REMINDER_QUIET_START_HOUR, PAYMENT_REMINDER_QUIET_END_HOUR):
+        return
+
+    shop_id = await asyncio.to_thread(database.get_setting, "yookassa_shop_id")
+    secret = await asyncio.to_thread(database.get_setting, "yookassa_secret_key")
+    if not shop_id or not secret:
+        return
+
+    due = await asyncio.to_thread(
+        database.get_payment_attempts_due, PAYMENT_REMINDER_DELAY_MINUTES, 24
+    )
+    if not due:
+        return
+
+    from yookassa import Payment
+
+    for attempt in due:
+        attempt_id = int(attempt["attempt_id"])
+        user_id = int(attempt["user_id"])
+        try:
+            real = await asyncio.to_thread(Payment.find_one, attempt["external_id"])
+        except Exception as e:
+            logger.warning(f"Напоминание об оплате: не удалось проверить {attempt['external_id']}: {e}")
+            continue
+        status = getattr(real, "status", None)
+        if status != "pending":
+            await asyncio.to_thread(
+                database.set_payment_attempt_reminded,
+                attempt_id,
+                "paid" if status == "succeeded" else "canceled",
+            )
+            continue
+
+        plan_name = attempt.get("plan_name") or f"{attempt.get('months') or '?'} мес."
+        text = (
+            "💳 <b>Вы не завершили оплату</b>\n\n"
+            f"📦 <b>Тариф:</b> {html.escape(str(plan_name))}\n"
+            f"💰 <b>Сумма:</b> {float(attempt['amount']):.2f} ₽\n\n"
+            "Ссылка на оплату могла устареть — нажмите кнопку, чтобы создать новую"
+        )
+        kb = InlineKeyboardBuilder()
+        kb.button(text="💳 Оплатить", callback_data=f"resume_pay_{attempt_id}")
+        kb.button(text="❌ Не нужно", callback_data=f"dismiss_pay_{attempt_id}")
+        kb.adjust(2)
+        try:
+            await bot.send_message(
+                chat_id=user_id, text=text, parse_mode="HTML", reply_markup=kb.as_markup()
+            )
+            await asyncio.to_thread(database.set_payment_attempt_reminded, attempt_id)
+            logger.info(f"Напоминание об оплате отправлено пользователю {user_id}")
+        except Exception as e:
+            # Повторять не будем в любом случае: либо пользователь заблокировал бота, либо чат недоступен
+            await asyncio.to_thread(database.set_payment_attempt_reminded, attempt_id, "canceled")
+            if not _note_send_error(user_id, e):
+                logger.warning(f"Напоминание об оплате: не удалось отправить {user_id}: {e}")
+        await asyncio.sleep(0.05)
 
 
 async def periodic_subscription_check(bot_controller: BotController):
@@ -3384,6 +3690,14 @@ async def periodic_subscription_check(bot_controller: BotController):
                         await _maybe_reconcile_yookassa(bot)
                     except Exception as e:
                         logger.error(f"Scheduler: сверка ЮKassa завершилась ошибкой: {e}", exc_info=True)
+                    try:
+                        await _maybe_reconcile_cryptobot(bot)
+                    except Exception as e:
+                        logger.error(f"Scheduler: сверка CryptoBot завершилась ошибкой: {e}", exc_info=True)
+                    try:
+                        await _maybe_send_payment_reminders(bot)
+                    except Exception as e:
+                        logger.error(f"Scheduler: напоминания об оплате завершились ошибкой: {e}", exc_info=True)
                     # Синхронизация подписок: возвращает {host_name: (api, all_inbounds)},
                     # полученные в этом же проходе — переиспользуем их ниже в
                     # check_traffic_anomalies, чтобы не логиниться в панели второй раз
