@@ -5530,8 +5530,8 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                     chat_id=user_id,
                     text=(
                         f"✅ <b>Оплата получена!</b>\n\n"
-                        f"💰 Баланс пополнен на {float(price):.2f} ₽.\n"
-                        f"💼 <b>Текущий баланс:</b> {current_balance:.2f} ₽."
+                        f"💰 Баланс пополнен на {float(price):.2f} ₽\n"
+                        f"💼 <b>Текущий баланс:</b> {current_balance:.2f} ₽"
                     ),
                     reply_markup=keyboards.create_profile_keyboard(),
                     parse_mode="HTML",
