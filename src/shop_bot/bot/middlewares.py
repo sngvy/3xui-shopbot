@@ -64,9 +64,9 @@ class BanMiddleware(BaseMiddleware):
                 else:
                     url = f"tg://resolve?domain={support}"
             if url:
-                kb_builder.button(text="🆘 Написать в поддержку", url=url)
+                kb_builder.button(text="🛟 Написать в поддержку", url=url)
             else:
-                kb_builder.button(text="🆘 Поддержка", callback_data="show_help")
+                kb_builder.button(text="🛟 Поддержка", callback_data="show_help")
             ban_kb = kb_builder.as_markup()
 
             if isinstance(event, CallbackQuery):
