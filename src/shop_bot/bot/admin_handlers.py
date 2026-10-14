@@ -211,9 +211,16 @@ def get_admin_router() -> Router:
             f"💸 <b>Всего потратил:</b> {float(total_spent):.2f} ₽\n"
             f"💰 <b>Баланс:</b> {float(balance):.2f} ₽\n"
             f"⛔ <b>Забанен:</b> {'да' if is_banned else 'нет'}\n"
-            f"👥 <b>Приглашён:</b> {f'<code>{referred_by}</code>' if referred_by else '—'}\n"
+            f"👥 <b>Приглашён:</b> {referred_by if referred_by else '—'}\n"
             f"🔑 <b>Подписок:</b> {keys_count}"
         )
+        if user.get("bot_blocked"):
+            since = ""
+            try:
+                since = " с " + datetime.fromisoformat(str(user["bot_blocked_at"])).strftime("%d.%m.%Y")
+            except Exception:
+                pass
+            text += f"\n\n🚫 <b>Бот заблокирован пользователем</b>{since}"
         if note:
             text = f"{note}\n\n" + text
         markup = keyboards.create_admin_user_actions_keyboard(user_id, is_banned=is_banned)
@@ -4901,5 +4908,10 @@ def get_admin_router() -> Router:
             asyncio.create_task(restart_docker_container(timeout=3))
         except Exception as e:
             logger.error(f"Ошибка при создании фоновой задачи рестарта: {e}")
+
+    # Раздел «Проблемные платежи»
+    from shop_bot.bot.failed_payments import register_admin_handlers as _register_fp
+
+    _register_fp(admin_router)
 
     return admin_router
