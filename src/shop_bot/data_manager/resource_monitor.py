@@ -466,7 +466,7 @@ async def get_docker_logs(lines_count: int = 50) -> str:
         logs = stdout.decode("utf-8", errors="ignore") + stderr.decode("utf-8", errors="ignore")
 
         if not logs.strip():
-            return "📋 Логи пустые или контейнер не генерирует вывод."
+            return "📋 <b>Логи пустые или контейнер не генерирует вывод</b>"
 
         return logs
     except Exception as e:
