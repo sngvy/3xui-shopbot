@@ -799,7 +799,7 @@ async def _restore_missing_master(
 
     await _panel_pause(0.5)
 
-    saved_sub_id = getattr(found_orphan, "sub_id", "") if found_orphan else ""
+    saved_sub_id = xui_api.base_sub_id(getattr(found_orphan, "sub_id", "")) if found_orphan else ""
 
     expiry_ms = int(datetime.fromisoformat(db_key["expiry_date"]).timestamp() * 1000)
 
@@ -948,6 +948,10 @@ async def _sync_clones_for_host(
 
     # inbound_id -> [(Client, notify_ctx)] — буфер для батч-создания
     pending_creates: dict[int, list[tuple]] = defaultdict(list)
+
+    # Есть grace-инбаунд → у истёкшего ключа мастер и клоны уходят из подписки
+    # (subId получает суффикс -expired), см. xui_api.EXPIRED_SUB_SUFFIX
+    hide_expired_in_sub = any(ib.remark == GRACE_INBOUND_REMARK for ib in all_inbounds)
 
     for db_key in keys_in_db:
         _check_yield(host_name)
@@ -1369,11 +1373,22 @@ async def _sync_clones_for_host(
         )
         total_affected_records += 1
 
-        master_sub_id = getattr(server_client, "sub_id", "")
+        master_sub_id = getattr(server_client, "sub_id", "") or ""
 
         is_expired = datetime.fromisoformat(db_key["expiry_date"]) <= now
         master_enable_current = bool(getattr(server_client, "enable", True))
         desired_master_enable = (not is_banned) and (not is_expired)
+
+        # subId: у истёкшего ключа — с суффиксом -expired (мастер и клоны пропадают из
+        # подписки, остаётся grace-клиент), после продления — снова чистый.
+        # Пустой subId не трогаем. Мастер ищется по UUID, поэтому смена subId его
+        # «потерянным» не делает; клоны сверяются по subId без суффикса (см. ниже).
+        master_sub_base = xui_api.base_sub_id(master_sub_id)
+        master_sub_desired = (
+            master_sub_base + xui_api.EXPIRED_SUB_SUFFIX
+            if (master_sub_base and is_expired and hide_expired_in_sub)
+            else master_sub_base
+        )
 
         # Grace-доступ к Telegram (GRACE_INBOUND_REMARK) вынесен в отдельную
         # функцию _sync_grace_inbound_for_host — она вызывается из
@@ -1382,9 +1397,10 @@ async def _sync_clones_for_host(
         # FULL_RECONCILE_INTERVAL_SECONDS) — иначе доступ к Telegram мог
         # включаться с задержкой до 30 минут после истечения подписки.
 
-        if master_enable_current != desired_master_enable:
+        if master_enable_current != desired_master_enable or master_sub_id != master_sub_desired:
             try:
                 server_client.enable = desired_master_enable
+                server_client.sub_id = master_sub_desired
                 server_client.id = client_uuid
                 server_client.inbound_id = master_inbound.id
 
@@ -1397,13 +1413,20 @@ async def _sync_clones_for_host(
                 else:
                     await xui_api.run_in_xui_pool(api.client.update, client_uuid, server_client)
                 await _panel_pause(0.5)
-                action = "отключён (is_banned)" if is_banned else "включён (снятие бана)"
+                master_sub_id = master_sub_desired
+                if is_expired:
+                    action = "отключён (подписка истекла, subId -> -expired)"
+                elif is_banned:
+                    action = "отключён (is_banned)"
+                else:
+                    action = "включён (снятие бана/продление, subId восстановлен)"
                 logger.info(f"[{host_name}] Мастер {client_email} {action}")
             except Exception as e:
                 logger.error(
-                    f"[{host_name}] Ошибка изменения enable для мастера {client_email}: {e}"
+                    f"[{host_name}] Ошибка изменения enable/subId для мастера {client_email}: {e}"
                 )
                 server_client.enable = master_enable_current
+                server_client.sub_id = master_sub_id
 
         # deferred_renames — сюда откладываются переименования, упавшие
         # именно из-за Duplicate email (целевой слот ещё занят соседним
@@ -1437,7 +1460,7 @@ async def _sync_clones_for_host(
                 c_email_check = str(getattr(c, "email", "")).strip().lower()
                 if (
                     c_email_check.startswith(f"{prefix}-")
-                    and getattr(c, "sub_id", "") == master_sub_id
+                    and xui_api.base_sub_id(getattr(c, "sub_id", "")) == master_sub_base
                 ):
                     c_ident = (
                         str(getattr(c, "auth", getattr(c, "password", getattr(c, "id", ""))))
@@ -1498,9 +1521,11 @@ async def _sync_clones_for_host(
                 clone_enable_current = bool(getattr(correct_clone, "enable", True))
                 clone_expiry_current = getattr(correct_clone, "expiry_time", None)
                 clone_total_gb_current = getattr(correct_clone, "total_gb", None)
+                clone_sub_current = getattr(correct_clone, "sub_id", "") or ""
 
                 needs_update = (
                     clone_enable_current != desired_clone_enable
+                    or clone_sub_current != master_sub_id
                     or clone_expiry_current != expiry_ms_adjusted
                     or clone_total_gb_current != server_client.total_gb
                     or needs_email_fix
@@ -1509,6 +1534,7 @@ async def _sync_clones_for_host(
                 if needs_update:
                     try:
                         correct_clone.enable = desired_clone_enable
+                        correct_clone.sub_id = master_sub_id
                         correct_clone.expiry_time = expiry_ms_adjusted
                         correct_clone.total_gb = server_client.total_gb
                         correct_clone.id = client_uuid
@@ -2099,7 +2125,7 @@ async def _sync_grace_inbound_for_host(
             for ib in all_inbounds:
                 for c in (ib.settings.clients if ib.settings else []) or []:
                     if str(getattr(c, "id", "")) == client_uuid:
-                        sid = getattr(c, "sub_id", None)
+                        sid = xui_api.base_sub_id(getattr(c, "sub_id", None))
                         if sid:
                             existing_sub_id = sid
                             break
@@ -2112,7 +2138,7 @@ async def _sync_grace_inbound_for_host(
                 enable=True,
                 expiry_time=0,  # состоянием управляет сам шедулер (enable), не таймер панели
                 total_gb=GRACE_INBOUND_TOTAL_GB_BYTES,
-                sub_id=existing_sub_id or secrets.token_hex(12),
+                sub_id=existing_sub_id or xui_api.base_sub_id(db_key.get("sub_token")) or secrets.token_hex(12),
             )
             try:
                 payload = (
@@ -2177,7 +2203,7 @@ async def _refresh_sub_token_cache(host_name: str, master_inbound, keys_in_db: l
             else []
         )
         panel_tokens = {
-            str(c.id): str(c.sub_id)
+            str(c.id): xui_api.base_sub_id(c.sub_id)
             for c in clients
             if getattr(c, "id", None) and getattr(c, "sub_id", None)
         }
