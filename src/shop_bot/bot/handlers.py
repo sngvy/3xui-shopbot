@@ -1730,7 +1730,7 @@ def get_user_router() -> Router:
                 )
             header = await bot.send_message(
                 chat_id=user_id,
-                text=f"💬 Ответ поддержки по тикету № {ticket['ticket_id']}",
+                text=f"💬 <b>Ответ поддержки по тикету № {ticket['ticket_id']}</b>",
             )
             try:
                 await bot.copy_message(
