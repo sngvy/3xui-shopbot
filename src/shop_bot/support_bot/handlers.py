@@ -178,7 +178,7 @@ def get_support_router() -> Router:
             return
         support_text = (
             get_setting("support_text")
-            or "🛟 Раздел поддержки. Вы можете создать обращение или открыть существующее"
+            or "🛟 <b>Раздел поддержки. Вы можете создать обращение или открыть существующее</b>"
         )
         await message.answer(
             support_text,
