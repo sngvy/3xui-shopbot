@@ -1524,7 +1524,7 @@ def create_webhook_app(bot_controller_instance):
                     text = (
                         "⚠️ <b>Ваша подписка была автоматически удалена по истечении срока</b>\n\n"
                         f"🗺️ <b>Сервер:</b> {k.get('host_name')}\n🆔 <b>Email:</b> {k.get('key_email')}\n\n"
-                        "При необходимости вы можете оформить новую подписку."
+                        "При необходимости вы можете оформить новую подписку"
                     )
                     if bot and loop and loop.is_running():
                         asyncio.run_coroutine_threadsafe(
@@ -1885,7 +1885,7 @@ def create_webhook_app(bot_controller_instance):
                         loop = current_app.config.get("EVENT_LOOP")
                         user_chat_id = ticket.get("user_id")
                         if bot and loop and loop.is_running() and user_chat_id:
-                            text = f"🔓 Ваш тикет #{ticket_id} снова открыт. Вы можете продолжить переписку."
+                            text = f"🔓 <b>Ваш тикет № {ticket_id} снова открыт. Вы можете продолжить переписку</b>"
                             asyncio.run_coroutine_threadsafe(
                                 bot.send_message(int(user_chat_id), text), loop
                             )
@@ -2277,7 +2277,7 @@ def create_webhook_app(bot_controller_instance):
         try:
             bot = _bot_controller.get_bot_instance()
             if bot:
-                text = "🚫 Ваш аккаунт заблокирован администратором. Если это ошибка — напишите в поддержку."
+                text = "🚫 <b>Ваш аккаунт заблокирован администратором. Если это ошибка — напишите в поддержку</b>"
                 # Собираем клавиатуру из одной кнопки поддержки
                 try:
                     support = (
