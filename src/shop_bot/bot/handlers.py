@@ -1490,7 +1490,7 @@ def get_user_router() -> Router:
         privacy_url = get_setting("privacy_url")
         channel_url = get_setting("channel_url")
 
-        final_text = about_text if about_text else "❌ Информация о проекте не добавлена"
+        final_text = about_text if about_text else "❌ <b>Информация о проекте не добавлена</b>"
 
         keyboard = keyboards.create_about_keyboard(channel_url, terms_url, privacy_url)
 
@@ -1505,7 +1505,7 @@ def get_user_router() -> Router:
         support_bot_username = get_setting("support_bot_username")
         support_text = (
             get_setting("support_text")
-            or "Раздел поддержки. Нажмите кнопку ниже, чтобы открыть чат с поддержкой."
+            or "🛟 <b>Раздел поддержки. Нажмите кнопку ниже, чтобы открыть чат с поддержкой</b>"
         )
         if support_bot_username:
             await safe_edit_text(callback, 
