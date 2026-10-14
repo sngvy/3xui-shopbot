@@ -35,7 +35,7 @@ class BanMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         user_data = get_user(user.id)
-        # Пользователь снова пишет боту — значит, блокировку он снял
+        # Пользователь снова пишет боту, значит, блокировку он снял
         if user_data and user_data.get("bot_blocked"):
             clear_bot_blocked(user.id)
         # Незарегистрированный пользователь из внешнего чёрного списка (ban-vpn) блокируется
