@@ -342,7 +342,7 @@ ADMIN_GROUPS: dict[str, tuple[str, list[tuple[str, str]]]] = {
             ("🎟 Промокоды", "admin_promo_menu"),
             ("🏆 Топ рефереров", "admin_top_referrers"),
             ("📢 Рассылка", "start_broadcast"),
-            ("⚠️ Проблемные платежи", "admin_fp_list"),
+            ("⚠️ Ошибки оплат", "admin_fp_list"),
         ],
     ),
     "system": (
