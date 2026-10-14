@@ -2305,9 +2305,9 @@ def create_webhook_app(bot_controller_instance):
                     else:
                         url = f"tg://resolve?domain={support}"
                 if url:
-                    kb.button(text="🆘 Написать в поддержку", url=url)
+                    kb.button(text="🛟 Написать в поддержку", url=url)
                 else:
-                    kb.button(text="🆘 Поддержка", callback_data="show_help")
+                    kb.button(text="🛟 Поддержка", callback_data="show_help")
                 loop = current_app.config.get("EVENT_LOOP")
                 if loop and loop.is_running():
                     asyncio.run_coroutine_threadsafe(
