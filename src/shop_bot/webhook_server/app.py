@@ -797,7 +797,7 @@ def create_webhook_app(bot_controller_instance):
                 bot = _bot_controller.get_bot_instance()
                 if bot:
                     sign = "+" if delta >= 0 else ""
-                    text = f"💳 Ваш баланс был изменён администратором: {sign}{delta:.2f} RUB\nТекущий баланс: {get_balance(user_id):.2f} RUB"
+                    text = f"💳 <b>Ваш баланс был изменён администратором: {sign}{delta:.2f} ₽</b>\nТекущий баланс: {get_balance(user_id):.2f} ₽"
                     loop = current_app.config.get("EVENT_LOOP")
                     if loop and loop.is_running():
                         asyncio.run_coroutine_threadsafe(
@@ -1809,7 +1809,7 @@ def create_webhook_app(bot_controller_instance):
                         forum_chat_id = ticket.get("forum_chat_id")
                         thread_id = ticket.get("message_thread_id")
                         if bot and loop and loop.is_running() and forum_chat_id and thread_id:
-                            text = f"💬 Ответ админа из панели по тикету #{ticket_id}:\n\n{message}"
+                            text = f"💬 <b>Ответ поддержки по тикету № {ticket_id}:</b>\n\n{message}"
                             asyncio.run_coroutine_threadsafe(
                                 bot.send_message(
                                     chat_id=int(forum_chat_id),
@@ -2365,7 +2365,7 @@ def create_webhook_app(bot_controller_instance):
             bot = _bot_controller.get_bot_instance()
             if bot:
                 text = (
-                    "❌ Ваши подписки были отозваны администратором.\n"
+                    "❌ <b>Ваши подписки были отозваны администратором</b>\n"
                     f"Всего подписок: {total}\n"
                     f"Отозвано: {success_count}"
                 )
