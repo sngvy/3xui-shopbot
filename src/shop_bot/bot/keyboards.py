@@ -243,7 +243,7 @@ def create_main_menu_keyboard(
     )
     layout.append(2)
 
-    builder.button(text=(get_setting("btn_support") or "🆘 Поддержка"), callback_data="show_help")
+    builder.button(text=(get_setting("btn_support") or "🛟 Поддержка"), callback_data="show_help")
     builder.button(text="📂 Больше", callback_data="show_more_menu")
     layout.append(2)
 
@@ -712,7 +712,7 @@ def create_support_keyboard(support_user: str | None = None) -> InlineKeyboardMa
             url = f"tg://resolve?domain={username}"
 
     if url:
-        builder.button(text=(get_setting("btn_support") or "🆘 Поддержка"), url=url)
+        builder.button(text=(get_setting("btn_support") or "🛟 Поддержка"), url=url)
         builder.button(
             text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
             callback_data="back_to_main_menu",
@@ -720,7 +720,7 @@ def create_support_keyboard(support_user: str | None = None) -> InlineKeyboardMa
     else:
         # Фолбэк: встроенное меню поддержки
         builder.button(
-            text=(get_setting("btn_support") or "🆘 Поддержка"),
+            text=(get_setting("btn_support") or "🛟 Поддержка"),
             callback_data="show_help",
         )
         builder.button(
@@ -736,7 +736,7 @@ def create_support_bot_link_keyboard(support_bot_username: str) -> InlineKeyboar
     builder = InlineKeyboardBuilder()
     username = support_bot_username.lstrip("@")
     deep_link = f"tg://resolve?domain={username}&start=new"
-    builder.button(text=(get_setting("btn_support_open") or "🆘 Открыть поддержку"), url=deep_link)
+    builder.button(text=(get_setting("btn_support_open") or "🛟 Открыть поддержку"), url=deep_link)
     builder.button(
         text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
         callback_data="back_to_main_menu",
@@ -772,7 +772,7 @@ def create_support_menu_keyboard(has_external: bool = False) -> InlineKeyboardMa
     )
     if has_external:
         builder.button(
-            text=(get_setting("btn_support_external") or "🆘 Внешняя поддержка"),
+            text=(get_setting("btn_support_external") or "🛟 Внешняя поддержка"),
             callback_data="support_external",
         )
     builder.button(
