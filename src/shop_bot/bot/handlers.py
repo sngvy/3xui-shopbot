@@ -528,7 +528,7 @@ def registration_required(f):
         else:
             message_text = "⚠️ Пожалуйста, для начала работы со мной, отправьте команду /start"
             if isinstance(event, types.CallbackQuery):
-                await event.answer(message_text, )
+                await event.answer(message_text, show_alert=True)
             else:
                 await event.answer(message_text)
 
