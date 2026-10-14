@@ -2874,12 +2874,12 @@ def format_broadcast_summary(result: dict) -> str:
     """Та же сводка, что показывается админу после немедленной рассылки —
     используется и после отложенной, чтобы текст отчёта не расходился."""
     lines = [
-        "✅ <b>Рассылка завершена!</b>\n\n",
+        "✅ <b>Рассылка завершена!</b>\n",
         f"👍 <b>Отправлено:</b> {result['sent']}",
         f"👎 <b>Не удалось отправить:</b> {result['failed']}",
         f"🚫 <b>Пропущено (забанены):</b> {result['banned']}",
         f"🗑️ <b>Пропущено (забанили):</b> {result['blocked_by_user']}",
-        f"📊 <b>Пропущено (заблокировали бота):</b> {result.get('already_blocked', 0)}",
+        f"⏭️ <b>Пропущено (известные забанившие):</b> {result.get('already_blocked', 0)}",
     ]
     if result.get("promo_failed") is not None:
         lines.append(f"🎁 <b>Не удалось создать промокод:</b> {result['promo_failed']}")
