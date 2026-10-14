@@ -3998,7 +3998,7 @@ def get_admin_router() -> Router:
 
     async def _broadcast_ask_message(message: types.Message, state: FSMContext):
         await message.edit_text(
-            "✉️ </b>Пришлите сообщение, которое вы хотите разослать:</b>\n\n"
+            "✉️ <b>Пришлите сообщение, которое вы хотите разослать:</b>\n\n"
             "Вы можете использовать форматирование (<b>жирный</b>, <i>курсив</i>).\n"
             "Также поддерживаются фото, видео и документы.\n",
             reply_markup=keyboards.create_broadcast_cancel_keyboard(),
