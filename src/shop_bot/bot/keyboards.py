@@ -19,6 +19,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from shop_bot.data_manager.database import (
+    count_failed_payments,
     format_stored_username,
     get_key_by_id,
     get_setting,
@@ -341,6 +342,7 @@ ADMIN_GROUPS: dict[str, tuple[str, list[tuple[str, str]]]] = {
             ("🎟 Промокоды", "admin_promo_menu"),
             ("🏆 Топ рефереров", "admin_top_referrers"),
             ("📢 Рассылка", "start_broadcast"),
+            ("⚠️ Проблемные платежи", "admin_fp_list"),
         ],
     ),
     "system": (
@@ -360,6 +362,11 @@ def create_admin_group_keyboard(group: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     items = ADMIN_GROUPS.get(group, ("", []))[1]
     for text, cb in items:
+        if cb == "admin_fp_list":
+            try:
+                text = f"{text} ({count_failed_payments('open')})"
+            except Exception:
+                pass
         builder.button(text=text, callback_data=cb)
     builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
     builder.adjust(*([2] * (len(items) // 2) + ([1] if len(items) % 2 else []) + [1]))
