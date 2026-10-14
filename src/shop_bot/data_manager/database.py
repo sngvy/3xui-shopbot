@@ -278,6 +278,52 @@ def initialize_db():
             """)
 
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS payment_attempts (
+                    attempt_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    plan_id INTEGER,
+                    plan_name TEXT,
+                    months INTEGER,
+                    action TEXT,
+                    key_id INTEGER,
+                    host_name TEXT,
+                    customer_email TEXT,
+                    promo_code TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | canceled
+                    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    reminded_at TIMESTAMP,
+                    UNIQUE (provider, external_id)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payment_attempts_status_created "
+                "ON payment_attempts(status, created_at)"
+            )
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS failed_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT,
+                    external_id TEXT,
+                    user_id INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    action TEXT,
+                    metadata TEXT,
+                    error TEXT,
+                    status TEXT NOT NULL DEFAULT 'open', -- open | retried | refunded
+                    created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+                    resolved_at TIMESTAMP,
+                    resolved_by INTEGER
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_failed_payments_status ON failed_payments(status, id)"
+            )
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS vpn_keys (
                     key_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -1087,6 +1133,13 @@ def run_migration():
             logging.info(" -> Столбец 'referral_start_bonus_received' успешно добавлен.")
         else:
             logging.info(" -> Столбец 'referral_start_bonus_received' уже существует.")
+
+        if "bot_blocked" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN bot_blocked INTEGER DEFAULT 0")
+            logging.info(" -> Столбец 'bot_blocked' успешно добавлен.")
+        if "bot_blocked_at" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN bot_blocked_at TIMESTAMP")
+            logging.info(" -> Столбец 'bot_blocked_at' успешно добавлен.")
 
         logging.info("Таблица 'users' успешно обновлена.")
 
@@ -5166,3 +5219,289 @@ def get_latest_transactions(limit: int = 10) -> list[dict]:
     except sqlite3.Error as e:
         logging.error(f"Не удалось получить последние транзакции: {e}")
         return []
+
+
+# ---------------------------------------------------------------------------
+# Пользователи, заблокировавшие бота
+# ---------------------------------------------------------------------------
+def mark_bot_blocked(user_id: int) -> bool:
+    """Помечает, что пользователь заблокировал бота. True — флаг только что выставлен."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.execute(
+                "UPDATE users SET bot_blocked = 1, bot_blocked_at = datetime('now','localtime') "
+                "WHERE telegram_id = ? AND COALESCE(bot_blocked, 0) = 0",
+                (int(user_id),),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось пометить блокировку бота пользователем {user_id}: {e}")
+        return False
+
+
+def clear_bot_blocked(user_id: int) -> bool:
+    """Снимает пометку блокировки (пользователь снова пишет боту). True — флаг был снят."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.execute(
+                "UPDATE users SET bot_blocked = 0, bot_blocked_at = NULL "
+                "WHERE telegram_id = ? AND COALESCE(bot_blocked, 0) = 1",
+                (int(user_id),),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось снять пометку блокировки бота для {user_id}: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Попытки оплаты (для напоминаний о неоплаченном счёте)
+# ---------------------------------------------------------------------------
+def create_payment_attempt(
+    provider: str,
+    external_id: str,
+    user_id: int,
+    amount: float,
+    plan_id: int | None = None,
+    plan_name: str | None = None,
+    months: int | None = None,
+    action: str | None = None,
+    key_id: int | None = None,
+    host_name: str | None = None,
+    customer_email: str | None = None,
+    promo_code: str | None = None,
+) -> int | None:
+    """Запоминает созданный счёт. Ошибка записи не должна ломать оплату — вернётся None."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO payment_attempts "
+                "(provider, external_id, user_id, amount, plan_id, plan_name, months, action, "
+                " key_id, host_name, customer_email, promo_code) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    provider,
+                    str(external_id),
+                    int(user_id),
+                    float(amount),
+                    plan_id,
+                    plan_name,
+                    months,
+                    action,
+                    key_id,
+                    host_name,
+                    customer_email,
+                    promo_code,
+                ),
+            )
+            conn.commit()
+            return cur.lastrowid if cur.rowcount else None
+    except (sqlite3.Error, TypeError, ValueError) as e:
+        logging.error(f"Не удалось записать попытку оплаты {provider}:{external_id}: {e}")
+        return None
+
+
+def mark_payment_attempt(provider: str, external_id: str, status: str) -> None:
+    """Меняет статус попытки оплаты (paid / canceled)."""
+    try:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE payment_attempts SET status = ? WHERE provider = ? AND external_id = ?",
+                (status, provider, str(external_id)),
+            )
+            conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось обновить попытку оплаты {provider}:{external_id}: {e}")
+
+
+def get_payment_attempt(attempt_id: int) -> dict | None:
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM payment_attempts WHERE attempt_id = ?", (int(attempt_id),)
+            ).fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить попытку оплаты {attempt_id}: {e}")
+        return None
+
+
+def get_payment_attempts_due(min_age_minutes: int, max_age_hours: int = 24) -> list[dict]:
+    """Неоплаченные попытки старше min_age_minutes (но не старше max_age_hours), по которым
+    ещё не напоминали. Не возвращает: попытки, после которых пользователь уже создал новый
+    счёт или оплатил что-либо; пользователей, которых уже предупреждали за последние 24 часа,
+    забаненных и заблокировавших бота."""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT a.* FROM payment_attempts a
+                JOIN users u ON u.telegram_id = a.user_id
+                WHERE a.status = 'pending'
+                  AND a.reminded_at IS NULL
+                  AND a.created_at <= datetime('now','localtime', ?)
+                  AND a.created_at >= datetime('now','localtime', ?)
+                  AND COALESCE(u.is_banned, 0) = 0
+                  AND COALESCE(u.bot_blocked, 0) = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM payment_attempts b
+                      WHERE b.user_id = a.user_id AND b.attempt_id > a.attempt_id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM transactions t
+                      WHERE t.user_id = a.user_id AND t.status = 'paid'
+                        AND t.created_date >= a.created_at
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM payment_attempts r
+                      WHERE r.user_id = a.user_id AND r.reminded_at IS NOT NULL
+                        AND r.reminded_at >= datetime('now','localtime','-24 hours')
+                  )
+                ORDER BY a.attempt_id
+                """,
+                (f"-{int(min_age_minutes)} minutes", f"-{int(max_age_hours)} hours"),
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить попытки оплаты для напоминаний: {e}")
+        return []
+
+
+def set_payment_attempt_reminded(attempt_id: int, status: str | None = None) -> None:
+    """Фиксирует, что по попытке уже обработано напоминание (чтобы не повторять)."""
+    try:
+        with get_db_connection() as conn:
+            if status:
+                conn.execute(
+                    "UPDATE payment_attempts SET reminded_at = datetime('now','localtime'), "
+                    "status = ? WHERE attempt_id = ?",
+                    (status, int(attempt_id)),
+                )
+            else:
+                conn.execute(
+                    "UPDATE payment_attempts SET reminded_at = datetime('now','localtime') "
+                    "WHERE attempt_id = ?",
+                    (int(attempt_id),),
+                )
+            conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось отметить напоминание по попытке {attempt_id}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Проблемные платежи (оплата получена, выдача не удалась)
+# ---------------------------------------------------------------------------
+def record_failed_payment(
+    provider: str | None,
+    external_id: str | None,
+    user_id: int,
+    amount: float,
+    action: str | None,
+    metadata: dict,
+    error: str,
+) -> tuple[int | None, bool]:
+    """Записывает проблемный платёж. Возвращает (id, создан_ли_новый). Если по тому же
+    платежу уже есть открытая запись — новая не создаётся (id существующей, False)."""
+    try:
+        with get_db_connection() as conn:
+            if provider and external_id:
+                row = conn.execute(
+                    "SELECT id FROM failed_payments WHERE provider = ? AND external_id = ? "
+                    "AND status = 'open' ORDER BY id DESC LIMIT 1",
+                    (provider, str(external_id)),
+                ).fetchone()
+                if row:
+                    return int(row[0]), False
+            cur = conn.execute(
+                "INSERT INTO failed_payments "
+                "(provider, external_id, user_id, amount, action, metadata, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    provider,
+                    str(external_id) if external_id else None,
+                    int(user_id),
+                    float(amount),
+                    action,
+                    json.dumps(metadata, ensure_ascii=False, default=str),
+                    (error or "")[:500],
+                ),
+            )
+            conn.commit()
+            return cur.lastrowid, True
+    except (sqlite3.Error, TypeError, ValueError) as e:
+        logging.error(f"Не удалось записать проблемный платёж пользователя {user_id}: {e}")
+        return None, False
+
+
+def get_failed_payment(failed_id: int) -> dict | None:
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM failed_payments WHERE id = ?", (int(failed_id),)
+            ).fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить проблемный платёж {failed_id}: {e}")
+        return None
+
+
+def list_failed_payments(status: str = "open", limit: int = 20) -> list[dict]:
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM failed_payments WHERE status = ? ORDER BY id DESC LIMIT ?",
+                (status, int(limit)),
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить список проблемных платежей: {e}")
+        return []
+
+
+def count_failed_payments(status: str = "open") -> int:
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM failed_payments WHERE status = ?", (status,)
+            ).fetchone()
+            return int(row[0] or 0)
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось посчитать проблемные платежи: {e}")
+        return 0
+
+
+def resolve_failed_payment(failed_id: int, new_status: str, admin_id: int | None) -> bool:
+    """Атомарно закрывает открытую запись. True — закрыли мы (защита от двойного нажатия
+    кнопки: возврат или повторная выдача не выполнятся дважды)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.execute(
+                "UPDATE failed_payments SET status = ?, resolved_at = datetime('now','localtime'), "
+                "resolved_by = ? WHERE id = ? AND status = 'open'",
+                (new_status, admin_id, int(failed_id)),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось закрыть проблемный платёж {failed_id}: {e}")
+        return False
+
+
+def reopen_failed_payment(failed_id: int) -> None:
+    """Возвращает запись в open, если действие по ней не удалось (после resolve_failed_payment)."""
+    try:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE failed_payments SET status = 'open', resolved_at = NULL, resolved_by = NULL "
+                "WHERE id = ?",
+                (int(failed_id),),
+            )
+            conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось вернуть проблемный платёж {failed_id} в открытые: {e}")
