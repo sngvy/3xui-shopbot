@@ -10,6 +10,7 @@ from aiogram.types import CallbackQuery, Message, TelegramObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from shop_bot.data_manager.database import (
+    clear_bot_blocked,
     get_setting,
     get_user,
     is_admin,
@@ -34,6 +35,9 @@ class BanMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         user_data = get_user(user.id)
+        # Пользователь снова пишет боту — значит, блокировку он снял
+        if user_data and user_data.get("bot_blocked"):
+            clear_bot_blocked(user.id)
         # Незарегистрированный пользователь из внешнего чёрного списка (ban-vpn) блокируется
         # до регистрации, иначе он успел бы взять триал до ближайшей сверки.
         if user_data is None and not is_admin(user.id) and is_in_external_blacklist(user.id):
