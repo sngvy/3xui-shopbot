@@ -50,6 +50,18 @@ except ValueError:
 _xui_executor = ThreadPoolExecutor(max_workers=_XUI_POOL_SIZE, thread_name_prefix="xui")
 
 
+# subId мастера и клонов истёкшего ключа получает этот суффикс: подписка (/sub/<subId>)
+# перестаёт их отдавать, остаётся только grace-клиент с «чистым» subId.
+# При продлении суффикс снимается.
+EXPIRED_SUB_SUFFIX = "-expired"
+
+
+def base_sub_id(sub_id) -> str:
+    """subId без суффикса EXPIRED_SUB_SUFFIX."""
+    sid = str(sub_id or "")
+    return sid[: -len(EXPIRED_SUB_SUFFIX)] if sid.endswith(EXPIRED_SUB_SUFFIX) else sid
+
+
 async def run_in_xui_pool(fn, *args, **kwargs):
     """Аналог asyncio.to_thread, но в выделенном пуле потоков для панелей 3X-UI."""
     loop = asyncio.get_running_loop()
@@ -1065,7 +1077,13 @@ def update_or_create_client_on_panel(
                     except Exception:
                         pass
             else:
-                client_sub_token = sub_token_existing
+                # У истёкшего ключа subId с суффиксом -expired — при продлении снимаем
+                client_sub_token = base_sub_id(sub_token_existing)
+                if client_sub_token != sub_token_existing:
+                    try:
+                        setattr(client_for_update, "sub_id", client_sub_token)
+                    except Exception:
+                        pass
 
             # Активируем и обновляем срок действия
             client_for_update.enable = True
@@ -1934,7 +1952,7 @@ def _get_key_details_from_host_sync(
                             val = client.get("sub_id")
 
                         if val:
-                            client_sub_token = str(val)
+                            client_sub_token = base_sub_id(val)
                         break
 
         except Exception as e:
