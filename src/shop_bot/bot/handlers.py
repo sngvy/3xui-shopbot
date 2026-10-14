@@ -4696,7 +4696,7 @@ def get_user_router() -> Router:
         payload = payment_id
 
         title = get_setting("stars_title") or "Покупка подписки"
-        description = get_setting("stars_description") or f"Оплата {months} мес"
+        description = get_setting("stars_description") or f"Оплата {months} мес."
         try:
             await bot.send_invoice(
                 chat_id=callback.message.chat.id,
