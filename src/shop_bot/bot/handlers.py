@@ -1490,7 +1490,7 @@ def get_user_router() -> Router:
         privacy_url = get_setting("privacy_url")
         channel_url = get_setting("channel_url")
 
-        final_text = about_text if about_text else "Информация о проекте не добавлена."
+        final_text = about_text if about_text else "❌ Информация о проекте не добавлена"
 
         keyboard = keyboards.create_about_keyboard(channel_url, terms_url, privacy_url)
 
