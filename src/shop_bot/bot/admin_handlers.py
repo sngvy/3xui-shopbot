@@ -1671,9 +1671,9 @@ def get_admin_router() -> Router:
                     else:
                         url = f"tg://resolve?domain={support}"
                 if url:
-                    kb.button(text="🆘 Написать в поддержку", url=url)
+                    kb.button(text="🛟 Написать в поддержку", url=url)
                 else:
-                    kb.button(text="🆘 Поддержка", callback_data="show_help")
+                    kb.button(text="🛟 Поддержка", callback_data="show_help")
                 await callback.bot.send_message(
                     user_id,
                     "🚫 <b>Ваш аккаунт заблокирован администратором. Если это ошибка — напишите в поддержку</b>",
