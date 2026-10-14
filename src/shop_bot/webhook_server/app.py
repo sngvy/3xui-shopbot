@@ -928,7 +928,6 @@ def create_webhook_app(bot_controller_instance):
                 text = (
                     "🔐 <b>Ваша подписка готова!</b>\n\n"
                     f"🗺️ <b>Сервер:</b> {host_name}\n"
-                    "Выдана администратором вручную.\n"
                 )
                 if result and result.get("connection_string"):
                     cs = html_escape.escape(result["connection_string"])
@@ -1064,7 +1063,6 @@ def create_webhook_app(bot_controller_instance):
                 text = (
                     "🔐 <b>Ваша подписка готова!</b>\n\n"
                     f"🗺️ <b>Сервер:</b> {host_name}\n"
-                    "Выдана администратором вручную.\n"
                 )
                 if result and result.get("connection_string"):
                     cs = html_escape.escape(result["connection_string"])
@@ -1248,7 +1246,6 @@ def create_webhook_app(bot_controller_instance):
                     text = (
                         "🔐 <b>Ваша подписка готова!</b>\n\n"
                         f"🗺️ <b>Сервер:</b> {host_name}\n"
-                        "Выдана администратором вручную.\n"
                     )
                     if result and result.get("connection_string"):
                         cs = html_escape.escape(result["connection_string"])
