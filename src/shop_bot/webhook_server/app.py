@@ -1851,7 +1851,7 @@ def create_webhook_app(bot_controller_instance):
                         loop = current_app.config.get("EVENT_LOOP")
                         user_chat_id = ticket.get("user_id")
                         if bot and loop and loop.is_running() and user_chat_id:
-                            text = f"✅ Ваш тикет #{ticket_id} был закрыт администратором. Вы можете создать новое обращение при необходимости."
+                            text = f"✅ <b>Ваш тикет #{ticket_id} был закрыт администратором. Вы можете создать новое обращение при необходимости</b>"
                             asyncio.run_coroutine_threadsafe(
                                 bot.send_message(int(user_chat_id), text), loop
                             )
@@ -2331,7 +2331,7 @@ def create_webhook_app(bot_controller_instance):
             if bot:
                 kb = InlineKeyboardBuilder()
                 kb.row(keyboards.get_main_menu_button())
-                text = "✅ Доступ к аккаунту восстановлен администратором."
+                text = "✅ <b>Доступ к аккаунту восстановлен администратором</b>"
                 loop = current_app.config.get("EVENT_LOOP")
                 if loop and loop.is_running():
                     asyncio.run_coroutine_threadsafe(
