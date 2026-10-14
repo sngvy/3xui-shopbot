@@ -528,7 +528,7 @@ def registration_required(f):
         else:
             message_text = "⚠️ Пожалуйста, для начала работы со мной, отправьте команду /start"
             if isinstance(event, types.CallbackQuery):
-                await event.answer(message_text, show_alert=True)
+                await event.answer(message_text, )
             else:
                 await event.answer(message_text)
 
@@ -4443,7 +4443,7 @@ def get_user_router() -> Router:
             get_payment_attempt, int(callback.data.rsplit("_", 1)[1])
         )
         if not attempt or int(attempt["user_id"]) != callback.from_user.id:
-            await callback.answer("❌ Счёт не найден", show_alert=True)
+            await callback.answer("❌ Счёт не найден", show_alert=False)
             return
         await callback.answer("⏳ Готовлю ссылку...", show_alert=False)
         try:
