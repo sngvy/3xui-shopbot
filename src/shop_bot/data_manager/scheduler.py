@@ -496,7 +496,9 @@ async def check_expiring_subscriptions(bot: Bot):
             )
 
 
-def _compute_host_state_hash(keys_in_db: list[dict], banned_map: dict[int, bool]) -> str:
+def _compute_host_state_hash(
+    keys_in_db: list[dict], banned_map: dict[int, bool], now: datetime | None = None
+) -> str:
     """Дешёвый хэш ожидаемого состояния хоста, посчитанный только по локальной БД (без единого запроса к панели). Используется, чтобы не гонять тяжёлую сверку клонов с панелью каждые 5 минут, если с прошлого раза у хоста объективно ничего не изменилось (не было покупок/продлений/банов/удалений).
 
     Важно: это не отменяет полную сверку совсем — см. FULL_RECONCILE_INTERVAL_SECONDS,
@@ -507,7 +509,17 @@ def _compute_host_state_hash(keys_in_db: list[dict], banned_map: dict[int, bool]
     for k in sorted(keys_in_db, key=lambda x: x["key_id"]):
         tg_id = k.get("user_id")
         is_banned = banned_map.get(tg_id, False)
-        parts.append(f"{k['key_id']}:{k['xui_client_uuid']}:{k['expiry_date']}:{int(is_banned)}")
+        # Признак «подписка уже истекла» входит в хэш: в момент истечения хэш меняется, и
+        # полная сверка клонов срабатывает сразу (отключает мастера и все клоны), а не
+        # через FULL_RECONCILE_INTERVAL_SECONDS. Иначе grace-клиент включался бы сразу,
+        # а остальные инбаунды оставались в подписке до получаса.
+        try:
+            is_expired = int(now is not None and datetime.fromisoformat(k["expiry_date"]) <= now)
+        except (KeyError, ValueError, TypeError):
+            is_expired = 0
+        parts.append(
+            f"{k['key_id']}:{k['xui_client_uuid']}:{k['expiry_date']}:{int(is_banned)}:{is_expired}"
+        )
     raw = "|".join(parts)
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -2255,7 +2267,7 @@ async def _sync_single_host(
                 bot, host_name, api, all_inbounds, keys_in_db, banned_map, now
             )
 
-            state_hash = _compute_host_state_hash(keys_in_db, banned_map)
+            state_hash = _compute_host_state_hash(keys_in_db, banned_map, now)
             last_hash = _host_state_hash.get(host_name)
             last_full_at = _host_last_full_sync_at.get(host_name)
             due_full_reconcile = (
