@@ -38,6 +38,7 @@ from aiosend import CryptoPay
 from yookassa import Payment
 
 from shop_bot.bot import keyboards
+from shop_bot.bot.failed_payments import report_failed_payment
 from shop_bot.bot.ui_utils import UiAnchorMiddleware, answer_error
 from shop_bot.config import (
     CHOOSE_PAYMENT_METHOD_MESSAGE,
@@ -50,6 +51,10 @@ from shop_bot.config import (
     get_vpn_active_text,
 )
 from shop_bot.data_manager.database import (
+    create_payment_attempt,
+    get_payment_attempt,
+    mark_payment_attempt,
+    set_payment_attempt_reminded,
     add_new_key,
     add_support_message,
     add_to_balance,
@@ -4399,6 +4404,23 @@ def get_user_router() -> Router:
 
             payment = await asyncio.to_thread(Payment.create, payment_payload, uuid.uuid4())
 
+            # Запоминаем счёт: если пользователь не оплатит, планировщик напомнит о нём
+            await asyncio.to_thread(
+                create_payment_attempt,
+                "yookassa",
+                payment.id,
+                user_id,
+                price_float_for_metadata,
+                plan_id,
+                plan.get("plan_name"),
+                months,
+                str(action) if action is not None else None,
+                _safe_optional_int(key_id, None),
+                host_name,
+                customer_email,
+                data.get("promo_code") or None,
+            )
+
             await state.clear()
 
             await safe_edit_text(callback, 
@@ -4412,6 +4434,117 @@ def get_user_router() -> Router:
             logger.error(f"Не удалось создать платёж YooKassa: {e}", exc_info=True)
             await answer_error(callback, "❌ Не удалось создать ссылку на оплату", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
             await state.clear()
+
+    @user_router.callback_query(F.data.regexp(r"^resume_pay_\d+$"))
+    async def resume_yookassa_payment_handler(callback: types.CallbackQuery):
+        """Кнопка «Оплатить» из напоминания о неоплаченном счёте: создаёт новую ссылку
+        на оплату с теми же параметрами (старая могла устареть)."""
+        attempt = await asyncio.to_thread(
+            get_payment_attempt, int(callback.data.rsplit("_", 1)[1])
+        )
+        if not attempt or int(attempt["user_id"]) != callback.from_user.id:
+            await callback.answer("❌ Счёт не найден", show_alert=True)
+            return
+        await callback.answer("⏳ Готовлю ссылку...", show_alert=False)
+        try:
+            price_str = f"{float(attempt['amount']):.2f}"
+            months = int(attempt.get("months") or 0)
+            email = attempt.get("customer_email") or get_setting("receipt_email")
+            payload = {
+                "amount": {"value": price_str, "currency": "RUB"},
+                "confirmation": {
+                    "type": "redirect",
+                    "return_url": f"https://t.me/{TELEGRAM_BOT_USERNAME}",
+                },
+                "capture": True,
+                "description": f"Подписка на {months} мес.",
+                "metadata": {
+                    "user_id": str(attempt["user_id"]),
+                    "months": str(months),
+                    "price": price_str,
+                    "action": attempt.get("action") or "",
+                    "key_id": (
+                        str(attempt["key_id"]) if attempt.get("key_id") is not None else ""
+                    ),
+                    "host_name": attempt.get("host_name") or "",
+                    "plan_id": (
+                        str(attempt["plan_id"]) if attempt.get("plan_id") is not None else ""
+                    ),
+                    "customer_email": email or "",
+                    "payment_method": "YooKassa",
+                    "promo_code": attempt.get("promo_code") or "",
+                    "promo_discount_percent": "",
+                    "promo_discount_amount": "",
+                },
+            }
+            if email and is_valid_email(email):
+                payload["receipt"] = {
+                    "customer": {"email": email},
+                    "items": [
+                        {
+                            "description": f"Подписка на {months} мес.",
+                            "quantity": "1.00",
+                            "amount": {"value": price_str, "currency": "RUB"},
+                            "vat_code": 1,
+                            "payment_subject": "service",
+                            "payment_mode": "full_payment",
+                        }
+                    ],
+                }
+            payment = await asyncio.to_thread(Payment.create, payload, uuid.uuid4())
+            new_id = await asyncio.to_thread(
+                create_payment_attempt,
+                "yookassa",
+                payment.id,
+                attempt["user_id"],
+                float(attempt["amount"]),
+                attempt.get("plan_id"),
+                attempt.get("plan_name"),
+                months,
+                attempt.get("action"),
+                attempt.get("key_id"),
+                attempt.get("host_name"),
+                attempt.get("customer_email"),
+                attempt.get("promo_code"),
+            )
+            # Новый счёт создан по нашему напоминанию — повторно напоминать о нём не нужно
+            if new_id:
+                await asyncio.to_thread(set_payment_attempt_reminded, new_id)
+            await asyncio.to_thread(
+                mark_payment_attempt, "yookassa", attempt["external_id"], "canceled"
+            )
+            await safe_edit_text(
+                callback,
+                "⬇️ <b>Нажмите на кнопку ниже для оплаты:</b>",
+                reply_markup=keyboards.create_payment_keyboard(
+                    payment.confirmation.confirmation_url
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Не удалось повторно создать платёж YooKassa: {e}", exc_info=True)
+            await answer_error(
+                callback,
+                "❌ Не удалось создать ссылку на оплату",
+                reply_markup=keyboards.create_back_to_main_menu_keyboard(),
+                answered=True,
+            )
+
+    @user_router.callback_query(F.data.regexp(r"^dismiss_pay_\d+$"))
+    async def dismiss_payment_reminder_handler(callback: types.CallbackQuery):
+        """Кнопка «Не нужно» под напоминанием: счёт закрывается, сообщение удаляется."""
+        attempt = await asyncio.to_thread(
+            get_payment_attempt, int(callback.data.rsplit("_", 1)[1])
+        )
+        if attempt and int(attempt["user_id"]) == callback.from_user.id:
+            await asyncio.to_thread(
+                mark_payment_attempt, "yookassa", attempt["external_id"], "canceled"
+            )
+        await callback.answer()
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
     @user_router.callback_query(PaymentProcess.waiting_for_payment_method, F.data == "pay_yoomoney")
     async def create_yoomoney_payment_handler(callback: types.CallbackQuery, state: FSMContext):
@@ -5289,6 +5422,37 @@ def _safe_optional_int(value, default: int = 0) -> int:
         return default
 
 
+_PAYMENT_PENDING_TEXT = (
+    "⚠️ <b>Оплата получена</b>\n\n"
+    "Не удалось выдать подписку сразу — мы уже разбираемся, всё будет решено в ближайшее время"
+)
+
+
+async def _payment_failed(bot: Bot, processing_message, metadata: dict, error: str) -> None:
+    """Сбой выдачи после оплаты: записываем проблемный платёж (админам уйдёт сообщение
+    с кнопками), пользователю объясняем, что деньги не потеряны."""
+    try:
+        await delete_and_send(
+            processing_message,
+            _PAYMENT_PENDING_TEXT,
+            reply_markup=keyboards.create_support_keyboard(),
+            parse_mode="HTML",
+        )
+    except Exception:
+        try:
+            await bot.send_message(
+                chat_id=int(metadata.get("user_id")),
+                text=_PAYMENT_PENDING_TEXT,
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+    try:
+        await report_failed_payment(bot, metadata, error)
+    except Exception as e:
+        logger.error(f"Не удалось записать проблемный платёж: {e}", exc_info=True)
+
+
 async def process_successful_payment(bot: Bot, metadata: dict):
     """Обрабатывает успешный платёж: создаёт/продлевает ключ или пополняет баланс."""
     try:
@@ -5314,6 +5478,18 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             await bot.delete_message(chat_id=chat_id_to_delete, message_id=message_id_to_delete)
         except TelegramBadRequest as e:
             logger.warning(f"Не удалось удалить сообщение о платеже: {e}")
+
+    # Попытка оплаты закрывается как оплаченная (иначе по ней придёт напоминание)
+    if metadata.get("_provider") and metadata.get("_external_id"):
+        try:
+            await asyncio.to_thread(
+                mark_payment_attempt,
+                str(metadata["_provider"]),
+                str(metadata["_external_id"]),
+                "paid",
+            )
+        except Exception:
+            pass
 
     # Спец-ветка: пополнение баланса
     if action == "top_up":
@@ -5363,14 +5539,15 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             else:
                 await bot.send_message(
                     chat_id=user_id,
-                    text=(
-                        "⚠️ <b>Оплата получена, но не удалось обновить баланс</b>\n\n"
-                        "Обратитесь в поддержку."
-                    ),
+                    text=_PAYMENT_PENDING_TEXT,
                     reply_markup=keyboards.create_support_keyboard(),
+                    parse_mode="HTML",
                 )
         except Exception:
             pass
+        if not ok:
+            await report_failed_payment(bot, metadata, "Не удалось обновить баланс")
+            return
 
         # Если под это пополнение есть отложенная покупка (кнопка «Пополнить
         # на N ₽» из pay_with_main_balance_handler) — пробуем завершить её
@@ -5438,13 +5615,11 @@ async def process_successful_payment(bot: Bot, metadata: dict):
         if not gift_code:
             await bot.send_message(
                 chat_id=user_id,
-                text=(
-                    "⚠️ <b>Оплата получена, но не удалось создать подарочный код</b>\n\n"
-                    "Обратитесь в поддержку"
-                ),
+                text=_PAYMENT_PENDING_TEXT,
                 reply_markup=keyboards.create_support_keyboard(),
                 parse_mode="HTML",
             )
+            await report_failed_payment(bot, metadata, "Не удалось создать подарочный код")
             return
         try:
             bot_user = await bot.get_me()
@@ -5502,6 +5677,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
         chat_id=user_id,
         text=f"✅ Оплата получена! Обрабатываю ваш запрос на сервере {host_name}...",
     )
+    # True, как только подписка реально выдана: дальнейший сбой (реферал, уведомления)
+    # уже не повод считать платёж проблемным
+    issued = False
     try:
         # Цена нужна ниже вне зависимости от ветки
         price = float(metadata.get("price"))
@@ -5531,7 +5709,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             # Продление существующего ключа — достаём email по key_id
             existing_key = await asyncio.to_thread(get_key_by_id, key_id)
             if not existing_key or not existing_key.get("key_email"):
-                await delete_and_send(processing_message, "❌ Не удалось найти подписку для продления", reply_markup=keyboards.create_back_to_main_menu_keyboard())
+                await _payment_failed(
+                    bot, processing_message, metadata, "Не найдена подписка для продления"
+                )
                 return
             candidate_email = existing_key["key_email"]
 
@@ -5587,7 +5767,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             host_name=host_name, email=candidate_email, months_to_add=int(months)
         )
         if not result:
-            await delete_and_send(processing_message, "❌ Не удалось создать/обновить подписку на сервере", reply_markup=keyboards.create_back_to_main_menu_keyboard())
+            await _payment_failed(
+                bot, processing_message, metadata, "Панель не создала или не обновила подписку"
+            )
             return
 
         if action == "new":
@@ -5600,6 +5782,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             )
         elif action == "extend":
             update_key_info(key_id, result["client_uuid"], result["expiry_timestamp_ms"])
+        issued = True
 
         # Запоминаем тариф этой покупки/продления — используется при
         # автопродлении (см. scheduler.process_auto_renewals), чтобы знать,
@@ -5897,10 +6080,15 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             f"Ошибка при обработке платежа для пользователя {user_id} на хосте {host_name}: {e}",
             exc_info=True,
         )
-        try:
-            await delete_and_send(processing_message, "❌ Ошибка при выдаче подписки", reply_markup=keyboards.create_back_to_main_menu_keyboard())
-        except Exception:
+        if issued:
+            # Подписка уже выдана, сломалось что-то после — деньги не потеряны
             try:
-                await bot.send_message(chat_id=user_id, text="❌ Ошибка при выдаче подписки")
+                await delete_and_send(
+                    processing_message,
+                    "✅ Оплата получена, подписка выдана — найдите её в разделе с вашими подписками",
+                    reply_markup=keyboards.create_back_to_main_menu_keyboard(),
+                )
             except Exception:
                 pass
+            return
+        await _payment_failed(bot, processing_message, metadata, f"{type(e).__name__}: {e}")
