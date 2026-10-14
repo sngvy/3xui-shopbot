@@ -178,7 +178,7 @@ def get_support_router() -> Router:
             return
         support_text = (
             get_setting("support_text")
-            or "🆘 Раздел поддержки. Вы можете создать обращение или открыть существующее"
+            or "🛟 Раздел поддержки. Вы можете создать обращение или открыть существующее"
         )
         await message.answer(
             support_text,
@@ -284,7 +284,7 @@ def get_support_router() -> Router:
                 update_ticket_thread_info(ticket_id, str(chat_id), int(thread_id))
                 subj_display = subject or "—"
                 header = (
-                    "🆘 <b>Обращение в поддержку</b>\n\n"
+                    "🛟 <b>Обращение в поддержку</b>\n\n"
                     f"🧾 <b>Тикет:</b> № {ticket_id}\n"
                     f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{user_id}</code>)\n"
                     f"ℹ️ <b>Тема:</b> {_h(subj_display)} — от @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{user_id}</code>)\n\n"
@@ -348,7 +348,7 @@ def get_support_router() -> Router:
                         await bot.send_message(
                             int(aid),
                             (
-                                "🆘 <b>Новое обращение в поддержку</b>\n\n"
+                                "🛟 <b>Новое обращение в поддержку</b>\n\n"
                                 f"🧾 <b>Тикет:</b> № {ticket_id}\n"
                                 f"👤 <b>Пользователь:</b> @{_h(message.from_user.username or message.from_user.full_name)} (ID: <code>{user_id}</code>)\n"
                                 f"ℹ️ <b>Тема:</b> {_h(subject or '—')}\n\n"
@@ -1158,7 +1158,7 @@ def get_support_router() -> Router:
                         subj_display = ticket.get("subject") or "—"
                         header = (
                             (
-                                "🆘 <b>Новое обращение в поддержку</b>\n\n"
+                                "🛟 <b>Новое обращение в поддержку</b>\n\n"
                                 if created_new
                                 else "📌 <b>Тред создан автоматически</b>\n\n"
                             )
