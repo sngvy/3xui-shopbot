@@ -2169,7 +2169,7 @@ def get_admin_router() -> Router:
         await callback.answer()
         await state.set_state(AdminAddAdmin.waiting_for_input)
         await safe_edit_text(callback, 
-            "Введите ID пользователя или его @username, которого нужно сделать администратором:\n\n"
+            "🆔 <b>Введите ID пользователя или его @username, которого нужно сделать администратором:</b>\n\n"
             "Примеры: 123456789 или @username",
             reply_markup=keyboards.create_admin_cancel_keyboard(),
         )
@@ -3998,7 +3998,7 @@ def get_admin_router() -> Router:
 
     async def _broadcast_ask_message(message: types.Message, state: FSMContext):
         await message.edit_text(
-            "Пришлите сообщение, которое вы хотите разослать.\n"
+            "✉️ </b>Пришлите сообщение, которое вы хотите разослать:</b>\n\n"
             "Вы можете использовать форматирование (<b>жирный</b>, <i>курсив</i>).\n"
             "Также поддерживаются фото, видео и документы.\n",
             reply_markup=keyboards.create_broadcast_cancel_keyboard(),
