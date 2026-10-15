@@ -2370,14 +2370,6 @@ def get_user_router() -> Router:
         links = [link.strip() for link in decoded_data.splitlines() if link.strip()]
         return links or None
 
-    @user_router.callback_query(F.data == "cancel_country_picker")
-    async def cancel_country_picker_handler(callback: types.CallbackQuery):
-        await callback.answer()
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
     # =========================================================================
     # XKeen: сначала выбор страны, файлы присылаются только для неё — раньше
     # все страны разом при 20-70 серверах на хосте превращались в шквал
