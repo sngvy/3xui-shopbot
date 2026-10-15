@@ -559,8 +559,9 @@ def create_admin_balance_confirm_keyboard(action: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     label = "✅ Подтвердить начисление" if action == "add" else "✅ Подтвердить списание"
     builder.button(text=label, callback_data=f"admin_balance_confirm_{action}")
+    builder.button(text="⬅️ Назад", callback_data=f"admin_balance_back_amount_{action}")
     builder.button(text="❌ Отмена", callback_data=f"admin_balance_cancel_{action}")
-    builder.adjust(1)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -568,8 +569,9 @@ def create_admin_gift_confirm_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру подтверждения выдачи подарочного ключа."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить выдачу", callback_data="admin_gift_confirm")
+    builder.button(text="⬅️ Назад", callback_data="admin_gift_back_to_days")
     builder.button(text="❌ Отмена", callback_data="admin_gift_cancel")
-    builder.adjust(1)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -580,12 +582,22 @@ def create_admin_cancel_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def create_admin_step_keyboard(back_callback: str) -> InlineKeyboardMarkup:
+    """Клавиатура шага мастера: «Назад» (на предыдущий шаг) и «Отмена» (выход из мастера) в одной строке."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def create_admin_promo_code_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру меню управления промокодами."""
     builder = InlineKeyboardBuilder()
     builder.button(text="🎲 Сгенерировать код", callback_data="admin_promo_gen_code")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(1)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -607,8 +619,9 @@ def create_broadcast_promo_option_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🎁 Приложить", callback_data="broadcast_add_promo")
     builder.button(text="➡️ Без промокода", callback_data="broadcast_skip_promo")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
-    builder.adjust(2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup()
 
 
@@ -617,8 +630,9 @@ def create_broadcast_options_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ Добавить кнопку", callback_data="broadcast_add_button")
     builder.button(text="➡️ Пропустить", callback_data="broadcast_skip_button")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
-    builder.adjust(2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup()
 
 
@@ -627,8 +641,9 @@ def create_broadcast_confirmation_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Отправить сейчас", callback_data="confirm_broadcast")
     builder.button(text="📅 Отложить", callback_data="schedule_broadcast")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
-    builder.adjust(2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup()
 
 
@@ -640,8 +655,9 @@ def create_broadcast_schedule_presets_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="🌅 Завтра в 10:00", callback_data="broadcast_sched_preset_tomorrow10")
     builder.button(text="🌙 Завтра в 20:00", callback_data="broadcast_sched_preset_tomorrow20")
     builder.button(text="✏️ Своё время", callback_data="broadcast_sched_preset_custom")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
-    builder.adjust(2, 2, 1, 1)
+    builder.adjust(2, 2, 1, 2)
     return builder.as_markup()
 
 
@@ -662,7 +678,9 @@ def create_scheduled_broadcast_list_keyboard(items: list[dict]) -> InlineKeyboar
 def create_broadcast_cancel_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру с кнопкой отмены рассылки."""
     builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
     builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2)
     return builder.as_markup()
 
 
@@ -958,8 +976,9 @@ def create_admin_promo_discount_keyboard() -> InlineKeyboardMarkup:
     # Первый шаг: выбрать тип скидки
     builder.button(text="Процент", callback_data="admin_promo_discount_type_percent")
     builder.button(text="Фикс (₽)", callback_data="admin_promo_discount_type_amount")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup()
 
 
@@ -973,8 +992,9 @@ def create_admin_promo_discount_percent_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="✏️ Ввести процент", callback_data="admin_promo_discount_manual_percent")
     builder.button(text="✏️ Ввести фикс ₽", callback_data="admin_promo_discount_manual_amount")
     builder.button(text="↔️ Фикс-меню", callback_data="admin_promo_discount_show_amount_menu")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(3, 3, 1, 1, 1)
+    builder.adjust(3, 3, 1, 1, 1, 2)
     return builder.as_markup()
 
 
@@ -987,8 +1007,9 @@ def create_admin_promo_discount_amount_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="✏️ Ввести фикс ₽", callback_data="admin_promo_discount_manual_amount")
     builder.button(text="✏️ Ввести процент", callback_data="admin_promo_discount_manual_percent")
     builder.button(text="↔️ Процент-меню", callback_data="admin_promo_discount_show_percent_menu")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(3, 3, 1, 1, 1)
+    builder.adjust(3, 3, 1, 1, 1, 2)
     return builder.as_markup()
 
 
@@ -1009,8 +1030,9 @@ def create_admin_promo_limits_type_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="Лимит на пользователя", callback_data="admin_promo_limits_type_per")
     builder.button(text="Оба лимита", callback_data="admin_promo_limits_type_both")
     builder.button(text="➡️ Пропустить", callback_data="admin_promo_limits_skip")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(2, 1, 1, 1)
+    builder.adjust(2, 1, 1, 2)
     return builder.as_markup()
 
 
@@ -1053,8 +1075,9 @@ def create_admin_promo_dates_keyboard() -> InlineKeyboardMarkup:
     # Ручной ввод количества дней и пропуск
     builder.button(text="✏️ Ввести число дней", callback_data="admin_promo_dates_custom_days")
     builder.button(text="➡️ Пропустить", callback_data="admin_promo_dates_skip")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(2, 2, 1, 2, 1)
+    builder.adjust(2, 2, 1, 2, 1, 1, 2)
     return builder.as_markup()
 
 
@@ -1062,8 +1085,9 @@ def create_admin_promo_description_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру шага ввода описания промокода."""
     builder = InlineKeyboardBuilder()
     builder.button(text="➡️ Пропустить", callback_data="admin_promo_desc_skip")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(1)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -1071,8 +1095,9 @@ def create_admin_promo_confirm_keyboard() -> InlineKeyboardMarkup:
     """Строит клавиатуру финального подтверждения создания промокода."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Создать", callback_data="admin_promo_confirm_create")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
     builder.button(text="❌ Отмена", callback_data="admin_cancel")
-    builder.adjust(2)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -1317,7 +1342,7 @@ def create_country_picker_keyboard(
         # странами/транспортами (с тегами вида ru1/de2/fi3), не замена
         # обычного выбора по одной стране, а альтернативный вариант рядом.
         builder.button(text="⚙️ Опытным", callback_data=f"xkeen_unified_{key_id}")
-    builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
+    builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
     builder.adjust(2)
     return builder.as_markup()
 
@@ -1330,7 +1355,7 @@ def create_xkeen_core_keyboard(key_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="☢️ Xray", callback_data=f"xkeen_core_xray_{key_id}")
     builder.button(text="🐱 Mihomo", callback_data=f"xkeen_core_mihomo_{key_id}")
-    builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
+    builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
     builder.adjust(2, 1)
     return builder.as_markup()
 
@@ -1343,7 +1368,7 @@ def create_qr_client_keyboard(key_id: int) -> InlineKeyboardMarkup:
     builder.button(text="☢️ Happ/INCY", callback_data=f"qr_client_sub_{key_id}")
     builder.button(text="🐱 Clash (FlClashX/FlClash)", callback_data=f"qr_client_clash_{key_id}")
     builder.button(text="🗿 Устаревшие (v2RayTun/v2rayNG)", callback_data=f"qr_client_json_{key_id}")
-    builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
+    builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
     builder.adjust(1, 1, 1, 1)
     return builder.as_markup()
 
