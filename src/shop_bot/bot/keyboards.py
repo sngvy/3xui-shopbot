@@ -1341,7 +1341,7 @@ def create_country_picker_keyboard(
         # Отдельная, самостоятельная опция — один файл сразу со всеми
         # странами/транспортами (с тегами вида ru1/de2/fi3), не замена
         # обычного выбора по одной стране, а альтернативный вариант рядом.
-        builder.button(text="⚙️ Опытным", callback_data=f"xkeen_unified_{key_id}")
+        builder.button(text="📦 Все серверы", callback_data=f"xkeen_unified_{key_id}")
     builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
     builder.adjust(2)
     return builder.as_markup()
