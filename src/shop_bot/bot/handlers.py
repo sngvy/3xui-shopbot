@@ -2575,7 +2575,7 @@ def get_user_router() -> Router:
     @user_router.callback_query(F.data.startswith("xkeen_unified_"))
     async def xkeen_unified_handler(callback: types.CallbackQuery):
         """Альтернатива xkeen_pick_country_handler — не отдельный файл на
-        каждый сервер одной страны, а один файл сразу со всеми серверами
+каждый сервер одной страны, а один файл сразу со всеми серверами
         всех стран, с уникальными тегами вида ru1/de2/fi3 (ISO-код страны
         из флага + номер транспорта: 1=tcp+reality, 2=ws, 3=xhttp,
         4=hysteria). Существующий пикер по странам (xkeen_pick_country_handler)
@@ -2600,13 +2600,13 @@ def get_user_router() -> Router:
             outbounds = await _fetch_xkeen_outbounds(connection_string)
         except Exception as e:
             logger.error(
-                f"Ошибка получения подписки для единого файла, ключ {key_id}: {e}",
+                f"Ошибка получения XKeen-подписки для единого файла, ключ {key_id}: {e}",
                 exc_info=True,
             )
             outbounds = None
 
         if not outbounds:
-            await answer_error(callback, "❌ Нет доступных серверов", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
+            await answer_error(callback, "❌ Нет доступных серверов для XKeen", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
             return
 
         used_tags: set[str] = set()
@@ -2641,7 +2641,7 @@ def get_user_router() -> Router:
                 document=document, caption=caption, parse_mode="HTML"
             )
         except Exception as send_err:
-            logger.error(f"Ошибка отправки единого файла для ключа {key_id}: {send_err}")
+            logger.error(f"Ошибка отправки единого XKeen-файла для ключа {key_id}: {send_err}")
             await answer_error(callback, "❌ Не удалось отправить файл. Попробуйте позже", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
 
     # =========================================================================
