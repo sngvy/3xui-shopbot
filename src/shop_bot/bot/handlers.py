@@ -2240,6 +2240,60 @@ def get_user_router() -> Router:
         rest = _TRAILING_NUMBER_RE.sub("", rest).strip()
         return f"{flag} {rest}".strip()
 
+    def _flag_to_iso_code(city_label_with_flag: str) -> str:
+        """ISO-код страны прямо из эмодзи-флага (regional indicator symbols,
+        U+1F1E6..U+1F1FF — кодпоинты смещены от A-Z на фиксированную
+        величину, декодируется точно, без догадок транслитерацией). 🇷🇺 -> ru,
+        🇩🇪 -> de и т.д. Если флага нет (не должно случаться) — запасной
+        вариант "loc".
+
+        Отдельный случай: 🇱🇨 в этом проекте — не Сент-Люсия, а иконка
+        "Автовыбор" (сервер сам решает маршрут) — для неё код "auto", а не
+        декодированные буквы флага."""
+        stripped = city_label_with_flag.strip()
+        m = _FLAG_EMOJI_RE.match(stripped)
+        city_text = stripped[m.end():].strip() if m else stripped
+        if city_text.lower().startswith("автовыбор"):
+            return "auto"
+        if not m:
+            return "loc"
+        flag = m.group(0)
+        letters = "".join(chr(ord(ch) - 0x1F1E6 + ord("A")) for ch in flag)
+        return letters.lower()
+
+    def _xkeen_transport_tier(outbound_item: dict) -> int:
+        """Номер транспорта для тега: 1=tcp+reality, 2=ws+tls, 3=xhttp+reality,
+        4=hysteria — тот же порядок, что уже используется в remark'ах
+        (Премиум / Премиум 2 / Премиум 3 / Вездеход)."""
+        proto = str(outbound_item.get("protocol", "")).lower()
+        if proto.startswith("hysteria"):
+            return 4
+        stream = outbound_item.get("streamSettings") or {}
+        network = str(stream.get("network", "")).lower()
+        if network == "xhttp":
+            return 3
+        if network == "ws":
+            return 2
+        return 1
+
+    def _xkeen_outbound_tag(city_label_with_flag: str, tier: int, used_tags: set[str]) -> str:
+        """Собирает уникальный тег вида {iso_код_страны}{номер_транспорта}
+        (ru1, de2, fi3...). Если в один файл почему-то попали два разных
+        города одной страны (на сегодня в парке такого нет — по одному
+        городу на страну), второй получает числовой суффикс поверх номера
+        транспорта, лишь бы тег остался уникальным."""
+        code = _flag_to_iso_code(city_label_with_flag)
+        tag = f"{code}{tier}"
+        if tag not in used_tags:
+            used_tags.add(tag)
+            return tag
+        n = 2
+        while f"{code}{tier}_{n}" in used_tags:
+            n += 1
+        tag = f"{code}{tier}_{n}"
+        used_tags.add(tag)
+        return tag
+
     def _link_city_label(link: str) -> str | None:
         """То же самое, но для сырой vless://-ссылки — город берём из remark
         после #, с unquote. None, если у ссылки вообще нет remark."""
@@ -2517,6 +2571,78 @@ def get_user_router() -> Router:
 
         if file_counter == 0:
             await answer_error(callback, f"❌ Не нашлось файлов для {target_country}", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
+
+    @user_router.callback_query(F.data.startswith("xkeen_unified_"))
+    async def xkeen_unified_handler(callback: types.CallbackQuery):
+        """Альтернатива xkeen_pick_country_handler — не отдельный файл на
+        каждый сервер одной страны, а ОДИН файл сразу со всеми серверами
+        всех стран, с уникальными тегами вида ru1/de2/fi3 (ISO-код страны
+        из флага + номер транспорта: 1=tcp+reality, 2=ws, 3=xhttp,
+        4=hysteria). Существующий пикер по странам (xkeen_pick_country_handler)
+        это не заменяет, а дополняет — рядом, отдельной кнопкой."""
+        await callback.answer("⏳ Собираю единый файл...")
+        try:
+            key_id = int(callback.data.split("_")[-1])
+        except (ValueError, IndexError):
+            await answer_error(callback, "❌ Некорректный запрос", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
+            return
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        connection_string = await _get_connection_string(callback, key_id)
+        if not connection_string:
+            return
+
+        try:
+            outbounds = await _fetch_xkeen_outbounds(connection_string)
+        except Exception as e:
+            logger.error(
+                f"Ошибка получения XKeen-подписки для единого файла, ключ {key_id}: {e}",
+                exc_info=True,
+            )
+            outbounds = None
+
+        if not outbounds:
+            await answer_error(callback, "❌ Нет доступных серверов для XKeen", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
+            return
+
+        used_tags: set[str] = set()
+        combined_outbounds = []
+        for outbound_item in outbounds:
+            raw_remarks = outbound_item.get("remarks", "Default")
+            city_label = _extract_city_label(raw_remarks)
+            actual_outbounds = outbound_item.get("outbounds", [outbound_item])
+            if not actual_outbounds:
+                continue
+            tier = _xkeen_transport_tier(actual_outbounds[0])
+            tag = _xkeen_outbound_tag(city_label, tier, used_tags)
+            actual_outbounds[0]["tag"] = tag
+            combined_outbounds.append(actual_outbounds[0])
+
+        if not combined_outbounds:
+            await answer_error(callback, "❌ Не удалось собрать единый файл", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
+            return
+
+        unified_config = {"outbounds": combined_outbounds}
+        json_str = json.dumps(unified_config, ensure_ascii=False, indent=2)
+        document = BufferedInputFile(file=json_str.encode("utf-8"), filename="04_outbounds.json")
+        tag_list = ", ".join(o["tag"] for o in combined_outbounds)
+        caption = (
+            "🛜 <b>Единый файл подключения для XKeen (все серверы)</b>\n\n"
+            f"Теги внутри: <code>{tag_list}</code>\n\n"
+            "⚠️ Сохраните этот файл на роутере в папке <code>/etc/xray/configs</code> "
+            "(заменит обычные одиночные файлы) и выполните команду <code>xkeen -restart</code>"
+        )
+        try:
+            await callback.message.answer_document(
+                document=document, caption=caption, parse_mode="HTML"
+            )
+        except Exception as send_err:
+            logger.error(f"Ошибка отправки единого XKeen-файла для ключа {key_id}: {send_err}")
+            await answer_error(callback, "❌ Не удалось отправить файл. Попробуйте позже", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
 
     # =========================================================================
     # Ключи для Podkop: сначала выбор страны, ключ присылается только для неё
