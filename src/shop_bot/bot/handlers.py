@@ -2603,6 +2603,7 @@ def get_user_router() -> Router:
 
         used_tags: set[str] = set()
         combined_outbounds = []
+        service_outbounds: dict[str, dict] = {}
         for outbound_item in outbounds:
             raw_remarks = outbound_item.get("remarks", "Default")
             city_label = _extract_city_label(raw_remarks)
@@ -2613,12 +2614,40 @@ def get_user_router() -> Router:
             tag = _xkeen_outbound_tag(city_label, tier, used_tags)
             actual_outbounds[0]["tag"] = tag
             combined_outbounds.append(actual_outbounds[0])
+            # Служебные outbound'ы (direct/block), которые панель кладёт рядом с каждым
+            # прокси, раньше терялись — в единый файл попадал только первый элемент
+            for extra in actual_outbounds[1:]:
+                extra_tag = extra.get("tag") if isinstance(extra, dict) else None
+                if extra_tag and extra_tag not in service_outbounds:
+                    service_outbounds[extra_tag] = extra
 
         if not combined_outbounds:
             await answer_error(callback, "❌ Не удалось собрать единый файл", reply_markup=keyboards.create_back_to_main_menu_keyboard(), answered=True)
             return
 
-        unified_config = {"outbounds": combined_outbounds}
+        # Как и в одиночных файлах: после прокси идут direct и block (на них ссылается
+        # маршрутизация XKeen). Если панель их не прислала — добавляем стандартные.
+        service_outbounds.setdefault(
+            "direct",
+            {
+                "protocol": "freedom",
+                "settings": {"domainStrategy": "AsIs", "noises": [], "redirect": ""},
+                "tag": "direct",
+            },
+        )
+        service_outbounds.setdefault(
+            "block",
+            {
+                "protocol": "blackhole",
+                "settings": {"response": {"type": "http"}},
+                "tag": "block",
+            },
+        )
+        proxy_tags = {o["tag"] for o in combined_outbounds}
+        unified_config = {
+            "outbounds": combined_outbounds
+            + [o for t, o in service_outbounds.items() if t not in proxy_tags]
+        }
         json_str = json.dumps(unified_config, ensure_ascii=False, indent=2)
         document = BufferedInputFile(file=json_str.encode("utf-8"), filename="04_outbounds.json")
         tag_list = ", ".join(o["tag"] for o in combined_outbounds)
