@@ -2322,6 +2322,49 @@ def get_referrals_for_user(user_id: int) -> list[dict]:
         return []
 
 
+def get_users_keys_and_referrals(user_ids: list[int]) -> tuple[dict[int, list[dict]], dict[int, list[dict]]]:
+    """Ключи и рефералы сразу для списка пользователей — 2 запроса вместо 2 на каждого.
+
+    Возвращает (keys_by_user, referrals_by_user): словари user_id -> список. Порядок
+    внутри списков такой же, как у get_user_keys (по key_id) и get_referrals_for_user
+    (по дате регистрации, новые сверху). Пользователей без записей в словарях нет —
+    брать через .get(uid, []).
+    """
+    keys_by_user: dict[int, list[dict]] = {}
+    refs_by_user: dict[int, list[dict]] = {}
+    ids = [int(u) for u in user_ids if u is not None]
+    if not ids:
+        return keys_by_user, refs_by_user
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # SQLite ограничивает число параметров (по умолчанию 999) — режем на куски
+            for i in range(0, len(ids), 500):
+                chunk = ids[i : i + 500]
+                marks = ",".join("?" * len(chunk))
+                cursor.execute(
+                    f"SELECT * FROM vpn_keys WHERE user_id IN ({marks}) ORDER BY key_id", chunk
+                )
+                for row in cursor.fetchall():
+                    keys_by_user.setdefault(row["user_id"], []).append(dict(row))
+                cursor.execute(
+                    f"""
+                    SELECT telegram_id, username, registration_date, total_spent, referred_by
+                    FROM users
+                    WHERE referred_by IN ({marks})
+                    ORDER BY registration_date DESC
+                    """,
+                    chunk,
+                )
+                for row in cursor.fetchall():
+                    d = dict(row)
+                    refs_by_user.setdefault(d.pop("referred_by"), []).append(d)
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить ключи/рефералов для списка пользователей: {e}")
+    return keys_by_user, refs_by_user
+
+
 def get_all_settings() -> dict:
     """Возвращает все настройки бота в виде словаря."""
     settings = {}
@@ -4403,6 +4446,48 @@ def get_latest_host_metrics(host_name: str) -> dict | None:
     except sqlite3.Error as e:
         logging.error(f"Ошибка при получении новейшей метрики хоста '{host_name}': {e}")
         return None
+
+
+def get_latest_host_metrics_bulk(host_names: list[str]) -> dict[str, dict]:
+    """Самые свежие метрики сразу для списка хостов — один запрос вместо запроса на хост.
+
+    Возвращает словарь {имя хоста (нормализованное, без пробелов по краям): строка метрик}.
+    Хосты без метрик в словаре отсутствуют. Условие по TRIM(host_name) оставлено ровно
+    таким же, как в get_latest_host_metrics — выборка идентична.
+    """
+    names = sorted({normalize_host_name(n).strip() for n in host_names if n} - {""})
+    if not names:
+        return {}
+    result: dict[str, dict] = {}
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            for i in range(0, len(names), 500):
+                chunk = names[i : i + 500]
+                marks = ",".join("?" * len(chunk))
+                cursor.execute(
+                    f"""
+                    SELECT * FROM (
+                        SELECT m.*, TRIM(m.host_name) AS _hn,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY TRIM(m.host_name)
+                                   ORDER BY datetime(m.created_at) DESC, m.id DESC
+                               ) AS _rn
+                        FROM host_metrics m
+                        WHERE TRIM(m.host_name) IN ({marks})
+                    ) WHERE _rn = 1
+                    """,
+                    chunk,
+                )
+                for row in cursor.fetchall():
+                    d = dict(row)
+                    key = d.pop("_hn")
+                    d.pop("_rn", None)
+                    result[key] = d
+    except sqlite3.Error as e:
+        logging.error(f"Ошибка при получении новейших метрик хостов: {e}")
+    return result
 
 
 # --- Button Configs Functions ---
