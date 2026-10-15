@@ -4099,7 +4099,7 @@ def get_admin_router() -> Router:
             return
         await callback.answer()
         await safe_edit_text(callback, 
-            "📣 <b>Кому отправляем рассылку?</b>",
+            "🤔 <b>Кому отправляем рассылку?</b>",
             reply_markup=keyboards.create_broadcast_segment_keyboard(),
             parse_mode="HTML",
         )
