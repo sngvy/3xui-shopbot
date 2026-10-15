@@ -219,6 +219,23 @@ ALL_SETTINGS_KEYS = [
 REDIR_URL = os.getenv("REDIR_URL")
 
 
+def _attach_users_extra(users: list[dict]) -> None:
+    """Добавляет каждому пользователю списка user_keys, referrals и balance.
+
+    Раньше на каждого пользователя страницы шло по 3 запроса (ключи, баланс, рефералы);
+    теперь ключи и рефералы берутся одним батчем на всю страницу, а баланс уже лежит
+    в строке users (колонка balance).
+    """
+    from shop_bot.data_manager.database import get_users_keys_and_referrals
+
+    keys_by_user, refs_by_user = get_users_keys_and_referrals([u["telegram_id"] for u in users])
+    for user in users:
+        uid = user["telegram_id"]
+        user["user_keys"] = keys_by_user.get(uid, [])
+        user["referrals"] = refs_by_user.get(uid, [])
+        user["balance"] = user.get("balance") or 0.0
+
+
 def create_webhook_app(bot_controller_instance):
     """Создаёт и настраивает Flask-приложение (админ-панель + вебхуки платежей)."""
     global _bot_controller
@@ -719,15 +736,7 @@ def create_webhook_app(bot_controller_instance):
 
         users, total = get_users_paginated(page=page, per_page=per_page, q=q or None)
 
-        for user in users:
-            uid = user["telegram_id"]
-            user["user_keys"] = get_user_keys(uid)
-            try:
-                user["balance"] = get_balance(uid)
-                user["referrals"] = get_referrals_for_user(uid)
-            except Exception:
-                user["balance"] = 0.0
-                user["referrals"] = []
+        _attach_users_extra(users)
 
         total_pages = max(1, ceil(total / per_page)) if total else 1
         common_data = get_common_template_data()
@@ -752,15 +761,7 @@ def create_webhook_app(bot_controller_instance):
         from shop_bot.data_manager.database import get_users_paginated
 
         users, total = get_users_paginated(page=page, per_page=per_page, q=q or None)
-        for user in users:
-            uid = user["telegram_id"]
-            user["user_keys"] = get_user_keys(uid)
-            try:
-                user["balance"] = get_balance(uid)
-                user["referrals"] = get_referrals_for_user(uid)
-            except Exception:
-                user["balance"] = 0.0
-                user["referrals"] = []
+        _attach_users_extra(users)
         return render_template("partials/users_table.html", users=users)
 
     @flask_app.route("/users/<int:user_id>/balance/adjust", methods=["POST"])
