@@ -2575,7 +2575,7 @@ def get_user_router() -> Router:
     @user_router.callback_query(F.data.startswith("xkeen_unified_"))
     async def xkeen_unified_handler(callback: types.CallbackQuery):
         """Альтернатива xkeen_pick_country_handler — не отдельный файл на
-каждый сервер одной страны, а один файл сразу со всеми серверами
+        каждый сервер одной страны, а один файл сразу со всеми серверами
         всех стран, с уникальными тегами вида ru1/de2/fi3 (ISO-код страны
         из флага + номер транспорта: 1=tcp+reality, 2=ws, 3=xhttp,
         4=hysteria). Существующий пикер по странам (xkeen_pick_country_handler)
