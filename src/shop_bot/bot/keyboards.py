@@ -1312,6 +1312,11 @@ def create_country_picker_keyboard(
     builder = InlineKeyboardBuilder()
     for idx, country in enumerate(countries):
         builder.button(text=country, callback_data=f"{action}_pick_{key_id}_{idx}")
+    if action == "xkeen":
+        # Отдельная, самостоятельная опция — один файл сразу со всеми
+        # странами/транспортами (с тегами вида ru1/de2/fi3), не замена
+        # обычного выбора по одной стране, а альтернативный вариант рядом.
+        builder.button(text="⚙️ Опытным", callback_data=f"xkeen_unified_{key_id}")
     builder.button(text="❌ Отмена", callback_data="cancel_country_picker")
     builder.adjust(2)
     return builder.as_markup()
