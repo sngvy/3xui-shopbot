@@ -2623,7 +2623,7 @@ def get_user_router() -> Router:
         document = BufferedInputFile(file=json_str.encode("utf-8"), filename="04_outbounds.json")
         tag_list = ", ".join(o["tag"] for o in combined_outbounds)
         caption = (
-            "🛜 <b>Единый файл подключения для XKeen (все серверы)</b>\n\n"
+            "🛜 <b>Единый файл подключения для XKeen</b>\n\n"
             f"Теги внутри: <code>{tag_list}</code>\n\n"
             "⚠️ Сохраните этот файл на роутере в папке <code>/etc/xray/configs</code> "
             "(заменит обычные одиночные файлы) и выполните команду <code>xkeen -restart</code>"
