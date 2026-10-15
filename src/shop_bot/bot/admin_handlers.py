@@ -323,6 +323,7 @@ def get_admin_router() -> Router:
             hosts = []
             try:
                 db_hosts = await asyncio.to_thread(database.get_all_hosts) or []
+                ssh_hosts: list[str] = []
                 for db_h in db_hosts:
                     if isinstance(db_h, dict):
                         name = db_h.get("host_name")
@@ -335,8 +336,14 @@ def get_admin_router() -> Router:
 
                     if not name or not has_ssh:
                         continue
+                    ssh_hosts.append(name)
 
-                    metrics = await asyncio.to_thread(database.get_latest_host_metrics, name) or {}
+                # Метрики всех хостов одним запросом, а не по запросу на хост
+                metrics_by_host = (
+                    await asyncio.to_thread(database.get_latest_host_metrics_bulk, ssh_hosts) or {}
+                )
+                for name in ssh_hosts:
+                    metrics = metrics_by_host.get(database.normalize_host_name(name).strip()) or {}
                     hosts.append(
                         {
                             "host_name": name,
@@ -1098,7 +1105,7 @@ def get_admin_router() -> Router:
         except Exception:
             pass
         if not code or len(code) < 2:
-            await ui_reply(message, state, "❌ Код слишком короткий. Повторите ввод", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, "❌ Код слишком короткий. Повторите ввод", reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"), anchor=_ui_anchor)
             return
         await state.update_data(code=code)
         await state.set_state(PromoCreate.waiting_discount)
@@ -1151,7 +1158,7 @@ def get_admin_router() -> Router:
             await state.update_data(manual_discount_mode="percent")
             await safe_edit_text(callback, 
                 "💯 <b>Введите процент скидки (например, 10). Можно также в формате percent:10</b>",
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"),
                 parse_mode="HTML",
             )
             return
@@ -1159,7 +1166,7 @@ def get_admin_router() -> Router:
             await state.update_data(manual_discount_mode="amount")
             await safe_edit_text(callback, 
                 "💯 <b>Введите фиксированную сумму скидки в ₽ (например, 100). Можно также amount:100</b>",
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"),
                 parse_mode="HTML",
             )
             return
@@ -1213,10 +1220,10 @@ def get_admin_router() -> Router:
             elif manual_mode == "amount" and re.match(r"^\d+(\.\d+)?$", text):
                 amt = float(text)
             else:
-                await ui_reply(message, state, "❌ Формат не распознан. Введите число или percent:10/amount:100", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+                await ui_reply(message, state, "❌ Формат не распознан. Введите число или percent:10/amount:100", reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"), anchor=_ui_anchor)
                 return
         except Exception:
-            await ui_reply(message, state, "❌ Не удалось прочитать число. Повторите ввод", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, "❌ Не удалось прочитать число. Повторите ввод", reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"), anchor=_ui_anchor)
             return
         await state.update_data(
             discount_percent=perc,
@@ -1330,7 +1337,7 @@ def get_admin_router() -> Router:
             await state.update_data(limits_manual_input="total")
             await safe_edit_text(callback, 
                 "🚧 <b>Введите общий лимит (целое число):</b>",
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"),
                 parse_mode="HTML",
             )
             return
@@ -1338,7 +1345,7 @@ def get_admin_router() -> Router:
             await state.update_data(limits_manual_input="per")
             await safe_edit_text(callback, 
                 "🚧 <b>Введите лимит на пользователя (целое число):</b>",
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"),
                 parse_mode="HTML",
             )
             return
@@ -1362,7 +1369,7 @@ def get_admin_router() -> Router:
             if val <= 0:
                 raise ValueError()
         except Exception:
-            await ui_reply(message, state, "❌ Введите положительное целое число", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, "❌ Введите положительное целое число", reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"), anchor=_ui_anchor)
             return
         if manual == "total":
             await state.update_data(usage_limit_total=val, limits_manual_input=None)
@@ -1445,7 +1452,7 @@ def get_admin_router() -> Router:
             await state.set_state(PromoCreate.waiting_custom_days)
             await safe_edit_text(callback, 
                 "📅 <b>Введите число дней действия промокода (например, 14):</b>",
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"),
                 parse_mode="HTML",
             )
             return
@@ -1471,7 +1478,7 @@ def get_admin_router() -> Router:
             if days <= 0 or days > 3650:
                 raise ValueError()
         except Exception:
-            await ui_reply(message, state, "❌ Введите целое число дней (1–3650)", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, "❌ Введите целое число дней (1–3650)", reply_markup=keyboards.create_admin_step_keyboard("admin_promo_back"), anchor=_ui_anchor)
             return
         now = datetime.now()
         vf_iso = now.isoformat()
@@ -1585,6 +1592,75 @@ def get_admin_router() -> Router:
             await ui_reply(message_or_msg, state, text, reply_markup=kb)
 
     # --- Пользователи: список, пагинация, просмотр ---
+    @admin_router.callback_query(StateFilter(PromoCreate), F.data == "admin_promo_back")
+    async def promo_create_back(callback: types.CallbackQuery, state: FSMContext):
+        """«Назад» в мастере создания промокода: возврат на предыдущий шаг, введённое сохраняется."""
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        cur = await state.get_state()
+        data = await state.get_data()
+        P = PromoCreate
+        code = data.get("code") or "—"
+
+        async def _discount():
+            await safe_edit_text(
+                callback,
+                f"🎟️ <b>Код:</b> <code>{code}</code>\n\nУкажите скидку",
+                reply_markup=keyboards.create_admin_promo_discount_keyboard(),
+            )
+            await state.set_state(P.waiting_discount)
+
+        async def _limits():
+            await safe_edit_text(
+                callback,
+                "🚧 <b>Лимиты (опционально)</b>",
+                reply_markup=keyboards.create_admin_promo_limits_type_keyboard(),
+            )
+            await state.set_state(P.waiting_limits)
+
+        async def _dates():
+            await safe_edit_text(
+                callback,
+                "📅 <b>Даты (опционально)</b>",
+                reply_markup=keyboards.create_admin_promo_dates_keyboard(),
+            )
+            await state.set_state(P.waiting_dates)
+
+        async def _description():
+            await safe_edit_text(
+                callback,
+                "ℹ️ <b>Описание (опционально). Введите текст или оставьте пустым:</b>",
+                reply_markup=keyboards.create_admin_promo_description_keyboard(),
+            )
+            await state.set_state(P.waiting_description)
+
+        if cur == P.waiting_code.state:
+            await state.clear()
+            await safe_edit_text(
+                callback,
+                "🎟 <b>Управление промокодами</b>",
+                reply_markup=keyboards.create_admin_promos_menu_keyboard(),
+            )
+        elif cur == P.waiting_discount.state:
+            await safe_edit_text(
+                callback,
+                '⌨️ <b>Введите код промокода (латиница/цифры) или нажмите "Сгенерировать":</b>',
+                reply_markup=keyboards.create_admin_promo_code_keyboard(),
+            )
+            await state.set_state(P.waiting_code)
+        elif cur == P.waiting_limits.state:
+            await _discount()
+        elif cur in (P.waiting_dates.state,):
+            await _limits()
+        elif cur == P.waiting_custom_days.state:
+            await _dates()
+        elif cur == P.waiting_description.state:
+            await _dates()
+        elif cur == P.waiting_confirmation.state:
+            await _description()
+
     @admin_router.callback_query(F.data.startswith("admin_users"))
     async def admin_users_handler(callback: types.CallbackQuery, state: FSMContext):
         if not is_admin(callback.from_user.id):
@@ -2807,7 +2883,7 @@ def get_admin_router() -> Router:
         await state.set_state(AdminGiftKey.picking_days)
         prompt_msg = await safe_edit_text(callback, 
             f"🌍 <b>Сервер: {host_name}. Введите срок действия подписки в днях (целое число):</b>",
-            reply_markup=keyboards.create_admin_cancel_keyboard(),
+            reply_markup=keyboards.create_admin_step_keyboard("admin_gift_back_to_hosts"),
             parse_mode="HTML",
         )
         await state.update_data(prompt_msg_id=prompt_msg.message_id)
@@ -2849,7 +2925,7 @@ def get_admin_router() -> Router:
                         text,
                         chat_id=message.chat.id,
                         message_id=prompt_msg_id,
-                        reply_markup=keyboards.create_admin_cancel_keyboard(),
+                        reply_markup=keyboards.create_admin_step_keyboard("admin_gift_back_to_hosts"),
                         parse_mode="HTML",
                     )
                     return
@@ -2857,7 +2933,7 @@ def get_admin_router() -> Router:
                     if "message is not modified" in str(e).lower():
                         return
             sent_err = await message.answer(
-                text, reply_markup=keyboards.create_admin_cancel_keyboard(), parse_mode="HTML"
+                text, reply_markup=keyboards.create_admin_step_keyboard("admin_gift_back_to_hosts"), parse_mode="HTML"
             )
             await state.update_data(prompt_msg_id=sent_err.message_id)
 
@@ -3063,6 +3139,26 @@ def get_admin_router() -> Router:
                 )
         await _render_user_card(callback.bot, chat_id, None, user_id)
 
+    @admin_router.callback_query(AdminGiftKey.confirming, F.data == "admin_gift_back_to_days")
+    async def admin_gift_back_to_days(callback: types.CallbackQuery, state: FSMContext):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        data = await state.get_data()
+        host_name = data.get("host_name")
+        await state.set_state(AdminGiftKey.picking_days)
+        prompt_msg = await safe_edit_text(
+            callback,
+            f"🌍 <b>Сервер: {host_name}. Введите срок действия подписки в днях (целое число):</b>",
+            reply_markup=keyboards.create_admin_step_keyboard("admin_gift_back_to_hosts"),
+            parse_mode="HTML",
+        )
+        # Экран подтверждения превратился в запрос дней — следим за ним как за prompt
+        await state.update_data(
+            prompt_msg_id=getattr(prompt_msg, "message_id", callback.message.message_id)
+        )
+
     @admin_router.callback_query(AdminGiftKey.confirming, F.data == "admin_gift_cancel")
     async def admin_gift_cancel_handler(callback: types.CallbackQuery, state: FSMContext):
         if not is_admin(callback.from_user.id):
@@ -3118,7 +3214,7 @@ def get_admin_router() -> Router:
         await state.set_state(AdminMainRefill.waiting_for_amount)
         await safe_edit_text(callback, 
             f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму начисления (в рублях):</b>",
-            reply_markup=keyboards.create_admin_cancel_keyboard(),
+            reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
             parse_mode="HTML",
         )
 
@@ -3162,7 +3258,7 @@ def get_admin_router() -> Router:
         await state.set_state(AdminMainRefill.waiting_for_amount)
         await safe_edit_text(callback, 
             f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму начисления (в рублях):</b>",
-            reply_markup=keyboards.create_admin_cancel_keyboard(),
+            reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
             parse_mode="HTML",
         )
 
@@ -3197,7 +3293,7 @@ def get_admin_router() -> Router:
                         text,
                         chat_id=chat_id,
                         message_id=msg_id,
-                        reply_markup=keyboards.create_admin_cancel_keyboard(),
+                        reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
                         parse_mode="HTML",
                     )
                     return
@@ -3205,7 +3301,7 @@ def get_admin_router() -> Router:
                     pass
             await message.answer(
                 text,
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
                 parse_mode="HTML",
             )
             return
@@ -3395,7 +3491,7 @@ def get_admin_router() -> Router:
         await state.set_state(AdminMainDeduct.waiting_for_amount)
         await safe_edit_text(callback, 
             f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму списания (в рублях):</b>",
-            reply_markup=keyboards.create_admin_cancel_keyboard(),
+            reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
             parse_mode="HTML",
         )
 
@@ -3439,7 +3535,7 @@ def get_admin_router() -> Router:
         await state.set_state(AdminMainDeduct.waiting_for_amount)
         await safe_edit_text(callback, 
             f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму списания (в рублях):</b>",
-            reply_markup=keyboards.create_admin_cancel_keyboard(),
+            reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
             parse_mode="HTML",
         )
 
@@ -3472,7 +3568,7 @@ def get_admin_router() -> Router:
                         text,
                         chat_id=chat_id,
                         message_id=msg_id,
-                        reply_markup=keyboards.create_admin_cancel_keyboard(),
+                        reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
                         parse_mode="HTML",
                     )
                     return
@@ -3480,7 +3576,7 @@ def get_admin_router() -> Router:
                     pass
             await message.answer(
                 text,
-                reply_markup=keyboards.create_admin_cancel_keyboard(),
+                reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
                 parse_mode="HTML",
             )
             return
@@ -3578,6 +3674,61 @@ def get_admin_router() -> Router:
         await state.clear()
         await _render_user_card(
             callback.bot, callback.message.chat.id, callback.message.message_id, user_id
+        )
+
+    @admin_router.callback_query(
+        StateFilter(AdminMainRefill.waiting_for_amount, AdminMainDeduct.waiting_for_amount),
+        F.data == "admin_balance_back_card",
+    )
+    async def admin_balance_back_to_card(callback: types.CallbackQuery, state: FSMContext):
+        """«Назад» с ввода суммы — к карточке выбранного пользователя."""
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        data = await state.get_data()
+        user_id = int(data.get("target_user_id"))
+        await state.clear()
+        await _render_user_card(
+            callback.bot, callback.message.chat.id, callback.message.message_id, user_id
+        )
+
+    @admin_router.callback_query(
+        AdminMainRefill.waiting_for_confirm, F.data == "admin_balance_back_amount_add"
+    )
+    async def admin_balance_back_amount_add(callback: types.CallbackQuery, state: FSMContext):
+        """«Назад» с подтверждения начисления — к вводу суммы."""
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        data = await state.get_data()
+        user_id = int(data.get("target_user_id"))
+        await state.set_state(AdminMainRefill.waiting_for_amount)
+        await safe_edit_text(
+            callback,
+            f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму начисления (в рублях):</b>",
+            reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
+            parse_mode="HTML",
+        )
+
+    @admin_router.callback_query(
+        AdminMainDeduct.waiting_for_confirm, F.data == "admin_balance_back_amount_deduct"
+    )
+    async def admin_balance_back_amount_deduct(callback: types.CallbackQuery, state: FSMContext):
+        """«Назад» с подтверждения списания — к вводу суммы."""
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        data = await state.get_data()
+        user_id = int(data.get("target_user_id"))
+        await state.set_state(AdminMainDeduct.waiting_for_amount)
+        await safe_edit_text(
+            callback,
+            f"💰 <b>Пользователь <code>{user_id}</code>. Введите сумму списания (в рублях):</b>",
+            reply_markup=keyboards.create_admin_step_keyboard("admin_balance_back_card"),
+            parse_mode="HTML",
         )
 
     # --- Просмотр ключей на хосте ---
@@ -4050,7 +4201,7 @@ def get_admin_router() -> Router:
                 await message.delete()
             except Exception:
                 pass
-            await ui_reply(message, state, "❌ Ссылка должна начинаться с http:// или https://. Попробуйте еще раз", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, "❌ Ссылка должна начинаться с http:// или https://. Попробуйте еще раз", reply_markup=keyboards.create_broadcast_cancel_keyboard(), anchor=_ui_anchor)
             return
         await state.update_data(button_url=url_to_check)
         try:
@@ -4110,7 +4261,7 @@ def get_admin_router() -> Router:
                 await message.delete()
             except Exception:
                 pass
-            await ui_reply(message, state, "❌ Введите число от 1 до 100 (процент скидки)", reply_markup=keyboards.create_admin_cancel_keyboard(), anchor=_ui_anchor)
+            await ui_reply(message, state, "❌ Введите число от 1 до 100 (процент скидки)", reply_markup=keyboards.create_broadcast_cancel_keyboard(), anchor=_ui_anchor)
             return
         await state.update_data(promo_discount=discount)
         try:
@@ -4160,12 +4311,25 @@ def get_admin_router() -> Router:
             parse_mode="HTML",
         )
 
-        await bot.copy_message(
+        copied = await bot.copy_message(
             chat_id=message.chat.id,
             from_chat_id=original_message.chat.id,
             message_id=original_message.message_id,
             reply_markup=preview_keyboard,
         )
+
+        # Для «Назад»: текст сводки (его потом возвращаем на место экрана «Отложить») и
+        # id копии-превью (её убираем, когда уходим с экрана подтверждения)
+        await state.update_data(
+            bc_summary=summary, bc_preview_copy_id=getattr(copied, "message_id", None)
+        )
+
+        # Если сюда пришли с кнопки, прежний экран бота (с устаревшими кнопками) убираем
+        try:
+            if message.from_user and message.from_user.is_bot:
+                await message.delete()
+        except Exception:
+            pass
 
         await state.set_state(Broadcast.waiting_for_confirmation)
 
@@ -4377,6 +4541,82 @@ def get_admin_router() -> Router:
             reply_markup=keyboards.create_scheduled_broadcast_list_keyboard(display_items),
             parse_mode="HTML",
         )
+
+    @admin_router.callback_query(StateFilter(Broadcast), F.data == "broadcast_back")
+    async def broadcast_back_handler(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+        """«Назад» в мастере рассылки: возврат на предыдущий шаг с сохранением введённого."""
+        await callback.answer()
+        cur = await state.get_state()
+        data = await state.get_data()
+        B = Broadcast
+        seg_all = data.get("segment", "all") == "all"
+
+        async def _button_option_screen():
+            await safe_edit_text(
+                callback,
+                "✅ <b>Сообщение получено. Хотите добавить к нему кнопку со ссылкой?</b>",
+                reply_markup=keyboards.create_broadcast_options_keyboard(),
+            )
+            await state.set_state(B.waiting_for_button_option)
+
+        async def _promo_option_screen():
+            await safe_edit_text(
+                callback,
+                "🎁 <b>Приложить каждому получателю личный одноразовый промокод?</b>\n\n"
+                "Полезно для «забытых» — своя уникальная скидка, которую больше никто не сможет использовать",
+                reply_markup=keyboards.create_broadcast_promo_option_keyboard(),
+            )
+            await state.set_state(B.waiting_for_promo_option)
+
+        if cur == B.waiting_for_message.state:
+            await safe_edit_text(
+                callback,
+                "📣 <b>Кому отправляем рассылку?</b>",
+                reply_markup=keyboards.create_broadcast_segment_keyboard(),
+            )
+            await state.set_state(B.waiting_for_segment)
+        elif cur == B.waiting_for_button_option.state:
+            await _broadcast_ask_message(callback.message, state)
+        elif cur == B.waiting_for_button_text.state:
+            await _button_option_screen()
+        elif cur == B.waiting_for_button_url.state:
+            await safe_edit_text(
+                callback,
+                "✅ <b>Хорошо. Теперь отправьте мне текст для кнопки</b>",
+                reply_markup=keyboards.create_broadcast_cancel_keyboard(),
+            )
+            await state.set_state(B.waiting_for_button_text)
+        elif cur == B.waiting_for_promo_option.state:
+            await _button_option_screen()
+        elif cur == B.waiting_for_promo_discount.state:
+            await _promo_option_screen()
+        elif cur == B.waiting_for_confirmation.state:
+            copy_id = data.get("bc_preview_copy_id")
+            if copy_id:
+                try:
+                    await bot.delete_message(callback.message.chat.id, copy_id)
+                except Exception:
+                    pass
+            if seg_all:
+                await _button_option_screen()
+            else:
+                await _promo_option_screen()
+        elif cur == B.waiting_for_schedule_choice.state:
+            summary = data.get("bc_summary")
+            if summary:
+                await safe_edit_text(
+                    callback, summary, reply_markup=keyboards.create_broadcast_confirmation_keyboard()
+                )
+                await state.set_state(B.waiting_for_confirmation)
+            else:
+                await callback.answer("⚠️ Черновик устарел — начните рассылку заново", show_alert=True)
+        elif cur == B.waiting_for_schedule_custom_time.state:
+            await safe_edit_text(
+                callback,
+                "📅 <b>Когда отправить рассылку?</b>",
+                reply_markup=keyboards.create_broadcast_schedule_presets_keyboard(),
+            )
+            await state.set_state(B.waiting_for_schedule_choice)
 
     @admin_router.callback_query(StateFilter(Broadcast), F.data == "cancel_broadcast")
     async def cancel_broadcast_handler(callback: types.CallbackQuery, state: FSMContext):
