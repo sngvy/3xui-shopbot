@@ -38,7 +38,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from yookassa import Payment
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
@@ -457,7 +456,7 @@ def create_webhook_app(bot_controller_instance):
             ip = request.remote_addr or "unknown"
             wait = _login_wait_seconds(ip)
             if wait:
-                logger.warning(f"Вход в панель заблокирован для {ip}: слишком много неудачных попыток.")
+                logger.warning(f"Вход в панель заблокирован для {ip}: слишком много неудачных попыток")
                 flash(
                     f"Слишком много неудачных попыток входа. Повторите через {ceil(wait / 60)} мин.",
                     "danger",
@@ -493,7 +492,7 @@ def create_webhook_app(bot_controller_instance):
                 return redirect(url_for("dashboard_page"))
 
             _login_register_fail(ip)
-            logger.warning(f"Неудачная попытка входа в панель с адреса {ip}.")
+            logger.warning(f"Неудачная попытка входа в панель с адреса {ip}")
             flash("Неверный логин или пароль", "danger")
         return render_template("login.html")
 
@@ -1194,7 +1193,7 @@ def create_webhook_app(bot_controller_instance):
 
             expiry_ms = int(_dt.fromisoformat(expiry).timestamp() * 1000) if expiry else 0
         except Exception as e:
-            print(f"Ошибка ввода: {e}")
+            logger.error(f"Ошибка ввода: {e}")
             raise SystemExit(1)
 
         if key_type == "gift" and not key_email:
@@ -1223,7 +1222,7 @@ def create_webhook_app(bot_controller_instance):
             result = None
             logger.error(f"create_key_standalone_ajax_route: ошибка панели/хоста: {e}")
         if not result:
-            print("Ошибка: сервер не вернул клиента")
+            logger.error("Сервер не вернул клиента")
             raise SystemExit(1)
 
         new_id = add_new_key(
@@ -1797,7 +1796,7 @@ def create_webhook_app(bot_controller_instance):
                             )
                         else:
                             logger.error(
-                                "Ответ поддержки: support-бот или цикл событий недоступны; сообщение пользователю не отправлено."
+                                "Ответ поддержки: support-бот или цикл событий недоступны; сообщение пользователю не отправлено"
                             )
                     except Exception as e:
                         logger.error(
@@ -1943,7 +1942,7 @@ def create_webhook_app(bot_controller_instance):
                     fut.result(timeout=5)
                 except Exception as e:
                     logger.warning(
-                        f"Удаление темы форума не удалось для тикета {ticket_id} (чат {forum_chat_id}, тема {thread_id}): {e}. Пытаюсь закрыть тему как фолбэк."
+                        f"Удаление темы форума не удалось для тикета {ticket_id} (чат {forum_chat_id}, тема {thread_id}): {e}. Пытаюсь закрыть тему как фолбэк"
                     )
                     try:
                         fut2 = asyncio.run_coroutine_threadsafe(
@@ -1960,7 +1959,7 @@ def create_webhook_app(bot_controller_instance):
                         )
             else:
                 logger.error(
-                    "Удаление тикета: support-бот или цикл событий недоступны, либо отсутствуют forum_chat_id/message_thread_id; тема не удалена."
+                    "Удаление тикета: support-бот или цикл событий недоступны, либо отсутствуют forum_chat_id/message_thread_id; тема не удалена"
                 )
         except Exception as e:
             logger.warning(
@@ -2511,7 +2510,7 @@ def create_webhook_app(bot_controller_instance):
             # нужен доступ к нашему секретному ключу, не просто знание URL.
             payment_id = event_json.get("object", {}).get("id")
             if not payment_id:
-                logger.warning("YooKassa вебхук: в теле нет object.id, игнорирую.")
+                logger.warning("YooKassa вебхук: в теле нет object.id, игнорирую")
                 return "OK", 200
 
             try:
@@ -2523,7 +2522,7 @@ def create_webhook_app(bot_controller_instance):
             if real_payment.status != "succeeded":
                 logger.warning(
                     f"YooKassa вебхук: платёж {payment_id} заявлен как succeeded, "
-                    f"но реальный статус по API — {real_payment.status!r}. Игнорирую."
+                    f"но реальный статус по API — {real_payment.status!r}. Игнорирую"
                 )
                 return "OK", 200
 
@@ -2538,12 +2537,12 @@ def create_webhook_app(bot_controller_instance):
 
             if bot is None or payment_processor is None or not (loop and loop.is_running()):
                 logger.error(
-                    "YooKassa вебхук: бот или цикл событий недоступны, прошу YooKassa повторить позже."
+                    "YooKassa вебхук: бот или цикл событий недоступны, прошу YooKassa повторить позже"
                 )
                 return "Service Unavailable", 503
 
             if not claim_payment("yookassa", payment_id):
-                logger.info(f"YooKassa вебхук: платёж {payment_id} уже обработан, повтор проигнорирован.")
+                logger.info(f"YooKassa вебхук: платёж {payment_id} уже обработан, повтор проигнорирован")
                 return "OK", 200
 
             _schedule_payment(payment_processor, bot, metadata, loop, "yookassa", payment_id)
@@ -2565,7 +2564,7 @@ def create_webhook_app(bot_controller_instance):
             # выдавал оплаченную услугу без реального платежа.
             cryptobot_token = get_setting("cryptobot_token")
             if not cryptobot_token:
-                logger.error("CryptoBot вебхук: cryptobot_token не задан в настройках.")
+                logger.error("CryptoBot вебхук: cryptobot_token не задан в настройках")
                 return "Error", 500
 
             raw_body = request.get_data()
@@ -2574,7 +2573,7 @@ def create_webhook_app(bot_controller_instance):
             expected_signature = hmac.new(secret_key, raw_body, hashlib.sha256).hexdigest()
 
             if not signature_header or not compare_digest(expected_signature, signature_header):
-                logger.warning("CryptoBot вебхук: недействительная подпись.")
+                logger.warning("CryptoBot вебхук: недействительная подпись")
                 return "Forbidden", 403
 
             request_data = request.json
@@ -2586,7 +2585,7 @@ def create_webhook_app(bot_controller_instance):
 
                 if not payload_string:
                     logger.warning(
-                        "CryptoBot вебхук: Получен оплаченный invoice, но payload пустой."
+                        "CryptoBot вебхук: Получен оплаченный invoice, но payload пустой"
                     )
                     return "OK", 200
 
@@ -2617,15 +2616,15 @@ def create_webhook_app(bot_controller_instance):
 
                 if not (bot and loop and loop.is_running()):
                     logger.error(
-                        "CryptoBot вебхук: бот или цикл событий не запущены, прошу повторить позже."
+                        "CryptoBot вебхук: бот или цикл событий не запущены, прошу повторить позже"
                     )
                     return "Service Unavailable", 503
 
                 invoice_id = payload_data.get("invoice_id")
                 if invoice_id is None:
-                    logger.warning("CryptoBot вебхук: в payload нет invoice_id — дедупликация невозможна.")
+                    logger.warning("CryptoBot вебхук: в payload нет invoice_id — дедупликация невозможна")
                 elif not claim_payment("cryptobot", invoice_id):
-                    logger.info(f"CryptoBot вебхук: инвойс {invoice_id} уже обработан, повтор проигнорирован.")
+                    logger.info(f"CryptoBot вебхук: инвойс {invoice_id} уже обработан, повтор проигнорирован")
                     return "OK", 200
 
                 _schedule_payment(payment_processor, bot, metadata, loop, "cryptobot", invoice_id)
@@ -2658,7 +2657,7 @@ def create_webhook_app(bot_controller_instance):
             expected_sign = hashlib.md5(raw_string.encode()).hexdigest()
 
             if not compare_digest(expected_sign, sign):
-                logger.warning("Heleket вебхук: недействительная подпись.")
+                logger.warning("Heleket вебхук: недействительная подпись")
                 return "Forbidden", 403
 
             if data.get("status") in ["paid", "paid_over"]:
@@ -2674,7 +2673,7 @@ def create_webhook_app(bot_controller_instance):
 
                 if not (bot and loop and loop.is_running()):
                     logger.error(
-                        "Heleket вебхук: бот или цикл событий не запущены, прошу повторить позже."
+                        "Heleket вебхук: бот или цикл событий не запущены, прошу повторить позже"
                     )
                     return "Service Unavailable", 503
 
@@ -2684,7 +2683,7 @@ def create_webhook_app(bot_controller_instance):
                     or hashlib.sha256(sorted_data_str.encode()).hexdigest()
                 )
                 if not claim_payment("heleket", dedupe_id):
-                    logger.info(f"Heleket вебхук: платёж {dedupe_id} уже обработан, повтор проигнорирован.")
+                    logger.info(f"Heleket вебхук: платёж {dedupe_id} уже обработан, повтор проигнорирован")
                     return "OK", 200
 
                 _schedule_payment(payment_processor, bot, metadata, loop, "heleket", dedupe_id)
@@ -2703,7 +2702,7 @@ def create_webhook_app(bot_controller_instance):
             secret.encode("utf-8"), expected_secret.encode("utf-8")
         ):
             logger.warning(
-                "TON вебхук: запрос отклонён (ton_webhook_secret не задан в настройках или не совпал)."
+                "TON вебхук: запрос отклонён (ton_webhook_secret не задан в настройках или не совпал)"
             )
             return "Forbidden", 403
 
@@ -2717,7 +2716,7 @@ def create_webhook_app(bot_controller_instance):
                 payment_processor = handlers.process_successful_payment
 
                 if not (bot and loop and loop.is_running()):
-                    logger.error("TON вебхук: бот или цикл событий не запущены, прошу повторить позже.")
+                    logger.error("TON вебхук: бот или цикл событий не запущены, прошу повторить позже")
                     return "Service Unavailable", 503
 
                 for tx in data.get("in_progress_txs", []) + data.get("txs", []):
@@ -3013,7 +3012,7 @@ def create_webhook_app(bot_controller_instance):
     @flask_app.route("/yoomoney-webhook", methods=["POST"])
     def yoomoney_webhook_handler():
         """ЮMoney HTTP уведомление (кнопка/ссылка p2p). Подпись: sha1(notification_type&operation_id&amount&currency&datetime&sender&codepro&notification_secret&label)."""
-        logger.info("🔔 Получен webhook от ЮMoney")
+        logger.info("Получен webhook от ЮMoney")
 
         try:
             form = request.form
@@ -3021,12 +3020,12 @@ def create_webhook_app(bot_controller_instance):
 
             # Проверяем, что это тестовый платеж
             if form.get("codepro") == "true":
-                logger.info("🧪 Игнорируем тестовый платеж (codepro=true)")
+                logger.info("Игнорируем тестовый платёж (codepro=true)")
                 return "OK", 200
 
             secret = get_setting("yoomoney_secret") or ""
             if not secret:
-                logger.error("YooMoney webhook: yoomoney_secret не задан — уведомление отклонено.")
+                logger.error("YooMoney webhook: yoomoney_secret не задан — уведомление отклонено")
                 return "Forbidden", 403
             signature_str = "&".join(
                 [
@@ -3070,7 +3069,7 @@ def create_webhook_app(bot_controller_instance):
                     if bot and label:
                         if not (loop and loop.is_running()):
                             logger.error(
-                                "YooMoney webhook: цикл событий недоступен, прошу повторить позже."
+                                "YooMoney webhook: цикл событий недоступен, прошу повторить позже"
                             )
                             return "Service Unavailable", 503
                         metadata = find_and_complete_pending_transaction(
@@ -3083,7 +3082,7 @@ def create_webhook_app(bot_controller_instance):
                         else:
                             logger.warning(
                                 f"YooMoney webhook: не найдена ожидающая транзакция "
-                                f"по label={label!r}."
+                                f"по label={label!r}"
                             )
                 except Exception as e:
                     logger.error(f"YooMoney webhook: ошибка уведомления бота: {e}")
