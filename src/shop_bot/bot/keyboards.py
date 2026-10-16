@@ -207,7 +207,7 @@ def _build_keyboard_from_db(
 def create_main_menu_keyboard(
     user_keys: list, trial_available: bool, is_admin: bool
 ) -> InlineKeyboardMarkup:
-    """Главное меню: только основное, всё остальное — в подменю «📂 Больше»."""
+    """Главное меню: только основное, всё остальное — в подменю «🧰 Больше»."""
     builder = InlineKeyboardBuilder()
     layout: list[int] = []
 
@@ -245,7 +245,7 @@ def create_main_menu_keyboard(
     layout.append(2)
 
     builder.button(text=(get_setting("btn_support") or "🛟 Поддержка"), callback_data="show_help")
-    builder.button(text="📂 Больше", callback_data="show_more_menu")
+    builder.button(text="🧰 Больше", callback_data="show_more_menu")
     layout.append(2)
 
     if is_admin:
@@ -257,7 +257,7 @@ def create_main_menu_keyboard(
 
 
 def create_more_menu_keyboard() -> InlineKeyboardMarkup:
-    """Подменю «📂 Больше»: второстепенные разделы, вынесенные из главного меню."""
+    """Подменю «🧰 Больше»: второстепенные разделы, вынесенные из главного меню."""
     builder = InlineKeyboardBuilder()
     layout: list[int] = []
 
@@ -1663,7 +1663,7 @@ def create_promo_input_keyboard() -> InlineKeyboardMarkup:
 
 
 def create_back_to_more_keyboard() -> InlineKeyboardMarkup:
-    """Возврат в подменю «📂 Больше»."""
+    """Возврат в подменю «🧰 Больше»."""
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅️ Назад", callback_data="show_more_menu")
     builder.adjust(1)
