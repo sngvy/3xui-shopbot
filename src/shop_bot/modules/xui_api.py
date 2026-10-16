@@ -192,7 +192,7 @@ def add_client_robust(
             if attempt > 1 and "Duplicate email" in str(e):
                 logger.info(
                     f"add_client_robust: {email_for_check} — Duplicate email на повторной "
-                    f"попытке (inbound={inbound_id}), считаю успехом предыдущей попытки."
+                    f"попытке (inbound={inbound_id}), считаю успехом предыдущей попытки"
                 )
                 return True
             if not isinstance(e, json.JSONDecodeError):
@@ -212,7 +212,7 @@ def add_client_robust(
                 if email_for_check.strip().lower() in live_emails:
                     logger.info(
                         f"add_client_robust: {email_for_check} уже есть на панели "
-                        f"(inbound={inbound_id}) после пустого ответа — считаю успехом."
+                        f"(inbound={inbound_id}) после пустого ответа — считаю успехом"
                     )
                     return True
             except Exception:
@@ -881,7 +881,7 @@ def find_and_remove_client_from_other_inbounds(
             if not client_uuid:
                 logger.warning(
                     f"Обнаружен клиент '{email}' на inbound {inbound.id}, "
-                    f"но у него отсутствует 'id'/'auth' (UUID). Удаление пропущено."
+                    f"но у него отсутствует 'id'/'auth' (UUID). Удаление пропущено"
                 )
                 continue
 
@@ -912,9 +912,9 @@ def find_and_remove_client_from_other_inbounds(
         # 4. Итоговый результат
         # -------------------------------------------------------------------------
         if found_and_removed:
-            logger.info(f"Очистка дубликатов email '{email}' завершена успешно.")
+            logger.info(f"Очистка дубликатов email '{email}' завершена успешно")
         else:
-            logger.debug(f"Дубликатов email '{email}' на других inbound'ах не обнаружено.")
+            logger.debug(f"Дубликатов email '{email}' на других inbound'ах не обнаружено")
 
         # Возвращаем True, если не было критических ошибок удаления
         return not has_errors
@@ -1411,7 +1411,7 @@ def _create_or_update_key_on_host_sync(
                 elif canonical_email is not None and current_clone_email != canonical_email:
                     logger.warning(
                         f"Не удалось нормализовать номер клона {current_clone_email} -> {canonical_email}: "
-                        f"канонический email уже занят кем-то другим на панели."
+                        f"канонический email уже занят кем-то другим на панели"
                     )
 
                 # Синхронизируем токен подписки
@@ -1478,7 +1478,7 @@ def _create_or_update_key_on_host_sync(
                     # логируем и пропускаем этот инбаунд
                     logger.error(
                         f"Не удалось создать клон {sync_email}: "
-                        f"канонический email уже занят кем-то другим на панели (orphaned-запись?)."
+                        f"канонический email уже занят кем-то другим на панели (orphaned-запись?)"
                     )
                     continue
 
@@ -1525,22 +1525,22 @@ def _create_or_update_key_on_host_sync(
             # реплицировать было попросту нечего
             logger.info(
                 f"Репликация клиента {final_master_email}: "
-                f"нет инбаундов для клонирования (метки 🌍/🏳️ не найдены), пропущено."
+                f"нет инбаундов для клонирования (метки 🌍/🏳️ не найдены), пропущено"
             )
         elif created_count and updated_count:
             logger.info(
                 f"Репликация клиента {final_master_email} завершена успешно. "
-                f"Создано новых клонов: {created_count}, обновлено существующих: {updated_count}."
+                f"Создано новых клонов: {created_count}, обновлено существующих: {updated_count}"
             )
         elif created_count:
             logger.info(
                 f"Репликация клиента {final_master_email} завершена успешно. "
-                f"Создано новых клонов: {created_count}."
+                f"Создано новых клонов: {created_count}"
             )
         else:
             logger.info(
                 f"Репликация клиента {final_master_email} завершена успешно. "
-                f"Обновлено существующих клонов: {updated_count} (новых клонов не потребовалось)."
+                f"Обновлено существующих клонов: {updated_count} (новых клонов не потребовалось)"
             )
 
     except Exception as e:
@@ -1680,7 +1680,7 @@ async def rename_client_email_on_host(host_name: str, old_email: str, new_email:
     """Асинхронная обёртка над _rename_client_email_on_host_sync (см. docstring)."""
     host_data = await asyncio.to_thread(get_host, host_name)
     if not host_data:
-        logger.error(f"Сервер '{host_name}' не найден в конфигурации (переименование {old_email}).")
+        logger.error(f"Сервер '{host_name}' не найден в конфигурации (переименование {old_email})")
         return False
 
     old_key = old_email.strip().lower()
@@ -1783,7 +1783,7 @@ async def create_or_update_key_on_host(
     # -------------------------------------------------------------------------
     host_data = await asyncio.to_thread(get_host, host_name)
     if not host_data:
-        logger.error(f"Сервер '{host_name}' не найден в конфигурации.")
+        logger.error(f"Сервер '{host_name}' не найден в конфигурации")
         return None
 
     email_key = email.strip().lower()
@@ -1791,7 +1791,7 @@ async def create_or_update_key_on_host(
         logger.warning(
             f"create_or_update_key_on_host: {email_key} уже обрабатывается прямо "
             f"сейчас (повторный вызов) — пропуск во избежание параллельного прохода "
-            f"репликации по тому же ключу."
+            f"репликации по тому же ключу"
         )
         return None
 
@@ -1882,7 +1882,7 @@ async def create_or_update_key_on_host(
             f"Фоновый поток продолжает работать в фоне — host_lock и "
             f"emails_in_transition снимутся автоматически ровно в момент его "
             f"реального завершения (см. add_done_callback), а не сейчас. Повторные "
-            f"вызовы для этого email до этого момента будут честно отклоняться."
+            f"вызовы для этого email до этого момента будут честно отклоняться"
         )
         return None
 
@@ -2105,7 +2105,7 @@ def _delete_client_on_host_sync(host_data: dict, host_name: str, client_email: s
         if not client_uuid:
             logger.warning(
                 f"UUID клиента для email {client_email} не найден в БД. "
-                f"Удаление будет выполнено только по email (могут остаться клоны с другим email)."
+                f"Удаление будет выполнено только по email (могут остаться клоны с другим email)"
             )
 
         # Выделяем чистый префикс мастера для гарантированного поиска клонов по email
@@ -2192,7 +2192,7 @@ def _delete_client_on_host_sync(host_data: dict, host_name: str, client_email: s
             logger.warning(
                 f"Клиент {client_email} (UUID {client_uuid}) не найден ни на одном "
                 f"инбаунде — в БД есть, на панели нет. Возможен рассинхрон, стоит "
-                f"проверить эту запись вручную, а не считать удаление тривиальным no-op."
+                f"проверить эту запись вручную, а не считать удаление тривиальным no-op"
             )
         else:
             logger.info(
@@ -2246,14 +2246,14 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
     # -------------------------------------------------------------------------
     host_data = await asyncio.to_thread(get_host, host_name)
     if not host_data:
-        logger.error(f"Удаление невозможно: сервер '{host_name}' не найден в конфигурации.")
+        logger.error(f"Удаление невозможно: сервер '{host_name}' не найден в конфигурации")
         return False
 
     email_key = client_email.strip().lower()
     if email_key in emails_in_transition:
         logger.warning(
             f"delete_client_on_host: {email_key} уже обрабатывается прямо сейчас "
-            f"(создание/продление) — пропуск удаления во избежание гонки. Повторите позже."
+            f"(создание/продление) — пропуск удаления во избежание гонки. Повторите позже"
         )
         return False
 
@@ -2298,7 +2298,7 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
             f"Таймаут при удалении клиента {client_email} на хосте {host_name}. "
             f"Фоновый поток продолжает работать в фоне — host_lock и "
             f"emails_in_transition снимутся автоматически ровно в момент его "
-            f"реального завершения."
+            f"реального завершения"
         )
         return False
 
@@ -2429,6 +2429,6 @@ def delete_client_robust(
             logger.warning(
                 f"delete_client_robust: {email_lower} похоже на известный баг 3X-UI "
                 f"(client_traffics потерялся, панель на любой идентификатор отвечает "
-                f"record not found) — автоматического обхода нет, нужна ручная разборка."
+                f"record not found) — автоматического обхода нет, нужна ручная разборка"
             )
         return False
