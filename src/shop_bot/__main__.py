@@ -159,7 +159,7 @@ def main():
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda sig=sig: asyncio.create_task(shutdown(sig, loop)))
 
-        # Баннер Flask (" * Serving Flask app …") печатается через click.echo мимо
+        # Баннер Flask печатается через click.echo мимо
         # логгера — глушим, чтобы в логах контейнера не было строк другого формата
         try:
             from flask import cli as _flask_cli
