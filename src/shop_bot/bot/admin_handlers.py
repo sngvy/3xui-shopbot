@@ -2037,13 +2037,13 @@ def get_admin_router() -> Router:
         host = key.get("host_name") or "—"
         try:
             await safe_edit_text(callback, 
-                f"🗑️ <b>Вы уверены, что хотите удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
+                f"🗑️ <b>Удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
                 reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id),
             )
         except Exception as e:
             logger.debug(f"Не удалось изменить текст в запросе на удаление ключа № {key_id}: {e}")
             await callback.message.answer(
-                f"🗑️ <b>Вы уверены, что хотите удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
+                f"🗑️ <b>Удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}",
                 reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id),
             )
 
@@ -2131,11 +2131,28 @@ def get_admin_router() -> Router:
             f"🆔 <b>Email:</b> <code>{new_key.get('key_email') or '—'}</code>\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
         )
-        await ui_reply(message, state, f"✅ Подписка продлена на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
+        expiry_str = format_dt_for_display(new_key.get('expiry_date')) if new_key else "—"
+        await ui_reply(
+            message, state,
+            f"✅ <b>Подписка № {key_id} продлена</b>\n\n"
+            f"➕ <b>Добавлено:</b> {days} дн.\n"
+            f"📅 <b>Истекает:</b> {expiry_str}",
+            reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor,
+        )
         await ui_reply(message, state, text, reply_markup=keyboards.create_admin_key_actions_keyboard(
                 key_id,
                 (int(new_key.get("user_id")) if new_key and new_key.get("user_id") else None),
             ), anchor=_ui_anchor)
+        # Уведомление пользователю
+        try:
+            await message.bot.send_message(
+                int(key.get("user_id")),
+                f"📅 <b>Администратор продлил вашу подписку № {key_id}</b>\n\n"
+                f"➕ <b>Добавлено:</b> {days} дн.\n"
+                f"📅 <b>Истекает:</b> {expiry_str}",
+            )
+        except Exception:
+            pass
 
     # --- Уменьшение срока конкретного ключа из карточки (полная аналогия
     # с продлением выше, отличие только в знаке days_to_add) ---
@@ -2227,11 +2244,28 @@ def get_admin_router() -> Router:
             f"🆔 <b>Email:</b> <code>{new_key.get('key_email') or '—'}</code>\n"
             f"📅 <b>Истекает:</b> {format_dt_for_display(new_key.get('expiry_date'))}\n"
         )
-        await ui_reply(message, state, f"✅ Срок подписки уменьшен на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
+        expiry_str = format_dt_for_display(new_key.get('expiry_date')) if new_key else "—"
+        await ui_reply(
+            message, state,
+            f"➖ <b>Срок подписки № {key_id} уменьшен</b>\n\n"
+            f"➖ <b>Убрано:</b> {days} дн.\n"
+            f"📅 <b>Истекает:</b> {expiry_str}",
+            reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor,
+        )
         await ui_reply(message, state, text, reply_markup=keyboards.create_admin_key_actions_keyboard(
                 key_id,
                 (int(new_key.get("user_id")) if new_key and new_key.get("user_id") else None),
             ), anchor=_ui_anchor)
+        # Уведомление пользователю
+        try:
+            await message.bot.send_message(
+                int(key.get("user_id")),
+                f"➖ <b>Администратор уменьшил срок вашей подписки № {key_id}</b>\n\n"
+                f"➖ <b>Убрано:</b> {days} дн.\n"
+                f"📅 <b>Истекает:</b> {expiry_str}",
+            )
+        except Exception:
+            pass
 
     # --- Управление администраторами: добавить админа ---
     class AdminAddAdmin(StatesGroup):
@@ -2494,8 +2528,9 @@ def get_admin_router() -> Router:
         if ok_db:
             # Итог и обновлённый список — одним экраном (раньше было два сообщения)
             status_note = (
-                "✅ Подписка удалена"
-                + (" (с сервера тоже)" if ok_host else " (но удалить на сервере не удалось)")
+                f"🗑️ <b>Подписка № {key_id} удалена</b>\n\n"
+                "🗺️ <b>На сервере:</b> "
+                + ("удалена" if ok_host else "⚠️ не удалось удалить, проверьте вручную")
             )
             keys = await asyncio.to_thread(get_keys_for_user, user_id)
             await safe_edit_text(
@@ -2508,7 +2543,9 @@ def get_admin_router() -> Router:
             try:
                 await callback.bot.send_message(
                     user_id,
-                    "ℹ️ <b>Администратор удалил одну из ваших подписок. Если это ошибка — напишите в поддержку</b>",
+                    f"🗑️ <b>Администратор удалил вашу подписку № {key_id}</b>\n\n"
+                    f"🗺️ <b>Сервер:</b> {host or '—'}\n\n"
+                    "Если это ошибка — напишите в поддержку",
                     reply_markup=keyboards.create_support_keyboard(),
                 )
             except Exception:
@@ -2601,8 +2638,8 @@ def get_admin_router() -> Router:
         # -------------------------------------------------------------------------
         await safe_edit_text(callback, 
             f"🌍 <b>Выберите новый сервер для переноса подписки № {key_id}:</b>\n\n"
-            f"👤 <b>Владелец</b>: <code>{key_data.get('user_id')}</code>\n"
-            f"🗺️ <b>Текущий сервер</b>: {current_host or 'Не указан'}",
+            f"👤 <b>Владелец:</b> <code>{key_data.get('user_id')}</code>\n"
+            f"🗺️ <b>Текущий сервер:</b> {current_host or 'Не указан'}",
             reply_markup=keyboards.create_host_selection_keyboard(hosts, action=f"adm_sw-{key_id}"),
             parse_mode="HTML",
         )
@@ -2719,7 +2756,7 @@ def get_admin_router() -> Router:
                 if details and details.get("connection_string"):
                     connection_string = details["connection_string"]
                     await delete_and_send(callback.message, 
-                        text=f"✅ <b>Подписка № {key_id} перенесена!</b>\n\n"
+                        text=f"✅ <b>Подписка № {key_id} перенесена</b>\n\n"
                         f"🗺️ <b>Новый сервер:</b> {new_host_name}\n"
                         f"🆔 <b>UUID:</b> <code>{result['client_uuid']}</code>\n\n"
                         f"🔗 <b>Новая подписка:</b>\n<code>{connection_string}</code>",
@@ -2727,11 +2764,11 @@ def get_admin_router() -> Router:
                     )
                 else:
                     await delete_and_send(callback.message, 
-                        f"✅ Готово! Подписка № {key_id} перенесена на {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
+                        f"✅ <b>Подписка № {key_id} перенесена</b>\n\n🗺️ <b>Новый сервер:</b> {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
                     )
             except Exception:
                 await delete_and_send(callback.message, 
-                    f"✅ Готово! Подписка № {key_id} перенесена на {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
+                    f"✅ <b>Подписка № {key_id} перенесена</b>\n\n🗺️ <b>Новый сервер:</b> {new_host_name}", reply_markup=keyboards.create_admin_back_keyboard()
                 )
 
             # -------------------------------------------------------------------------
@@ -2757,7 +2794,7 @@ def get_admin_router() -> Router:
                 exc_info=True,
             )
             await delete_and_send(callback.message, 
-                f"❌ Произошла ошибка при переносе подписки:\n<code>{e}</code>",
+                f"❌ <b>Не удалось перенести подписку</b>\n\n🛑 <b>Ошибка:</b> <code>{e}</code>",
                 parse_mode="HTML", reply_markup=keyboards.create_admin_back_keyboard(),
             )
 
@@ -2882,7 +2919,7 @@ def get_admin_router() -> Router:
         await state.update_data(host_name=host_name)
         await state.set_state(AdminGiftKey.picking_days)
         prompt_msg = await safe_edit_text(callback, 
-            f"🌍 <b>Сервер: {host_name}. Введите срок действия подписки в днях (целое число):</b>",
+            f"🌍 <b>Сервер:</b> {host_name}\n\n📅 <b>Введите срок действия подписки в днях (целое число):</b>",
             reply_markup=keyboards.create_admin_step_keyboard("admin_gift_back_to_hosts"),
             parse_mode="HTML",
         )
@@ -2918,7 +2955,7 @@ def get_admin_router() -> Router:
                 await message.delete()
             except Exception:
                 pass
-            text = f"{note}\n\n🌍 <b>Сервер: {host_name}. Введите срок действия подписки в днях (целое число):</b>"
+            text = f"{note}\n\n🌍 <b>Сервер:</b> {host_name}\n\n📅 <b>Введите срок действия подписки в днях (целое число):</b>"
             if prompt_msg_id:
                 try:
                     await message.bot.edit_message_text(
@@ -2966,7 +3003,12 @@ def get_admin_router() -> Router:
         await state.update_data(days=days)
         await state.set_state(AdminGiftKey.confirming)
         sent = await message.answer(
-            f"⚠️ <b>Выдать подписку пользователю <code>{user_id}</code> на сервере {host_name} на {days} дн.?</b>",
+            (
+                "🪄 <b>Выдать подписку?</b>\n\n"
+                f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
+                f"🗺️ <b>Сервер:</b> {host_name}\n"
+                f"📅 <b>Срок:</b> {days} дн."
+            ),
             reply_markup=keyboards.create_admin_gift_confirm_keyboard(),
             parse_mode="HTML",
         )
@@ -3035,8 +3077,11 @@ def get_admin_router() -> Router:
         if key_id:
             user_part = f"<code>{user_id}</code> ({format_stored_username(user.get('username'), linked=False)})"
             text_admin = (
-                f"✅ Подписка № {key_id} выдана пользователю {user_part} (сервер: {host_name}, {days} дн.)\n"
-                f"🆔 Email: <code>{generated_email}</code>"
+                f"✅ <b>Подписка № {key_id} выдана</b>\n\n"
+                f"👤 <b>Пользователь:</b> {user_part}\n"
+                f"🗺️ <b>Сервер:</b> {host_name}\n"
+                f"📅 <b>Срок:</b> {days} дн.\n"
+                f"🆔 <b>Email:</b> <code>{generated_email}</code>"
             )
             try:
                 await delete_and_send(
@@ -3150,7 +3195,7 @@ def get_admin_router() -> Router:
         await state.set_state(AdminGiftKey.picking_days)
         prompt_msg = await safe_edit_text(
             callback,
-            f"🌍 <b>Сервер: {host_name}. Введите срок действия подписки в днях (целое число):</b>",
+            f"🌍 <b>Сервер:</b> {host_name}\n\n📅 <b>Введите срок действия подписки в днях (целое число):</b>",
             reply_markup=keyboards.create_admin_step_keyboard("admin_gift_back_to_hosts"),
             parse_mode="HTML",
         )
@@ -4016,7 +4061,7 @@ def get_admin_router() -> Router:
         email = key.get("key_email") or "—"
         host = key.get("host_name") or "—"
         await state.clear()
-        await ui_reply(message, state, f"🗑 <b>Подтвердите удаление подписки № {key_id}</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}", reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id), anchor=_ui_anchor)
+        await ui_reply(message, state, f"🗑️ <b>Удалить подписку № {key_id}?</b>\n\n🆔 <b>Email:</b> <code>{email}</code>\n🗺️ <b>Сервер:</b> {host}", reply_markup=keyboards.create_admin_delete_key_confirm_keyboard(key_id), anchor=_ui_anchor)
 
     # --- Продление ключа на N дней ---
     class AdminExtendKey(StatesGroup):
@@ -4082,12 +4127,22 @@ def get_admin_router() -> Router:
         except Exception as e:
             logger.error(f"Продление: не удалось обновить БД для ключа № {key_id}: {e}")
         await state.clear()
-        await ui_reply(message, state, f"✅ Подписка № {key_id} продлена на {days} дн.", reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor)
+        new_key = await asyncio.to_thread(get_key_by_id, key_id)
+        expiry_str = format_dt_for_display(new_key.get('expiry_date')) if new_key else "—"
+        await ui_reply(
+            message, state,
+            f"✅ <b>Подписка № {key_id} продлена</b>\n\n"
+            f"➕ <b>Добавлено:</b> {days} дн.\n"
+            f"📅 <b>Истекает:</b> {expiry_str}",
+            reply_markup=keyboards.create_admin_back_keyboard(), anchor=_ui_anchor,
+        )
         # Попробуем уведомить пользователя
         try:
             await message.bot.send_message(
                 int(key.get("user_id")),
-                f"ℹ️ Администратор продлил вашу подписку № {key_id} на {days} дн.",
+                f"📅 <b>Администратор продлил вашу подписку № {key_id}</b>\n\n"
+                f"➕ <b>Добавлено:</b> {days} дн.\n"
+                f"📅 <b>Истекает:</b> {expiry_str}",
             )
         except Exception:
             pass
