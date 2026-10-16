@@ -5745,7 +5745,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                 if admin_id:
                     await bot.send_message(
                         admin_id,
-                        f"📥 Пополнение: пользователь <code>{user_id}</code>, сумма {float(price):.2f} ₽",
+                            "📥 <b>Пополнение</b>\n\n"
+                            f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
+                            f"💰 <b>Сумма:</b> {float(price):.2f} ₽",
                     )
         except Exception:
             pass
