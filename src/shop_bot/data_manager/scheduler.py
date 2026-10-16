@@ -2158,6 +2158,28 @@ async def _sync_grace_inbound_for_host(
                 logger.warning(f"[{host_name}] Не удалось создать grace-клиента {grace_email}: {e}")
         else:
             grace_enable_current = bool(getattr(grace_client, "enable", True))
+            if desired_grace_enable and not grace_enable_current:
+                # Лимит трафика grace-клиента исчерпан (или его срок вышел на панели):
+                # панель сама отключает такого клиента и перезапускает Xray. Если
+                # включать его обратно на каждом проходе шедулера, получится цикл
+                # «включили -> панель отключила -> рестарт Xray» каждые 5 минут.
+                stat = next(
+                    (
+                        st
+                        for st in (getattr(grace_inbound, "client_stats", None) or [])
+                        if str(getattr(st, "email", "")).strip().lower() == grace_email
+                    ),
+                    None,
+                )
+                if stat is not None:
+                    st_total = int(getattr(stat, "total_gb", 0) or getattr(stat, "total", 0) or 0)
+                    st_used = int(getattr(stat, "up", 0) or 0) + int(getattr(stat, "down", 0) or 0)
+                    if st_total > 0 and st_used >= st_total:
+                        logger.debug(
+                            f"[{host_name}] Grace-клиент {grace_email}: лимит трафика исчерпан "
+                            f"({st_used}/{st_total}), повторно не включаю"
+                        )
+                        continue
             if grace_enable_current != desired_grace_enable:
                 try:
                     grace_client.enable = desired_grace_enable
