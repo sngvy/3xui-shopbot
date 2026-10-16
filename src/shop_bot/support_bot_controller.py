@@ -44,7 +44,7 @@ class SupportBotController:
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         """Сохраняет ссылку на event loop, в котором будет работать support-бот."""
         self._loop = loop
-        logger.info("Цикл событий установлен.")
+        logger.info("Цикл событий установлен")
 
     def get_bot_instance(self) -> Bot | None:
         """Возвращает текущий экземпляр support-бота или None, если он не запущен."""
@@ -57,7 +57,7 @@ class SupportBotController:
             try:
                 await self._dp.start_polling(self._bot)
             except asyncio.CancelledError:
-                logger.info("Опрос остановлен (задача отменена).")
+                logger.info("Опрос остановлен (задача отменена)")
                 break
             except Exception as e:
                 logger.error(f"Ошибка во время опроса: {e}", exc_info=True)
@@ -66,7 +66,7 @@ class SupportBotController:
                 if not self._is_running:
                     break
 
-        logger.info("Опрос корректно остановлен.")
+        logger.info("Опрос корректно остановлен")
         self._is_running = False
         self._task = None
         if self._bot:
@@ -103,7 +103,7 @@ class SupportBotController:
             if proxy_url:
                 logger.info(f"Используется прокси из .env: {proxy_url}")
             else:
-                logger.info("Прокси не задан, запуск напрямую.")
+                logger.info("Прокси не задан, запуск напрямую")
 
             self._bot = Bot(
                 token=token,
@@ -136,7 +136,7 @@ class SupportBotController:
                 logger.warning(f"Не удалось удалить вебхук перед запуском опроса: {e}")
 
             self._task = asyncio.run_coroutine_threadsafe(self._start_polling(), self._loop)
-            logger.info("Команда на запуск передана в цикл событий.")
+            logger.info("Команда на запуск передана в цикл событий")
             return {
                 "status": "success",
                 "message": "Команда на запуск support-бота отправлена.",
@@ -179,4 +179,4 @@ class SupportBotController:
         if result["status"] == "error":
             logger.error(f"Автозапуск support-бота не удался: {result['message']}")
         else:
-            logger.info("Автозапуск support-бота: команда успешно передана в цикл событий.")
+            logger.info("Автозапуск support-бота: команда успешно передана в цикл событий")

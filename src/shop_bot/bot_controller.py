@@ -38,7 +38,7 @@ class BotController:
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         """Сохраняет ссылку на event loop, в котором будет работать бот."""
         self._loop = loop
-        logger.info("Цикл событий установлен.")
+        logger.info("Цикл событий установлен")
 
     def get_bot_instance(self) -> Bot | None:
         """Возвращает текущий экземпляр Bot или None, если бот не запущен."""
@@ -46,14 +46,14 @@ class BotController:
 
     async def _start_polling(self):
         self._is_running = True
-        logger.info("Запущен опрос Telegram (Основной-бот).")
+        logger.info("Запущен опрос Telegram (Основной-бот)")
 
         try:
             while self._is_running:
                 try:
                     await self._dp.start_polling(self._bot)
                 except asyncio.CancelledError:
-                    logger.info("Опрос остановлен (задача отменена).")
+                    logger.info("Опрос остановлен (задача отменена)")
                     break
                 except Exception as e:
                     logger.error(f"Ошибка во время опроса: {e}", exc_info=True)
@@ -67,7 +67,7 @@ class BotController:
                 exc_info=True,
             )
         finally:
-            logger.info("Опрос корректно остановлен.")
+            logger.info("Опрос корректно остановлен")
             self._is_running = False
             self._task = None
             if self._bot:
@@ -102,7 +102,7 @@ class BotController:
             if proxy_url:
                 logger.info(f"Используется прокси из .env: {proxy_url}")
             else:
-                logger.info("Прокси не задан, запуск напрямую.")
+                logger.info("Прокси не задан, запуск напрямую")
 
             self._bot = Bot(
                 token=token,
@@ -191,7 +191,7 @@ class BotController:
             handlers.ADMIN_ID = admin_id
 
             self._task = asyncio.run_coroutine_threadsafe(self._start_polling(), self._loop)
-            logger.info("Команда на запуск передана в цикл событий.")
+            logger.info("Команда на запуск передана в цикл событий")
             return {
                 "status": "success",
                 "message": "Команда на запуск бота отправлена.",
@@ -230,4 +230,4 @@ class BotController:
         if result["status"] == "error":
             logger.error(f"Автозапуск не удался: {result['message']}")
         else:
-            logger.info("Автозапуск: команда успешно передана в цикл событий.")
+            logger.info("Автозапуск: команда успешно передана в цикл событий")

@@ -32,7 +32,9 @@ def main():
         except Exception:
             pass
 
-    # Colored, concise logging formatter
+    # Единый формат логов контейнера:
+    #   2026-10-16 16:27:05 [INFO] shop_bot.data_manager.scheduler: текст
+    # Цветом подсвечивается только уровень [LEVEL].
     class ColoredFormatter(logging.Formatter):
         COLORS = {
             "DEBUG": "\x1b[36m",  # Cyan
@@ -43,19 +45,19 @@ def main():
         }
         RESET = "\x1b[0m"
 
+        def __init__(self) -> None:
+            super().__init__(
+                fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+
         def format(self, record: logging.LogRecord) -> str:
-            level = record.levelname
-            color = self.COLORS.get(level, "")
-            reset = self.RESET if color else ""
-            # Compact example: [12:34:56] [INFO] Message
-            fmt = "%(asctime)s [%(levelname)s] %(message)s"
-            # Time only
-            datefmt = "%H:%M:%S"
-            base = logging.Formatter(fmt=fmt, datefmt=datefmt)
-            msg = base.format(record)
+            msg = super().format(record)
+            color = self.COLORS.get(record.levelname, "")
             if color:
-                # Color only the [LEVEL] part
-                msg = msg.replace(f"[{level}]", f"{color}[{level}]{reset}")
+                tag = f"[{record.levelname}]"
+                # Красим только первое вхождение (сам уровень), не текст сообщения
+                msg = msg.replace(tag, f"{color}{tag}{self.RESET}", 1)
             return msg
 
     root = logging.getLogger()
@@ -112,7 +114,7 @@ def main():
 
     # Навешиваем фильтр только на aiogram.event
     aio_event_logger.addFilter(RussianizeAiogramFilter())
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger("shop_bot.__main__")
 
     # ВАЖНО: сначала инициализируем базу данных, чтобы таблицы (включая bot_settings) были созданы
     try:
@@ -120,10 +122,10 @@ def main():
         database.initialize_db()
     except database.DatabaseCorruptedError as e:
         logger.critical(
-            f"База данных повреждена ({e}). Восстановите users.db из бэкапа и перезапустите."
+            f"База данных повреждена ({e}). Восстановите users.db из бэкапа и перезапустите"
         )
         sys.exit(78)
-    logger.info("Проверка инициализации базы данных завершена.")
+    logger.info("Проверка инициализации базы данных завершена")
 
     # Импортируем модули, которые косвенно тянут handlers.py, только после инициализации БД
     from shop_bot.bot_controller import BotController
@@ -157,6 +159,15 @@ def main():
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda sig=sig: asyncio.create_task(shutdown(sig, loop)))
 
+        # Баннер Flask (" * Serving Flask app …") печатается через click.echo мимо
+        # логгера — глушим, чтобы в логах контейнера не было строк другого формата
+        try:
+            from flask import cli as _flask_cli
+
+            _flask_cli.show_server_banner = lambda *args, **kwargs: None
+        except Exception:
+            pass
+
         flask_thread = threading.Thread(
             target=lambda: flask_app.run(
                 host="0.0.0.0",
@@ -174,14 +185,14 @@ def main():
         logger.info("Инициирую автозапуск бота...")
         result = bot_controller.start()
         if result.get("status") == "success":
-            logger.info("Автозапуск: бот успешно запущен.")
+            logger.info("Автозапуск: бот успешно запущен")
         else:
             logger.warning(f"Автозапуск не удался: {result.get('message')}")
 
         logger.info("Инициирую автозапуск бота поддержки...")
         support_result = support_bot_controller.start()
         if support_result.get("status") == "success":
-            logger.info("Автозапуск: бот поддержки успешно запущен.")
+            logger.info("Автозапуск: бот поддержки успешно запущен")
         else:
             logger.warning(f"Автозапуск бота поддержки не удался: {support_result.get('message')}")
 
@@ -202,9 +213,9 @@ def main():
         asyncio.run(start_services())
     except asyncio.CancelledError:
         # Может всплыть при остановке цикла — игнорируем как штатное поведение
-        logger.info("Получен сигнал остановки, сервисы остановлены.")
+        logger.info("Получен сигнал остановки, сервисы остановлены")
     finally:
-        logger.info("Приложение завершается.")
+        logger.info("Приложение завершается")
 
 
 if __name__ == "__main__":
