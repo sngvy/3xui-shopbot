@@ -309,20 +309,20 @@ async def send_subscription_notification(
             parse_mode="HTML",
         )
         logger.debug(
-            f"Scheduler: Отправлено уведомление пользователю {user_id} по ключу {key_id} (осталось {time_left_hours} ч)."
+            f"Отправлено уведомление пользователю {user_id} по ключу {key_id} (осталось {time_left_hours} ч)"
         )
 
     except Exception as e:
         if _note_send_error(user_id, e):
             return
-        logger.error(f"Scheduler: Ошибка отправки уведомления пользователю {user_id}: {e}")
+        logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
 
 
 def _cleanup_notified_users(active_key_ids: set[int]):
     if not notified_users:
         return
 
-    logger.debug("Scheduler: Очищаю кэш уведомлений...")
+    logger.debug("Очищаю кэш уведомлений...")
 
     users_to_check = list(notified_users.keys())
 
@@ -342,7 +342,7 @@ def _cleanup_notified_users(active_key_ids: set[int]):
 
     if cleaned_users > 0 or cleaned_keys > 0:
         logger.debug(
-            f"Scheduler: Очистка завершена. Удалено записей пользователей: {cleaned_users}, ключей: {cleaned_keys}."
+            f"Очистка завершена. Удалено записей пользователей: {cleaned_users}, ключей: {cleaned_keys}"
         )
 
 
@@ -381,7 +381,7 @@ async def process_auto_renewals(bot: Bot):
         except (TypeError, ValueError, KeyError):
             logger.warning(
                 f"Автопродление: у ключа {key_id} битый/удалённый тариф "
-                f"(last_plan_id={key.get('last_plan_id')}) — пропускаю."
+                f"(last_plan_id={key.get('last_plan_id')}) — пропускаю"
             )
             continue
 
@@ -393,7 +393,7 @@ async def process_auto_renewals(bot: Bot):
             # пользователя пополнить баланс.
             logger.debug(
                 f"Автопродление: у ключа {key_id} (юзер {user_id}) недостаточно "
-                f"средств на балансе для продления за {price} ₽ — пропускаю."
+                f"средств на балансе для продления за {price} ₽ — пропускаю"
             )
             continue
 
@@ -437,13 +437,13 @@ async def process_auto_renewals(bot: Bot):
         if expiry_advanced:
             logger.info(
                 f"Автопродление: ключ {key_id} (юзер {user_id}) продлён на "
-                f"{months} мес., списано {price:.2f} ₽."
+                f"{months} мес., списано {price:.2f} ₽"
             )
         else:
             logger.error(
                 f"Автопродление: ключ {key_id} (юзер {user_id}) — дата истечения "
                 f"не сдвинулась после process_successful_payment, продление не "
-                f"состоялось. Возвращаю {price:.2f} ₽ на баланс."
+                f"состоялось. Возвращаю {price:.2f} ₽ на баланс"
             )
             try:
                 await asyncio.to_thread(database.add_to_balance, user_id, price)
@@ -456,7 +456,7 @@ async def process_auto_renewals(bot: Bot):
 
 async def check_expiring_subscriptions(bot: Bot):
     """Проверяет все ключи на скорое истечение и рассылает уведомления пользователям."""
-    logger.debug("Scheduler: Проверяю истекающие подписки...")
+    logger.debug("Проверяю истекающие подписки...")
     current_time = datetime.now()
     # Раньше каждые вытаскивались и разбирались все ключи.
     # Теперь для чистки кэша уведомлений нужны только key_id.
@@ -492,7 +492,7 @@ async def check_expiring_subscriptions(bot: Bot):
 
         except Exception as e:
             logger.error(
-                f"Scheduler: Ошибка обработки истечения для ключа {key.get('key_id')}: {e}"
+                f"Ошибка обработки истечения для ключа {key.get('key_id')}: {e}"
             )
 
 
@@ -590,7 +590,7 @@ async def _delete_key_everywhere(api, all_inbounds: list, host_name: str, key_ro
     if not all_deletes_ok:
         logger.warning(
             f"[{host_name}] {email_}: не все клиенты удалены с панели, запись в "
-            f"БД оставлена — повтор на следующем цикле очистки просроченных ключей."
+            f"БД оставлена — повтор на следующем цикле очистки просроченных ключей"
         )
         return False
 
@@ -992,7 +992,7 @@ async def _sync_clones_for_host(
             if already_past_deletion_threshold:
                 logger.info(
                     f"[{host_name}] {client_email}: мастер отсутствует на панели, но ключ "
-                    f"просрочен более 5 дней — не восстанавливаю, ждём чистку просроченных."
+                    f"просрочен более 5 дней — не восстанавливаю, ждём чистку просроченных"
                 )
                 continue
 
@@ -1029,7 +1029,7 @@ async def _sync_clones_for_host(
             logger.warning(
                 f"[{host_name}] Рассинхрон: БД считает email мастера '{client_email}', "
                 f"а на панели (по UUID {client_uuid}) реально '{panel_master_email}' — "
-                f"синхронизирую БД с фактическим состоянием панели."
+                f"синхронизирую БД с фактическим состоянием панели"
             )
             db_ok = await asyncio.to_thread(
                 database.update_key_email, db_key["key_id"], panel_master_email
@@ -1042,7 +1042,7 @@ async def _sync_clones_for_host(
             else:
                 logger.warning(
                     f"[{host_name}] Не удалось синхронизировать БД для ключа "
-                    f"{db_key['key_id']} — повтор на следующем проходе."
+                    f"{db_key['key_id']} — повтор на следующем проходе"
                 )
 
         # -------------------------------------------------------------------------
@@ -1116,7 +1116,7 @@ async def _sync_clones_for_host(
                         f"[{host_name}] {client_email}: у пользователя {tg_id} уже есть "
                         f"отдельный платный ключ с тем же слагом — trial_-ключ избыточен, "
                         f"удаляю его целиком вместо переименования в _2 (иначе клоны будут "
-                        f"постоянно ловить Duplicate email на уже занятых платным ключом слотах)."
+                        f"постоянно ловить Duplicate email на уже занятых платным ключом слотах)"
                     )
                     deleted_ok = await _delete_key_everywhere(api, all_inbounds, host_name, db_key)
                     if deleted_ok:
@@ -1174,7 +1174,7 @@ async def _sync_clones_for_host(
                 if panel_taken_final or db_taken_final:
                     logger.warning(
                         f"[{host_name}] Не удалось снять trial_ с {client_email}: "
-                        f"не нашлось свободного email после {attempt} попыток."
+                        f"не нашлось свободного email после {attempt} попыток"
                     )
                 else:
                     try:
@@ -1213,7 +1213,7 @@ async def _sync_clones_for_host(
                         else:
                             logger.warning(
                                 f"[{host_name}] Email обновлён на панели ({new_master_email}), но не удалось "
-                                f"обновить локальную БД для ключа {db_key['key_id']} — рассинхрон, будет повтор."
+                                f"обновить локальную БД для ключа {db_key['key_id']} — рассинхрон, будет повтор"
                             )
                     except Exception as e:
                         logger.warning(
@@ -1279,7 +1279,7 @@ async def _sync_clones_for_host(
                 if attempt > 50:
                     logger.warning(
                         f"[{host_name}] Не удалось подобрать свободный email для нормализации "
-                        f"домена мастера {client_email}: перебрано {attempt} вариантов, все заняты."
+                        f"домена мастера {client_email}: перебрано {attempt} вариантов, все заняты"
                     )
                     new_master_email = None
                     break
@@ -1332,7 +1332,7 @@ async def _sync_clones_for_host(
                             f"новым email на inbound {master_inbound.id} не найден (тихий "
                             f"no-op — вероятно, {client_uuid} не совпадает с реальным id/auth "
                             f"на панели). В БД не пишем, чтобы не разойтись с реальностью — "
-                            f"нужна ручная сверка UUID для этого ключа."
+                            f"нужна ручная сверка UUID для этого ключа"
                         )
                     else:
                         db_ok = await asyncio.to_thread(
@@ -1354,7 +1354,7 @@ async def _sync_clones_for_host(
                             logger.warning(
                                 f"[{host_name}] Email мастера обновлён на панели ({new_master_email}), "
                                 f"но не удалось обновить локальную БД для ключа {db_key['key_id']} — рассинхрон, "
-                                f"будет повторная попытка на следующем проходе."
+                                f"будет повторная попытка на следующем проходе"
                             )
                 except Exception as e:
                     logger.warning(
@@ -1661,7 +1661,7 @@ async def _sync_clones_for_host(
                 # чтобы админ почистил панель руками.
                 logger.error(
                     f"[{host_name}] Не удалось создать клон {candidate}: "
-                    f"канонический email уже занят кем-то другим на панели (orphaned-запись?)."
+                    f"канонический email уже занят кем-то другим на панели (orphaned-запись?)"
                 )
                 continue
 
@@ -1731,7 +1731,7 @@ async def _sync_clones_for_host(
                 if retry_clone is None:
                     logger.warning(
                         f"[{host_name}] Ретрай переименования {current_clone_email} -> "
-                        f"{canonical_email}: клиент пропал с панели, пропуск."
+                        f"{canonical_email}: клиент пропал с панели, пропуск"
                     )
                     continue
                 try:
@@ -1925,7 +1925,7 @@ async def _sync_clones_for_host(
                             logger.info(
                                 f"[{host_name}] {client_obj.email}: коллизия из-за "
                                 f"параллельной репликации этого ключа, пропуск "
-                                f"(уже обрабатывается другим процессом)."
+                                f"(уже обрабатывается другим процессом)"
                             )
                             globally_taken_emails.add(client_obj.email)
                             continue
@@ -1957,7 +1957,7 @@ async def _sync_clones_for_host(
                                 f"[{host_name}] {client_obj.email}: панель сообщила "
                                 f"Duplicate email, но в живом списке клиентов "
                                 f"inbound {ib_id} его нет — вероятно гонка, "
-                                f"пропуск без удаления."
+                                f"пропуск без удаления"
                             )
                             globally_taken_emails.discard(client_obj.email)
                             continue
@@ -1977,7 +1977,7 @@ async def _sync_clones_for_host(
                             logger.error(
                                 f"[{host_name}] Не удалось удалить мусорную запись "
                                 f"{client_obj.email} на inbound {ib_id}, создание "
-                                f"клона отменено на этом тике."
+                                f"клона отменено на этом тике"
                             )
                             globally_taken_emails.discard(client_obj.email)
                             continue
@@ -2352,7 +2352,7 @@ async def _sync_single_host(
         # полной сверки не обновлены — следующий цикл доделает проход.
         logger.info(
             f"[{host_name}] Проход шедулера прерван: покупка/продление ждёт host_lock. "
-            f"Остаток будет доделан в следующем цикле."
+            f"Остаток будет доделан в следующем цикле"
         )
         return (api, all_inbounds)
 
@@ -2580,11 +2580,11 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
     содержит сервер, повторный login_and_get_inbounds для этого хоста не
     выполняется (экономит один тяжёлый запрос к панели на сервер за цикл).
     """
-    logger.debug("Scheduler: Проверка аномального потребления трафика...")
+    logger.debug("Проверка аномального потребления трафика...")
 
     admin_id_raw = await asyncio.to_thread(database.get_setting, "admin_telegram_id")
     if not admin_id_raw:
-        logger.warning("Scheduler: admin_telegram_id не настроен, пропуск алертов трафика")
+        logger.warning("admin_telegram_id не настроен, пропуск алертов трафика")
         return
     admin_id = int(admin_id_raw)
 
@@ -2797,10 +2797,10 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                 sharing_strikes.pop(k, None)
 
         except Exception as e:
-            logger.error(f"Scheduler: Ошибка мониторинга трафика на {host_name}: {e}")
+            logger.error(f"Ошибка мониторинга трафика на {host_name}: {e}")
 
     if not anomalies_found:
-        logger.info("Scheduler: Проверка аномалий трафика завершена. Ничего не обнаружено.")
+        logger.info("Проверка аномалий трафика завершена. Ничего не обнаружено")
 
 
 async def execute_broadcast(
@@ -2887,7 +2887,7 @@ async def execute_broadcast(
             await asyncio.sleep(0.05)
 
         except TelegramRetryAfter as e:
-            logger.warning(f"Рейтлимит рассылки! Спим {e.retry_after} сек.")
+            logger.warning(f"Рейтлимит рассылки! Спим {e.retry_after} сек")
             await asyncio.sleep(e.retry_after)
             try:
                 await bot.copy_message(
@@ -3092,7 +3092,7 @@ async def _notify_admins(bot: Bot, text: str, markup=None) -> None:
                 chat_id=admin_id, text=text, parse_mode="HTML", reply_markup=markup
             )
         except Exception as e:
-            logger.error(f"Scheduler: не удалось отправить сообщение админу {admin_id}: {e}")
+            logger.error(f"не удалось отправить сообщение админу {admin_id}: {e}")
 
 
 def _fmt_blacklist_user(info: dict) -> str:
@@ -3151,7 +3151,7 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
             raise RuntimeError(f"HTTP {status}")
     except Exception as e:
         _blacklist_last_fail_at = now
-        logger.error(f"Scheduler: не удалось загрузить чёрный список: {e}")
+        logger.error(f"не удалось загрузить чёрный список: {e}")
         if _blacklist_alert_allowed("fetch"):
             await _notify_admins(
                 bot,
@@ -3166,7 +3166,7 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
     if len(entries) < BLACKLIST_MIN_ENTRIES or (prev_count >= 50 and len(entries) < prev_count * 0.5):
         _blacklist_last_fail_at = now
         logger.warning(
-            f"Scheduler: чёрный список выглядит повреждённым ({len(entries)} записей, было {prev_count}) — пропускаю."
+            f"чёрный список выглядит повреждённым ({len(entries)} записей, было {prev_count}) — пропускаю"
         )
         if _blacklist_alert_allowed("suspicious"):
             await _notify_admins(
@@ -3195,7 +3195,7 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
             BLACKLIST_MAX_BANS_PER_RUN,
         )
     except Exception as e:
-        logger.error(f"Scheduler: ошибка применения чёрного списка: {e}", exc_info=True)
+        logger.error(f"ошибка применения чёрного списка: {e}", exc_info=True)
         return
 
     _blacklist_last_fail_at = None
@@ -3208,7 +3208,7 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
     if res.get("blocked_by_limit"):
         n = len(res["banned"])
         logger.warning(
-            f"Scheduler: чёрный список потребовал {n} банов за раз (лимит {BLACKLIST_MAX_BANS_PER_RUN}) — не применён."
+            f"чёрный список потребовал {n} банов за раз (лимит {BLACKLIST_MAX_BANS_PER_RUN}) — не применён"
         )
         if _blacklist_alert_allowed("limit"):
             await _notify_admins(
@@ -3223,7 +3223,7 @@ async def _maybe_sync_external_blacklist(bot: Bot) -> None:
         return
 
     logger.info(
-        "Scheduler: чёрный список: записей %s, новых %s, забанено %s, уже были забанены %s, "
+        "чёрный список: записей %s, новых %s, забанено %s, уже были забанены %s, "
         "разбанено %s, ожидают регистрации %s, ручных разбанов учтено %s",
         res["total"],
         res["new"],
@@ -3445,7 +3445,7 @@ async def _maybe_reconcile_yookassa(bot: Bot) -> None:
             continue
 
         restored += 1
-        logger.warning(f"Сверка ЮKassa: платёж {pid} не был обработан вебхуком — запускаю выдачу.")
+        logger.warning(f"Сверка ЮKassa: платёж {pid} не был обработан вебхуком — запускаю выдачу")
         try:
             metadata["_provider"] = "yookassa"
             metadata["_external_id"] = pid
@@ -3621,7 +3621,7 @@ async def _maybe_reconcile_cryptobot(bot: Bot) -> None:
             continue
 
         restored += 1
-        logger.warning(f"Сверка CryptoBot: инвойс {iid} не был обработан вебхуком — запускаю выдачу.")
+        logger.warning(f"Сверка CryptoBot: инвойс {iid} не был обработан вебхуком — запускаю выдачу")
         try:
             metadata["_provider"] = "cryptobot"
             metadata["_external_id"] = iid
@@ -3733,7 +3733,7 @@ async def _maybe_send_payment_reminders(bot: Bot) -> None:
 
 async def periodic_subscription_check(bot_controller: BotController):
     """Главный бесконечный цикл фонового планировщика (запускается один раз при старте бота)."""
-    logger.info("Scheduler: Планировщик фоновых задач запущен.")
+    logger.info("Планировщик фоновых задач запущен")
     await asyncio.sleep(10)
 
     while True:
@@ -3749,15 +3749,15 @@ async def periodic_subscription_check(bot_controller: BotController):
                     try:
                         await _maybe_reconcile_yookassa(bot)
                     except Exception as e:
-                        logger.error(f"Scheduler: сверка ЮKassa завершилась ошибкой: {e}", exc_info=True)
+                        logger.error(f"сверка ЮKassa завершилась ошибкой: {e}", exc_info=True)
                     try:
                         await _maybe_reconcile_cryptobot(bot)
                     except Exception as e:
-                        logger.error(f"Scheduler: сверка CryptoBot завершилась ошибкой: {e}", exc_info=True)
+                        logger.error(f"сверка CryptoBot завершилась ошибкой: {e}", exc_info=True)
                     try:
                         await _maybe_send_payment_reminders(bot)
                     except Exception as e:
-                        logger.error(f"Scheduler: напоминания об оплате завершились ошибкой: {e}", exc_info=True)
+                        logger.error(f"напоминания об оплате завершились ошибкой: {e}", exc_info=True)
                     # Синхронизация подписок: возвращает {host_name: (api, all_inbounds)},
                     # полученные в этом же проходе — переиспользуем их ниже в
                     # check_traffic_anomalies, чтобы не логиниться в панели второй раз
@@ -3768,10 +3768,10 @@ async def periodic_subscription_check(bot_controller: BotController):
                     await _maybe_send_scheduled_broadcasts(bot)
                 else:
                     logger.warning(
-                        "Scheduler: Бот помечен как запущенный, но экземпляр недоступен."
+                        "Бот помечен как запущенный, но экземпляр недоступен"
                     )
             else:
-                logger.debug("Scheduler: Бот остановлен, уведомления пользователям пропущены.")
+                logger.debug("Бот остановлен, уведомления пользователям пропущены")
 
             # Периодические проверки доступности, сбор метрик и замеры скорости по всем хостам (оба варианта: SSH и сетевой)
             await _check_hosts_availability(bot)
@@ -3791,10 +3791,10 @@ async def periodic_subscription_check(bot_controller: BotController):
             await _maybe_run_db_maintenance()
 
         except Exception as e:
-            logger.error(f"Scheduler: Необработанная ошибка в основном цикле: {e}", exc_info=True)
+            logger.error(f"Необработанная ошибка в основном цикле: {e}", exc_info=True)
 
         logger.info(
-            f"Scheduler: Цикл завершён. Следующая проверка через {CHECK_INTERVAL_SECONDS} сек."
+            f"Цикл завершён. Следующая проверка через {CHECK_INTERVAL_SECONDS} сек"
         )
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
@@ -3807,8 +3807,8 @@ async def _maybe_run_periodic_speedtests():
         # (кнопка/страница спидтеста), а не по расписанию планировщика —
         # плановый прогон тут не нужен и только дублировал бы работу.
         logger.debug(
-            "Scheduler: USE_WEBAPP_SPEEDTEST=1 — плановый speedtest отключён, "
-            "запускается только вручную из веб-приложения."
+            "USE_WEBAPP_SPEEDTEST=1 — плановый speedtest отключён, "
+            "запускается только вручную из веб-приложения"
         )
         return
 
@@ -3827,24 +3827,24 @@ async def _maybe_run_periodic_speedtests():
         and (now - _last_speedtests_run_at).total_seconds() < SPEEDTEST_INTERVAL_SECONDS
     ):
         logger.debug(
-            f"Scheduler: speedtest уже проводился менее {SPEEDTEST_INTERVAL_SECONDS // 3600}ч "
-            f"назад ({_last_speedtests_run_at.isoformat()}) — пропускаю."
+            f"speedtest уже проводился менее {SPEEDTEST_INTERVAL_SECONDS // 3600}ч "
+            f"назад ({_last_speedtests_run_at.isoformat()}) — пропускаю"
         )
         return
     try:
         await _run_speedtests_for_all_hosts()
         _last_speedtests_run_at = now
     except Exception as e:
-        logger.error(f"Scheduler: Ошибка запуска speedtests: {e}", exc_info=True)
+        logger.error(f"Ошибка запуска speedtests: {e}", exc_info=True)
 
 
 async def _run_speedtests_for_all_hosts():
     hosts = await asyncio.to_thread(database.get_all_hosts)
     if not hosts:
-        logger.debug("Scheduler: Нет хостов для измерений скорости.")
+        logger.debug("Нет хостов для измерений скорости")
         return
 
-    logger.info(f"Scheduler: Запускаю speedtest для {len(hosts)} сервер(ов)...")
+    logger.info(f"Запускаю speedtest для {len(hosts)} сервер(ов)...")
 
     for h in hosts:
         host_name = h.get("host_name")
@@ -3855,7 +3855,7 @@ async def _run_speedtests_for_all_hosts():
         # Выполнение замера скорости для текущего хоста с защитой по таймауту
         # -------------------------------------------------------------------------
         try:
-            logger.info(f"Scheduler: Speedtest для '{host_name}' запущен...")
+            logger.info(f"Speedtest для '{host_name}' запущен...")
             res = None
 
             # Ограничиваем выполнение 3 минутами на случай зависания
@@ -3870,7 +3870,7 @@ async def _run_speedtests_for_all_hosts():
                     )
             except (asyncio.TimeoutError, TimeoutError):
                 # Ловим таймаут сразу здесь, чтобы не прерывать общий блок try
-                logger.warning(f"Scheduler: Превышен таймаут speedtest для хоста '{host_name}'")
+                logger.warning(f"Превышен таймаут speedtest для хоста '{host_name}'")
                 continue  # Переходим к следующему хосту в цикле
 
             # Безопасно парсим ответ, если замер успел завершиться
@@ -3878,21 +3878,21 @@ async def _run_speedtests_for_all_hosts():
             err = res.get("error") if isinstance(res, dict) else "No response format"
 
             if ok:
-                logger.info(f"Scheduler: Speedtest для '{host_name}' завершён")
+                logger.info(f"Speedtest для '{host_name}' завершён")
             else:
-                logger.warning(f"Scheduler: Speedtest для '{host_name}' завершён с ошибками: {err}")
+                logger.warning(f"Speedtest для '{host_name}' завершён с ошибками: {err}")
 
         except Exception as e:
             # Сюда теперь падает только настоящая непредвиденная ошибка (например, сбой БД)
             logger.error(
-                f"Scheduler: Непредвиденная ошибка выполнения speedtest для '{host_name}': {e}",
+                f"Непредвиденная ошибка выполнения speedtest для '{host_name}': {e}",
                 exc_info=True,
             )
 
     # -------------------------------------------------------------------------
     # Финал цикла
     # -------------------------------------------------------------------------
-    logger.info("Scheduler: Все плановые замеры скорости последовательно завершены.")
+    logger.info("Все плановые замеры скорости последовательно завершены")
 
 
 async def _maybe_run_daily_backup(bot: Bot):
@@ -3923,9 +3923,9 @@ async def _maybe_run_daily_backup(bot: Bot):
         if zip_path and zip_path.exists():
             try:
                 sent = await backup_manager.send_backup_to_admins(bot, zip_path)
-                logger.info(f"Scheduler: Создан бэкап {zip_path.name}, отправлен {sent} адм.")
+                logger.info(f"Создан бэкап {zip_path.name}, отправлен {sent} адм")
             except Exception as e:
-                logger.error(f"Scheduler: Не удалось отправить бэкап: {e}")
+                logger.error(f"Не удалось отправить бэкап: {e}")
             try:
                 backup_manager.cleanup_old_backups(keep=BACKUP_KEEP_COUNT)
             except Exception:
@@ -3934,7 +3934,7 @@ async def _maybe_run_daily_backup(bot: Bot):
         _last_backup_run_at = now
     except Exception as e:
         logger.error(
-            f"Scheduler: Критическая ошибка при создании и отправке бэкапа: {e}",
+            f"Критическая ошибка при создании и отправке бэкапа: {e}",
             exc_info=True,
         )
 
@@ -3977,7 +3977,7 @@ async def _maybe_run_db_maintenance():
         return
     _db_maintenance_last_attempt_day = today
 
-    logger.info("Scheduler: Запускаю обслуживание БД (REINDEX + VACUUM)...")
+    logger.info("Запускаю обслуживание БД (REINDEX + VACUUM)...")
     try:
         # Страховка: перед VACUUM нужен свежий бэкап. Если ежедневный автобэкап
         # уже был в последние сутки — не дублируем, иначе делаем локальный
@@ -3987,22 +3987,22 @@ async def _maybe_run_db_maintenance():
             if not last_backup or (now - last_backup).total_seconds() > 24 * 3600:
                 await asyncio.to_thread(backup_manager.create_backup_file)
         except Exception as e:
-            logger.warning(f"Scheduler: Не удалось сделать бэкап перед обслуживанием БД: {e}")
+            logger.warning(f"Не удалось сделать бэкап перед обслуживанием БД: {e}")
         res = await asyncio.to_thread(database.run_db_maintenance)
         await asyncio.to_thread(
             database.update_setting, DB_MAINTENANCE_LAST_RUN_SETTING, now.isoformat()
         )
         logger.info(
-            "Scheduler: Обслуживание БД завершено за %s с: %.1f МБ -> %.1f МБ",
+            "Обслуживание БД завершено за %s с: %.1f МБ -> %.1f МБ",
             res.get("total_s"),
             res.get("size_before", 0) / 1048576,
             res.get("size_after", 0) / 1048576,
         )
     except database.DatabaseCorruptedError as e:
-        logger.critical(f"Scheduler: Обслуживание БД отменено — база повреждена: {e}")
+        logger.critical(f"Обслуживание БД отменено — база повреждена: {e}")
     except Exception as e:
         # Время запуска не записываем: попробуем снова на следующий день
-        logger.error(f"Scheduler: Ошибка обслуживания БД: {e}", exc_info=True)
+        logger.error(f"Ошибка обслуживания БД: {e}", exc_info=True)
 
 
 async def _maybe_collect_host_metrics():
@@ -4039,7 +4039,7 @@ async def _maybe_collect_host_metrics():
                 raw_json=json.dumps(local_metrics, ensure_ascii=False),
             )
     except Exception as e:
-        logger.error(f"Scheduler: Ошибка сбора локальных метрик: {e}")
+        logger.error(f"Ошибка сбора локальных метрик: {e}")
 
     # -------------------------------------------------------------------------
     # 2. Получение списка хостов для мониторинга
@@ -4078,12 +4078,12 @@ async def _maybe_collect_host_metrics():
             else:
                 error_msg = m.get("error") if m else "Unknown error"
                 logger.warning(
-                    f"Scheduler: Не удалось собрать метрики для '{host_name}': {error_msg}"
+                    f"Не удалось собрать метрики для '{host_name}': {error_msg}"
                 )
 
         except Exception as e:
             logger.error(
-                f"Scheduler: Критическая ошибка при обработке хоста '{host_name}': {e}",
+                f"Критическая ошибка при обработке хоста '{host_name}': {e}",
                 exc_info=True,
             )
 
@@ -4128,7 +4128,7 @@ async def _check_hosts_availability(bot: Bot):
             domain = parsed_url.hostname
 
             if not domain:
-                logger.error(f"Scheduler: Не удалось извлечь домен из URL для хоста {host_name}")
+                logger.error(f"Не удалось извлечь домен из URL для хоста {host_name}")
                 failed_hosts.append(host_name)
                 return
 
@@ -4140,7 +4140,7 @@ async def _check_hosts_availability(bot: Bot):
                 failed_hosts.append(host_name)
 
         except Exception as e:
-            logger.error(f"Scheduler: Критическая ошибка при пинге {host_name}: {e}")
+            logger.error(f"Критическая ошибка при пинге {host_name}: {e}")
             failed_hosts.append(host_name)
 
     # -------------------------------------------------------------------------
@@ -4152,11 +4152,11 @@ async def _check_hosts_availability(bot: Bot):
 
     # Логируем общий статус проверки перед отправкой уведомлений
     if not failed_hosts:
-        logger.info("Scheduler: Проверка доступности хостов завершена. Все хосты онлайн.")
+        logger.info("Проверка доступности хостов завершена. Все хосты онлайн")
         return
 
     logger.warning(
-        "Scheduler: Проверка доступности хостов завершена. Обнаружены недоступные хосты."
+        "Проверка доступности хостов завершена. Обнаружены недоступные хосты"
     )
 
     if not bot:

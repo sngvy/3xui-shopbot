@@ -146,7 +146,7 @@ def verify_db_integrity() -> None:
     except sqlite3.DatabaseError as e:
         if is_corruption_error(e):
             raise DatabaseCorruptedError(str(e)) from e
-        logging.warning(f"Проверка целостности БД пропущена: {e}")
+        logger.warning(f"Проверка целостности БД пропущена: {e}")
     finally:
         if conn is not None:
             conn.close()
@@ -659,9 +659,9 @@ def initialize_db():
                     cursor.execute(
                         "ALTER TABLE vpn_keys ADD COLUMN created_date TIMESTAMP DEFAULT (datetime('now','localtime'))"
                     )
-                    logging.info("Добавлена колонка created_date в таблицу vpn_keys")
+                    logger.info("Добавлена колонка created_date в таблицу vpn_keys")
             except Exception as e:
-                logging.warning(f"Ошибка при добавлении колонки created_date: {e}")
+                logger.warning(f"Ошибка при добавлении колонки created_date: {e}")
 
             # Создаем индекс для ускорения поиска ключей по имени хоста
             cursor.execute(
@@ -703,12 +703,12 @@ def initialize_db():
                 "CREATE INDEX IF NOT EXISTS idx_promo_code_usages_code_user ON promo_code_usages(code, user_id);"
             )
 
-            logging.info("База данных успешно инициализирована.")
+            logger.info("База данных успешно инициализирована")
     except sqlite3.Error as e:
         if is_corruption_error(e):
             # Битая база при инициализации — не продолжаем с неполными данными
             raise DatabaseCorruptedError(str(e)) from e
-        logging.error(f"Ошибка базы данных при инициализации: {e}")
+        logger.error(f"Ошибка базы данных при инициализации: {e}")
 
 
 # --- Promo codes API (unified) ---
@@ -722,7 +722,7 @@ def _promo_columns(conn: sqlite3.Connection) -> set[str]:
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(promo_codes)")
         PROMO_COLUMNS_CACHE = {row[1] for row in cursor.fetchall()}
-        logger.info("Структура таблицы промокодов успешно закэширована.")
+        logger.info("Структура таблицы промокодов успешно закэширована")
 
     return PROMO_COLUMNS_CACHE
 
@@ -788,7 +788,7 @@ def create_promo_code(
     except sqlite3.IntegrityError:
         return False
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при создании промокода: {e}")
+        logger.error(f"Ошибка при создании промокода: {e}")
         return False
 
 
@@ -805,7 +805,7 @@ def get_promo_code(code: str) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при получении промокода: {e}")
+        logger.error(f"Ошибка при получении промокода: {e}")
         return None
 
 
@@ -823,7 +823,7 @@ def list_promo_codes(include_inactive: bool = True) -> list[dict]:
             cursor.execute(query)
             return [dict(r) for r in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при получении списка промокодов: {e}")
+        logger.error(f"Ошибка при получении списка промокодов: {e}")
         return []
 
 
@@ -881,7 +881,7 @@ def check_promo_code_available(code: str, user_id: int) -> tuple[dict | None, st
                     if datetime.fromisoformat(str(vf)) > now:
                         return None, "not_started"
                 except (ValueError, TypeError) as e:
-                    logging.error(f"Ошибка парсинга даты valid_from для промокода '{code_s}': {e}")
+                    logger.error(f"Ошибка парсинга даты valid_from для промокода '{code_s}': {e}")
                     return None, "invalid_date_format"
 
             vu = promo.get("valid_until")
@@ -894,7 +894,7 @@ def check_promo_code_available(code: str, user_id: int) -> tuple[dict | None, st
                     if datetime.fromisoformat(str(vu)) < now:
                         return None, "expired"
                 except (ValueError, TypeError) as e:
-                    logging.error(f"Ошибка парсинга даты valid_until для промокода '{code_s}': {e}")
+                    logger.error(f"Ошибка парсинга даты valid_until для промокода '{code_s}': {e}")
                     return None, "invalid_date_format"
 
             limit_total = promo.get("usage_limit_total")
@@ -915,7 +915,7 @@ def check_promo_code_available(code: str, user_id: int) -> tuple[dict | None, st
             return promo, None
 
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при проверке доступности промокода: {e}")
+        logger.error(f"Ошибка при проверке доступности промокода: {e}")
         return None, "db_error"
 
 
@@ -942,7 +942,7 @@ def update_promo_code_status(code: str, *, is_active: bool | None = None) -> boo
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при обновлении статуса промокода: {e}")
+        logger.error(f"Ошибка при обновлении статуса промокода: {e}")
         return False
 
 
@@ -1008,7 +1008,7 @@ def redeem_promo_code(
                     if datetime.fromisoformat(str(vf)) > now:
                         return None
                 except (ValueError, TypeError) as e:
-                    logging.error(
+                    logger.error(
                         f"Ошибка парсинга даты valid_from при активации промокода '{code_s}': {e}"
                     )
                     return None
@@ -1023,7 +1023,7 @@ def redeem_promo_code(
                     if datetime.fromisoformat(str(vu)) < now:
                         return None
                 except (ValueError, TypeError) as e:
-                    logging.error(
+                    logger.error(
                         f"Ошибка парсинга даты valid_until при активации промокода '{code_s}': {e}"
                     )
                     return None
@@ -1081,67 +1081,67 @@ def redeem_promo_code(
             return promo
 
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при активации промокода: {e}")
+        logger.error(f"Ошибка при активации промокода: {e}")
         return None
 
 
 def run_migration():
     """Выполняет одноразовую миграцию схемы БД при старте приложения."""
     if not DB_FILE.exists():
-        logging.error("Файл базы данных users.db не найден. Мигрировать нечего.")
+        logger.error("Файл базы данных users.db не найден. Мигрировать нечего")
         return
 
-    logging.info(f"Начинаю миграцию базы данных: {DB_FILE}")
+    logger.info(f"Начинаю миграцию базы данных: {DB_FILE}")
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        logging.info("Миграция таблицы 'users' ...")
+        logger.info("Миграция таблицы 'users' ...")
 
         cursor.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in cursor.fetchall()]
 
         if "referred_by" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN referred_by INTEGER")
-            logging.info(" -> Столбец 'referred_by' успешно добавлен.")
+            logger.info(" -> Столбец 'referred_by' успешно добавлен")
         else:
-            logging.info(" -> Столбец 'referred_by' уже существует.")
+            logger.info(" -> Столбец 'referred_by' уже существует")
 
         if "balance" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
-            logging.info(" -> Столбец 'balance' успешно добавлен.")
+            logger.info(" -> Столбец 'balance' успешно добавлен")
         else:
-            logging.info(" -> Столбец 'balance' уже существует.")
+            logger.info(" -> Столбец 'balance' уже существует")
 
         if "referral_balance" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN referral_balance REAL DEFAULT 0")
-            logging.info(" -> Столбец 'referral_balance' успешно добавлен.")
+            logger.info(" -> Столбец 'referral_balance' успешно добавлен")
         else:
-            logging.info(" -> Столбец 'referral_balance' уже существует.")
+            logger.info(" -> Столбец 'referral_balance' уже существует")
 
         if "referral_balance_all" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN referral_balance_all REAL DEFAULT 0")
-            logging.info(" -> Столбец 'referral_balance_all' успешно добавлен.")
+            logger.info(" -> Столбец 'referral_balance_all' успешно добавлен")
         else:
-            logging.info(" -> Столбец 'referral_balance_all' уже существует.")
+            logger.info(" -> Столбец 'referral_balance_all' уже существует")
 
         if "referral_start_bonus_received" not in columns:
             cursor.execute(
                 "ALTER TABLE users ADD COLUMN referral_start_bonus_received BOOLEAN DEFAULT 0"
             )
-            logging.info(" -> Столбец 'referral_start_bonus_received' успешно добавлен.")
+            logger.info(" -> Столбец 'referral_start_bonus_received' успешно добавлен")
         else:
-            logging.info(" -> Столбец 'referral_start_bonus_received' уже существует.")
+            logger.info(" -> Столбец 'referral_start_bonus_received' уже существует")
 
         if "bot_blocked" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN bot_blocked INTEGER DEFAULT 0")
-            logging.info(" -> Столбец 'bot_blocked' успешно добавлен.")
+            logger.info(" -> Столбец 'bot_blocked' успешно добавлен")
         if "bot_blocked_at" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN bot_blocked_at TIMESTAMP")
-            logging.info(" -> Столбец 'bot_blocked_at' успешно добавлен.")
+            logger.info(" -> Столбец 'bot_blocked_at' успешно добавлен")
 
-        logging.info("Таблица 'users' успешно обновлена.")
+        logger.info("Таблица 'users' успешно обновлена")
 
         # Индексы для ускорения фильтрации/сортировки пользователей
         try:
@@ -1156,11 +1156,11 @@ def run_migration():
                 "CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by)"
             )
             conn.commit()
-            logging.info(" -> Индексы для 'users' созданы/проверены.")
+            logger.info(" -> Индексы для 'users' созданы/проверены")
         except sqlite3.Error as e:
-            logging.warning(f" -> Не удалось создать индексы для 'users': {e}")
+            logger.warning(f" -> Не удалось создать индексы для 'users': {e}")
 
-        logging.info("Миграция таблицы 'transactions' ...")
+        logger.info("Миграция таблицы 'transactions' ...")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")
         table_exists = cursor.fetchone()
@@ -1174,27 +1174,27 @@ def run_migration():
                 and "status" in trans_columns
                 and "username" in trans_columns
             ):
-                logging.info(
-                    "Таблица 'transactions' уже имеет новую структуру. Миграция не требуется."
+                logger.info(
+                    "Таблица 'transactions' уже имеет новую структуру. Миграция не требуется"
                 )
             else:
                 backup_name = f"transactions_backup_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                logging.warning(
+                logger.warning(
                     f"Обнаружена старая структура таблицы 'transactions'. Переименовываю в '{backup_name}' ..."
                 )
                 cursor.execute(f"ALTER TABLE transactions RENAME TO {backup_name}")
 
-                logging.info("Создаю новую таблицу 'transactions' с корректной структурой ...")
+                logger.info("Создаю новую таблицу 'transactions' с корректной структурой ...")
                 create_new_transactions_table(cursor)
-                logging.info(
-                    "Новая таблица 'transactions' успешно создана. Старые данные сохранены."
+                logger.info(
+                    "Новая таблица 'transactions' успешно создана. Старые данные сохранены"
                 )
         else:
-            logging.info("Таблица 'transactions' не найдена. Создаю новую ...")
+            logger.info("Таблица 'transactions' не найдена. Создаю новую ...")
             create_new_transactions_table(cursor)
-            logging.info("Новая таблица 'transactions' успешно создана.")
+            logger.info("Новая таблица 'transactions' успешно создана")
 
-        logging.info("Миграция таблицы 'support_tickets' ...")
+        logger.info("Миграция таблицы 'support_tickets' ...")
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='support_tickets'"
@@ -1205,22 +1205,22 @@ def run_migration():
             st_columns = [row[1] for row in cursor.fetchall()]
             if "forum_chat_id" not in st_columns:
                 cursor.execute("ALTER TABLE support_tickets ADD COLUMN forum_chat_id TEXT")
-                logging.info(" -> Столбец 'forum_chat_id' успешно добавлен в 'support_tickets'.")
+                logger.info(" -> Столбец 'forum_chat_id' успешно добавлен в 'support_tickets'")
             else:
-                logging.info(" -> Столбец 'forum_chat_id' уже существует в 'support_tickets'.")
+                logger.info(" -> Столбец 'forum_chat_id' уже существует в 'support_tickets'")
             if "message_thread_id" not in st_columns:
                 cursor.execute("ALTER TABLE support_tickets ADD COLUMN message_thread_id INTEGER")
-                logging.info(
-                    " -> Столбец 'message_thread_id' успешно добавлен в 'support_tickets'."
+                logger.info(
+                    " -> Столбец 'message_thread_id' успешно добавлен в 'support_tickets'"
                 )
             else:
-                logging.info(" -> Столбец 'message_thread_id' уже существует в 'support_tickets'.")
+                logger.info(" -> Столбец 'message_thread_id' уже существует в 'support_tickets'")
         else:
-            logging.warning("Таблица 'support_tickets' не найдена, пропускаю её миграцию.")
+            logger.warning("Таблица 'support_tickets' не найдена, пропускаю её миграцию")
 
         conn.commit()
 
-        logging.info("Миграция таблицы 'support_messages' ...")
+        logger.info("Миграция таблицы 'support_messages' ...")
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='support_messages'"
@@ -1231,13 +1231,13 @@ def run_migration():
             sm_columns = [row[1] for row in cursor.fetchall()]
             if "media" not in sm_columns:
                 cursor.execute("ALTER TABLE support_messages ADD COLUMN media TEXT")
-                logging.info(" -> Столбец 'media' успешно добавлен в 'support_messages'.")
+                logger.info(" -> Столбец 'media' успешно добавлен в 'support_messages'")
             else:
-                logging.info(" -> Столбец 'media' уже существует в 'support_messages'.")
+                logger.info(" -> Столбец 'media' уже существует в 'support_messages'")
         else:
-            logging.warning("Таблица 'support_messages' не найдена, пропускаю её миграцию.")
+            logger.warning("Таблица 'support_messages' не найдена, пропускаю её миграцию")
 
-        logging.info("Миграция таблицы 'xui_hosts' ...")
+        logger.info("Миграция таблицы 'xui_hosts' ...")
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='xui_hosts'")
         table_exists = cursor.fetchone()
@@ -1246,25 +1246,25 @@ def run_migration():
             xh_columns = [row[1] for row in cursor.fetchall()]
             if "subscription_url" not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN subscription_url TEXT")
-                logging.info(" -> Столбец 'subscription_url' успешно добавлен в 'xui_hosts'.")
+                logger.info(" -> Столбец 'subscription_url' успешно добавлен в 'xui_hosts'")
             else:
-                logging.info(" -> Столбец 'subscription_url' уже существует в 'xui_hosts'.")
+                logger.info(" -> Столбец 'subscription_url' уже существует в 'xui_hosts'")
             # SSH settings for speedtests (optional)
             if "ssh_host" not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_host TEXT")
-                logging.info(" -> Столбец 'ssh_host' успешно добавлен в 'xui_hosts'.")
+                logger.info(" -> Столбец 'ssh_host' успешно добавлен в 'xui_hosts'")
             if "ssh_port" not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_port INTEGER")
-                logging.info(" -> Столбец 'ssh_port' успешно добавлен в 'xui_hosts'.")
+                logger.info(" -> Столбец 'ssh_port' успешно добавлен в 'xui_hosts'")
             if "ssh_user" not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_user TEXT")
-                logging.info(" -> Столбец 'ssh_user' успешно добавлен в 'xui_hosts'.")
+                logger.info(" -> Столбец 'ssh_user' успешно добавлен в 'xui_hosts'")
             if "ssh_password" not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_password TEXT")
-                logging.info(" -> Столбец 'ssh_password' успешно добавлен в 'xui_hosts'.")
+                logger.info(" -> Столбец 'ssh_password' успешно добавлен в 'xui_hosts'")
             if "ssh_key_path" not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_key_path TEXT")
-                logging.info(" -> Столбец 'ssh_key_path' успешно добавлен в 'xui_hosts'.")
+                logger.info(" -> Столбец 'ssh_key_path' успешно добавлен в 'xui_hosts'")
             # Clean up host_name values from invisible spaces and trim
             try:
                 cursor.execute("""
@@ -1280,13 +1280,13 @@ def run_migration():
                     )
                     """)
                 conn.commit()
-                logging.info(" -> Нормализованы существующие значения host_name в 'xui_hosts'.")
+                logger.info(" -> Нормализованы существующие значения host_name в 'xui_hosts'")
             except Exception as e:
-                logging.warning(
+                logger.warning(
                     f" -> Не удалось нормализовать существующие значения host_name: {e}"
                 )
         else:
-            logging.warning("Таблица 'xui_hosts' не найдена, пропускаю её миграцию.")
+            logger.warning("Таблица 'xui_hosts' не найдена, пропускаю её миграцию")
         # Create table for host speedtests
         try:
             cursor = conn.cursor()
@@ -1310,9 +1310,9 @@ def run_migration():
                 "CREATE INDEX IF NOT EXISTS idx_host_speedtests_host_time ON host_speedtests(host_name, created_at DESC)"
             )
             conn.commit()
-            logging.info("Таблица 'host_speedtests' готова к использованию.")
+            logger.info("Таблица 'host_speedtests' готова к использованию")
         except sqlite3.Error as e:
-            logging.error(f"Не удалось создать 'host_speedtests': {e}")
+            logger.error(f"Не удалось создать 'host_speedtests': {e}")
 
         # Создание таблицы с историей бэкапов
         try:
@@ -1328,9 +1328,9 @@ def run_migration():
                 "CREATE INDEX IF NOT EXISTS idx_backup_history_time ON backup_history(created_at DESC)"
             )
             conn.commit()
-            logging.info("Таблица 'backup_history' готова к использованию.")
+            logger.info("Таблица 'backup_history' готова к использованию")
         except sqlite3.Error as e:
-            logging.error(f"Не удалось создать 'backup_history': {e}")
+            logger.error(f"Не удалось создать 'backup_history': {e}")
 
         # Create table for host resource metrics (monitor history)
         try:
@@ -1359,9 +1359,9 @@ def run_migration():
                 "CREATE INDEX IF NOT EXISTS idx_host_metrics_host_time ON host_metrics(host_name, created_at DESC)"
             )
             conn.commit()
-            logging.info("Таблица 'host_metrics' готова к использованию.")
+            logger.info("Таблица 'host_metrics' готова к использованию")
         except sqlite3.Error as e:
-            logging.error(f"Не удалось создать 'host_metrics': {e}")
+            logger.error(f"Не удалось создать 'host_metrics': {e}")
 
         # Ensure extra columns for standalone keys and promo table
         try:
@@ -1370,22 +1370,22 @@ def run_migration():
             vk_cols = [row[1] for row in cursor.fetchall()]
             if "comment" not in vk_cols:
                 cursor.execute("ALTER TABLE vpn_keys ADD COLUMN comment TEXT")
-                logging.info(" -> Добавлен столбец 'comment' в 'vpn_keys'.")
+                logger.info(" -> Добавлен столбец 'comment' в 'vpn_keys'")
             if "is_gift" not in vk_cols:
                 cursor.execute("ALTER TABLE vpn_keys ADD COLUMN is_gift BOOLEAN DEFAULT 0")
-                logging.info(" -> Добавлен столбец 'is_gift' в 'vpn_keys'.")
+                logger.info(" -> Добавлен столбец 'is_gift' в 'vpn_keys'")
             if "auto_renew_enabled" not in vk_cols:
                 cursor.execute(
                     "ALTER TABLE vpn_keys ADD COLUMN auto_renew_enabled INTEGER DEFAULT 0"
                 )
-                logging.info(" -> Добавлен столбец 'auto_renew_enabled' в 'vpn_keys'.")
+                logger.info(" -> Добавлен столбец 'auto_renew_enabled' в 'vpn_keys'")
             if "last_plan_id" not in vk_cols:
                 # Не FOREIGN KEY намеренно — тариф могут удалить/поменять цену
                 # позже, а автопродление по старой уже недоступной записи
                 # просто должно тихо не найти план и пропустить ключ (см.
                 # get_keys_due_for_auto_renewal), а не падать на constraint
                 cursor.execute("ALTER TABLE vpn_keys ADD COLUMN last_plan_id INTEGER")
-                logging.info(" -> Добавлен столбец 'last_plan_id' в 'vpn_keys'.")
+                logger.info(" -> Добавлен столбец 'last_plan_id' в 'vpn_keys'")
             if "sub_token" not in vk_cols:
                 # Кэш subId мастер-клиента с панели. Позволяет собирать ссылку подписки
                 # локально, без запросов к панели (см. xui_api.get_key_details_from_host).
@@ -1393,10 +1393,10 @@ def run_migration():
                 # (scheduler._refresh_sub_token_cache), а при смене uuid/хоста оно
                 # сбрасывается (update_key_info/update_key_host/...).
                 cursor.execute("ALTER TABLE vpn_keys ADD COLUMN sub_token TEXT")
-                logging.info(" -> Добавлен столбец 'sub_token' в 'vpn_keys'.")
+                logger.info(" -> Добавлен столбец 'sub_token' в 'vpn_keys'")
             conn.commit()
         except sqlite3.Error as e:
-            logging.error(f"Не удалось мигрировать 'vpn_keys': {e}")
+            logger.error(f"Не удалось мигрировать 'vpn_keys': {e}")
 
         # Ensure promo code tables and columns (new flexible scheme)
         try:
@@ -1442,7 +1442,7 @@ def run_migration():
                     # Keep using valid_to for backward compatibility; unified API will read either
                     pass
             except Exception as e:
-                logging.warning(f"Предупреждение при миграции таблицы promo_codes (колонки): {e}")
+                logger.warning(f"Предупреждение при миграции таблицы promo_codes (колонки): {e}")
 
             # Mirror legacy counters to new ones if new ones are zero
             try:
@@ -1466,14 +1466,14 @@ def run_migration():
                 """)
             conn.commit()
         except sqlite3.Error as e:
-            logging.error(f"Не удалось подготовить таблицы промокодов: {e}")
+            logger.error(f"Не удалось подготовить таблицы промокодов: {e}")
 
         # Явный conn.close() здесь больше не нужен и вреден
 
-        logging.info("--- Миграция базы данных успешно завершена! ---")
+        logger.info("--- Миграция базы данных успешно завершена! ---")
 
     except sqlite3.Error as e:
-        logging.error(f"Ошибка во время миграции: {e}")
+        logger.error(f"Ошибка во время миграции: {e}")
 
 
 def create_new_transactions_table(cursor: sqlite3.Cursor):
@@ -1523,9 +1523,9 @@ def create_host(
                 (name, url, user, passwd, inbound, subscription_url),
             )
             conn.commit()
-            logging.info(f"Успешно создан новый сервер: {name}")
+            logger.info(f"Успешно создан новый сервер: {name}")
     except (sqlite3.Error, ValueError) as e:
-        logging.error(f"Ошибка при создании хоста '{name}': {e}")
+        logger.error(f"Ошибка при создании хоста '{name}': {e}")
 
 
 def update_host_subscription_url(host_name: str, subscription_url: str | None) -> bool:
@@ -1537,7 +1537,7 @@ def update_host_subscription_url(host_name: str, subscription_url: str | None) -
             cursor.execute("SELECT 1 FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name,))
             exists = cursor.fetchone() is not None
             if not exists:
-                logging.warning(
+                logger.warning(
                     f"update_host_subscription_url: сервер с именем '{host_name}' не найден (после TRIM)"
                 )
                 return False
@@ -1549,7 +1549,7 @@ def update_host_subscription_url(host_name: str, subscription_url: str | None) -
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить subscription_url для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось обновить subscription_url для хоста '{host_name}': {e}")
         return False
 
 
@@ -1565,7 +1565,7 @@ def set_referral_start_bonus_received(user_id: int) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             f"Не удалось пометить получение стартового реферального бонуса для пользователя {user_id}: {e}"
         )
         return False
@@ -1580,7 +1580,7 @@ def update_host_url(host_name: str, new_url: str) -> bool:
             cursor = conn.cursor()
             cursor.execute("SELECT 1 FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name,))
             if cursor.fetchone() is None:
-                logging.warning(f"update_host_url: сервер с именем '{host_name}' не найден")
+                logger.warning(f"update_host_url: сервер с именем '{host_name}' не найден")
                 return False
 
             cursor.execute(
@@ -1590,7 +1590,7 @@ def update_host_url(host_name: str, new_url: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить host_url для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось обновить host_url для хоста '{host_name}': {e}")
         return False
 
 
@@ -1600,7 +1600,7 @@ def update_host_name(old_name: str, new_name: str) -> bool:
         old_name_n = normalize_host_name(old_name)
         new_name_n = normalize_host_name(new_name)
         if not new_name_n:
-            logging.warning("update_host_name: новое имя хоста пустое после нормализации")
+            logger.warning("update_host_name: новое имя хоста пустое после нормализации")
             return False
 
         # Если имена идентичны, ничего делать не нужно
@@ -1613,13 +1613,13 @@ def update_host_name(old_name: str, new_name: str) -> bool:
             # Проверяем существование старого имени хоста
             cursor.execute("SELECT 1 FROM xui_hosts WHERE host_name = ?", (old_name_n,))
             if cursor.fetchone() is None:
-                logging.warning(f"update_host_name: исходный сервер не найден '{old_name_n}'")
+                logger.warning(f"update_host_name: исходный сервер не найден '{old_name_n}'")
                 return False
 
             # Проверяем, не занято ли целевое имя (только если это не смена регистра)
             cursor.execute("SELECT 1 FROM xui_hosts WHERE host_name = ?", (new_name_n,))
             if cursor.fetchone() is not None:
-                logging.warning(f"update_host_name: целевое имя '{new_name_n}' уже используется")
+                logger.warning(f"update_host_name: целевое имя '{new_name_n}' уже используется")
                 return False
 
             # Пакетное обновление
@@ -1640,7 +1640,7 @@ def update_host_name(old_name: str, new_name: str) -> bool:
             return True
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось переименовать сервер с '{old_name}' на '{new_name}': {e}")
+        logger.error(f"Не удалось переименовать сервер с '{old_name}' на '{new_name}': {e}")
         return False
 
 
@@ -1653,9 +1653,9 @@ def delete_host(host_name: str):
             cursor.execute("DELETE FROM plans WHERE TRIM(host_name) = TRIM(?)", (host_name,))
             cursor.execute("DELETE FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name,))
             conn.commit()
-            logging.info(f"Сервер '{host_name}' и его тарифы успешно удалены.")
+            logger.info(f"Сервер '{host_name}' и его тарифы успешно удалены")
     except sqlite3.Error as e:
-        logging.error(f"Ошибка удаления хоста '{host_name}': {e}")
+        logger.error(f"Ошибка удаления хоста '{host_name}': {e}")
 
 
 def get_host(host_name: str) -> dict | None:
@@ -1669,7 +1669,7 @@ def get_host(host_name: str) -> dict | None:
             result = cursor.fetchone()
             return dict(result) if result else None
     except sqlite3.Error as e:
-        logging.error(f"Ошибка получения хоста '{host_name}': {e}")
+        logger.error(f"Ошибка получения хоста '{host_name}': {e}")
         return None
 
 
@@ -1694,7 +1694,7 @@ def update_host_ssh_settings(
                 (host_name_n,),
             )
             if cursor.fetchone() is None:
-                logging.warning(f"update_host_ssh_settings: сервер не найден '{host_name_n}'")
+                logger.warning(f"update_host_ssh_settings: сервер не найден '{host_name_n}'")
                 return False
 
             cursor.execute(
@@ -1715,7 +1715,7 @@ def update_host_ssh_settings(
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить SSH-настройки для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось обновить SSH-настройки для хоста '{host_name}': {e}")
         return False
 
 
@@ -1729,7 +1729,7 @@ def delete_key_by_id(key_id: int) -> bool:
             conn.commit()
             return affected > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить ключ по id {key_id}: {e}")
+        logger.error(f"Не удалось удалить ключ по id {key_id}: {e}")
         return False
 
 
@@ -1742,7 +1742,7 @@ def update_key_comment(key_id: int, comment: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить комментарий ключа для {key_id}: {e}")
+        logger.error(f"Не удалось обновить комментарий ключа для {key_id}: {e}")
         return False
 
 
@@ -1762,7 +1762,7 @@ def get_all_hosts() -> list[dict]:
                 result.append(d)
             return result
     except sqlite3.Error as e:
-        logging.error(f"Ошибка получения списка всех хостов: {e}")
+        logger.error(f"Ошибка получения списка всех хостов: {e}")
         return []
 
 
@@ -1791,7 +1791,7 @@ def get_speedtests(host_name: str, limit: int = 20) -> list[dict]:
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить speedtest-данные для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось получить speedtest-данные для хоста '{host_name}': {e}")
         return []
 
 
@@ -1816,7 +1816,7 @@ def get_latest_speedtest(host_name: str) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить последний speedtest для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось получить последний speedtest для хоста '{host_name}': {e}")
         return None
 
 
@@ -1831,7 +1831,7 @@ def get_latest_speedtest_run_at() -> datetime | None:
                 return None
             return datetime.fromisoformat(row[0])
     except (sqlite3.Error, ValueError, TypeError) as e:
-        logging.error(f"Не удалось получить время последнего speedtest: {e}")
+        logger.error(f"Не удалось получить время последнего speedtest: {e}")
         return None
 
 
@@ -1847,7 +1847,7 @@ def record_backup_created(filename: str | None = None) -> None:
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось записать backup_history: {e}")
+        logger.error(f"Не удалось записать backup_history: {e}")
 
 
 def get_latest_backup_created_at() -> datetime | None:
@@ -1861,7 +1861,7 @@ def get_latest_backup_created_at() -> datetime | None:
                 return None
             return datetime.fromisoformat(row[0])
     except (sqlite3.Error, ValueError, TypeError) as e:
-        logging.error(f"Не удалось получить время последнего бэкапа: {e}")
+        logger.error(f"Не удалось получить время последнего бэкапа: {e}")
         return None
 
 
@@ -1924,7 +1924,7 @@ def find_and_complete_pending_transaction(
             )
             if cursor.rowcount != 1:
                 conn.rollback()
-                logger.warning(f"Транзакция {payment_id} уже завершена параллельным запросом.")
+                logger.warning(f"Транзакция {payment_id} уже завершена параллельным запросом")
                 return None
             conn.commit()
 
@@ -1939,7 +1939,7 @@ def find_and_complete_pending_transaction(
                 md = {}
             return md
     except sqlite3.Error as e:
-        logging.error(f"Не удалось завершить ожидающую транзакцию {payment_id}: {e}")
+        logger.error(f"Не удалось завершить ожидающую транзакцию {payment_id}: {e}")
         return None
 
 
@@ -1991,7 +1991,7 @@ def insert_host_speedtest(
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось сохранить запись speedtest для '{host_name}': {e}")
+        logger.error(f"Не удалось сохранить запись speedtest для '{host_name}': {e}")
         return False
 
 
@@ -2061,7 +2061,7 @@ def get_admin_stats() -> dict:
             row = cursor.fetchone()
             stats["today_issued_keys"] = (row[0] or 0) if row else 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить статистику администратора: {e}")
+        logger.error(f"Не удалось получить статистику администратора: {e}")
     return stats
 
 
@@ -2073,7 +2073,7 @@ def get_all_key_ids() -> set[int]:
             cursor.execute("SELECT key_id FROM vpn_keys")
             return {row[0] for row in cursor.fetchall()}
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить идентификаторы ключей: {e}")
+        logger.error(f"Не удалось получить идентификаторы ключей: {e}")
         return set()
 
 
@@ -2098,7 +2098,7 @@ def get_keys_expiring_within(hours: float) -> list[dict]:
             )
             return [dict(zip(("key_id", "user_id", "expiry_date"), row)) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить истекающие ключи: {e}")
+        logger.error(f"Не удалось получить истекающие ключи: {e}")
         return []
 
 
@@ -2111,7 +2111,7 @@ def get_all_keys() -> list[dict]:
             cursor.execute("SELECT * FROM vpn_keys")
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить все ключи: {e}")
+        logger.error(f"Не удалось получить все ключи: {e}")
         return []
 
 
@@ -2127,7 +2127,7 @@ def get_keys_for_user(user_id: int) -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключи пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить ключи пользователя {user_id}: {e}")
         return []
 
 
@@ -2141,7 +2141,7 @@ def get_key_by_id(key_id: int) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключ по id {key_id}: {e}")
+        logger.error(f"Не удалось получить ключ по id {key_id}: {e}")
         return None
 
 
@@ -2157,10 +2157,10 @@ def update_key_email(key_id: int, new_email: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.IntegrityError as e:
-        logging.error(f"Нарушение уникальности email для ключа {key_id}: {e}")
+        logger.error(f"Нарушение уникальности email для ключа {key_id}: {e}")
         return False
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить email ключа {key_id}: {e}")
+        logger.error(f"Не удалось обновить email ключа {key_id}: {e}")
         return False
 
 
@@ -2178,7 +2178,7 @@ def update_key_host(key_id: int, new_host_name: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить хост ключа {key_id}: {e}")
+        logger.error(f"Не удалось обновить хост ключа {key_id}: {e}")
         return False
 
 
@@ -2222,12 +2222,12 @@ def create_gift_key(
             conn.commit()
             return cursor.lastrowid
     except sqlite3.IntegrityError as e:
-        logging.error(
+        logger.error(
             f"Не удалось создать подарочный ключ для пользователя {user_id}: email {key_email} уже занят: {e}"
         )
         return None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать подарочный ключ для пользователя {user_id}: {e}")
+        logger.error(f"Не удалось создать подарочный ключ для пользователя {user_id}: {e}")
         return None
 
 
@@ -2285,7 +2285,7 @@ def get_admin_ids() -> set[int]:
                 except Exception:
                     pass
     except Exception as e:
-        logging.warning(f"Ошибка при получении списка ID администраторов: {e}")
+        logger.warning(f"Ошибка при получении списка ID администраторов: {e}")
     return ids
 
 
@@ -2318,7 +2318,7 @@ def get_referrals_for_user(user_id: int) -> list[dict]:
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить рефералов пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить рефералов пользователя {user_id}: {e}")
         return []
 
 
@@ -2361,7 +2361,7 @@ def get_users_keys_and_referrals(user_ids: list[int]) -> tuple[dict[int, list[di
                     d = dict(row)
                     refs_by_user.setdefault(d.pop("referred_by"), []).append(d)
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключи/рефералов для списка пользователей: {e}")
+        logger.error(f"Не удалось получить ключи/рефералов для списка пользователей: {e}")
     return keys_by_user, refs_by_user
 
 
@@ -2377,7 +2377,7 @@ def get_all_settings() -> dict:
             for row in rows:
                 settings[row["key"]] = row["value"]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить все настройки: {e}")
+        logger.error(f"Не удалось получить все настройки: {e}")
     return settings
 
 
@@ -2394,10 +2394,10 @@ def update_setting(key: str, value: str):
 
         # Обновляем кэш в памяти, чтобы бот сразу увидел изменения
         SETTINGS_CACHE[key] = value
-        logging.info(f"Настройка '{key}' обновлена в БД и кэше.")
+        logger.info(f"Настройка '{key}' обновлена в БД и кэше")
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить настройку '{key}': {e}")
+        logger.error(f"Не удалось обновить настройку '{key}': {e}")
 
 
 def create_plan(host_name: str, plan_name: str, months: int, price: float):
@@ -2411,9 +2411,9 @@ def create_plan(host_name: str, plan_name: str, months: int, price: float):
                 (host_name, plan_name, months, price),
             )
             conn.commit()
-            logging.info(f"Создан новый тариф '{plan_name}' для хоста '{host_name}'.")
+            logger.info(f"Создан новый тариф '{plan_name}' для хоста '{host_name}'")
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать тариф для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось создать тариф для хоста '{host_name}': {e}")
 
 
 def get_plans_for_host(host_name: str) -> list[dict]:
@@ -2430,7 +2430,7 @@ def get_plans_for_host(host_name: str) -> list[dict]:
             plans = cursor.fetchall()
             return [dict(plan) for plan in plans]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить тарифы для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось получить тарифы для хоста '{host_name}': {e}")
         return []
 
 
@@ -2444,7 +2444,7 @@ def get_plan_by_id(plan_id: int) -> dict | None:
             plan = cursor.fetchone()
             return dict(plan) if plan else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить тариф по id '{plan_id}': {e}")
+        logger.error(f"Не удалось получить тариф по id '{plan_id}': {e}")
         return None
 
 
@@ -2455,9 +2455,9 @@ def delete_plan(plan_id: int):
             cursor = conn.cursor()
             cursor.execute("DELETE FROM plans WHERE plan_id = ?", (plan_id,))
             conn.commit()
-            logging.info(f"Тариф с id {plan_id} удалён.")
+            logger.info(f"Тариф с id {plan_id} удалён")
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить тариф с id {plan_id}: {e}")
+        logger.error(f"Не удалось удалить тариф с id {plan_id}: {e}")
 
 
 def update_plan(plan_id: int, plan_name: str, months: int, price: float) -> bool:
@@ -2471,14 +2471,14 @@ def update_plan(plan_id: int, plan_name: str, months: int, price: float) -> bool
             )
             conn.commit()
             if cursor.rowcount == 0:
-                logging.warning(f"Ни один тариф не обновлён для id {plan_id} (не найден).")
+                logger.warning(f"Ни один тариф не обновлён для id {plan_id} (не найден)")
                 return False
-            logging.info(
-                f"Тариф {plan_id} обновлён: name='{plan_name}', months={months}, price={price}."
+            logger.info(
+                f"Тариф {plan_id} обновлён: name='{plan_name}', months={months}, price={price}"
             )
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить тариф {plan_id}: {e}")
+        logger.error(f"Не удалось обновить тариф {plan_id}: {e}")
         return False
 
 
@@ -2534,7 +2534,7 @@ def register_user_if_not_exists(telegram_id: int, username: str, referrer_id) ->
             conn.commit()
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось зарегистрировать пользователя {telegram_id}: {e}")
+        logger.error(f"Не удалось зарегистрировать пользователя {telegram_id}: {e}")
         return False
 
     return is_new_user  # Возвращаем True (новый) или False (старый)
@@ -2543,7 +2543,7 @@ def register_user_if_not_exists(telegram_id: int, username: str, referrer_id) ->
 def add_to_referral_balance(user_id: int, amount: float):
     """Прибавляет сумму к реферальному балансу пользователя (одна из веток учёта)."""
     if not _finite(amount):
-        logging.error(f"Отклонена нечисловая сумма реферального баланса для {user_id}: {amount!r}")
+        logger.error(f"Отклонена нечисловая сумма реферального баланса для {user_id}: {amount!r}")
         return
     try:
         with get_db_connection() as conn:
@@ -2554,13 +2554,13 @@ def add_to_referral_balance(user_id: int, amount: float):
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось начислить реферальный баланс пользователю {user_id}: {e}")
+        logger.error(f"Не удалось начислить реферальный баланс пользователю {user_id}: {e}")
 
 
 def set_referral_balance(user_id: int, value: float):
     """Устанавливает точное значение реферального баланса пользователя (одна из веток учёта)."""
     if not _finite(value):
-        logging.error(f"Отклонено нечисловое значение реферального баланса для {user_id}: {value!r}")
+        logger.error(f"Отклонено нечисловое значение реферального баланса для {user_id}: {value!r}")
         return
     try:
         with get_db_connection() as conn:
@@ -2571,13 +2571,13 @@ def set_referral_balance(user_id: int, value: float):
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось установить реферальный баланс пользователю {user_id}: {e}")
+        logger.error(f"Не удалось установить реферальный баланс пользователю {user_id}: {e}")
 
 
 def set_referral_balance_all(user_id: int, value: float):
     """Устанавливает точное значение общего реферального баланса пользователя."""
     if not _finite(value):
-        logging.error(f"Отклонено нечисловое значение общего реферального баланса для {user_id}: {value!r}")
+        logger.error(f"Отклонено нечисловое значение общего реферального баланса для {user_id}: {value!r}")
         return
     try:
         with get_db_connection() as conn:
@@ -2588,7 +2588,7 @@ def set_referral_balance_all(user_id: int, value: float):
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось установить общий реферальный баланс пользователю {user_id}: {e}")
+        logger.error(f"Не удалось установить общий реферальный баланс пользователю {user_id}: {e}")
 
 
 def get_referral_balance_all(user_id: int) -> float:
@@ -2603,7 +2603,7 @@ def get_referral_balance_all(user_id: int) -> float:
             row = cursor.fetchone()
             return row[0] if row else 0.0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить общий реферальный баланс пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить общий реферальный баланс пользователя {user_id}: {e}")
         return 0.0
 
 
@@ -2616,7 +2616,7 @@ def get_referral_balance(user_id: int) -> float:
             result = cursor.fetchone()
             return result[0] if result else 0.0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить реферальный баланс пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить реферальный баланс пользователя {user_id}: {e}")
         return 0.0
 
 
@@ -2629,14 +2629,14 @@ def get_balance(user_id: int) -> float:
             result = cursor.fetchone()
             return result[0] if result else 0.0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить баланс пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить баланс пользователя {user_id}: {e}")
         return 0.0
 
 
 def adjust_user_balance(user_id: int, delta: float) -> bool:
     """Скорректировать баланс пользователя на указанную дельту (может быть отрицательной)."""
     if not _finite(delta):
-        logging.error(f"Отклонена нечисловая дельта баланса для {user_id}: {delta!r}")
+        logger.error(f"Отклонена нечисловая дельта баланса для {user_id}: {delta!r}")
         return False
     try:
         with get_db_connection() as conn:
@@ -2648,14 +2648,14 @@ def adjust_user_balance(user_id: int, delta: float) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось скорректировать баланс пользователя {user_id}: {e}")
+        logger.error(f"Не удалось скорректировать баланс пользователя {user_id}: {e}")
         return False
 
 
 def set_balance(user_id: int, value: float) -> bool:
     """Устанавливает точное значение основного баланса пользователя."""
     if not _finite(value):
-        logging.error(f"Отклонено нечисловое значение баланса для {user_id}: {value!r}")
+        logger.error(f"Отклонено нечисловое значение баланса для {user_id}: {value!r}")
         return False
     try:
         with get_db_connection() as conn:
@@ -2664,14 +2664,14 @@ def set_balance(user_id: int, value: float) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось установить баланс пользователя {user_id}: {e}")
+        logger.error(f"Не удалось установить баланс пользователя {user_id}: {e}")
         return False
 
 
 def add_to_balance(user_id: int, amount: float) -> bool:
     """Прибавляет (или вычитает, при отрицательном amount) сумму к основному балансу пользователя."""
     if not _finite(amount):
-        logging.error(f"Отклонена нечисловая сумма баланса для {user_id}: {amount!r}")
+        logger.error(f"Отклонена нечисловая сумма баланса для {user_id}: {amount!r}")
         return False
     try:
         with get_db_connection() as conn:
@@ -2683,7 +2683,7 @@ def add_to_balance(user_id: int, amount: float) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось пополнить баланс пользователя {user_id}: {e}")
+        logger.error(f"Не удалось пополнить баланс пользователя {user_id}: {e}")
         return False
 
 
@@ -2719,14 +2719,14 @@ def credit_referral_reward(user_id: int, amount: float) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось начислить реферальное вознаграждение пользователю {user_id}: {e}")
+        logger.error(f"Не удалось начислить реферальное вознаграждение пользователю {user_id}: {e}")
         return False
 
 
 def deduct_from_balance(user_id: int, amount: float) -> bool:
     """Атомарное списание с основного баланса при достаточности средств."""
     if not _finite(amount):
-        logging.error(f"Отклонено списание с нечисловой суммой для {user_id}: {amount!r}")
+        logger.error(f"Отклонено списание с нечисловой суммой для {user_id}: {amount!r}")
         return False
     if amount <= 0:
         return True
@@ -2747,14 +2747,14 @@ def deduct_from_balance(user_id: int, amount: float) -> bool:
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось списать с баланса пользователя {user_id}: {e}")
+        logger.error(f"Не удалось списать с баланса пользователя {user_id}: {e}")
         return False
 
 
 def deduct_from_referral_balance(user_id: int, amount: float) -> bool:
     """Атомарное списание с реферального баланса при достаточности средств."""
     if not _finite(amount):
-        logging.error(f"Отклонено списание реферального баланса с нечисловой суммой для {user_id}: {amount!r}")
+        logger.error(f"Отклонено списание реферального баланса с нечисловой суммой для {user_id}: {amount!r}")
         return False
     if amount <= 0:
         return True
@@ -2775,7 +2775,7 @@ def deduct_from_referral_balance(user_id: int, amount: float) -> bool:
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось списать с реферального баланса пользователя {user_id}: {e}")
+        logger.error(f"Не удалось списать с реферального баланса пользователя {user_id}: {e}")
         return False
 
 
@@ -2787,7 +2787,7 @@ def get_referral_count(user_id: int) -> int:
             cursor.execute("SELECT COUNT(*) FROM users WHERE referred_by = ?", (user_id,))
             return cursor.fetchone()[0] or 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить количество рефералов пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить количество рефералов пользователя {user_id}: {e}")
         return 0
 
 
@@ -2826,7 +2826,7 @@ def get_top_referrers(limit: int = 20) -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить топ рефереров: {e}")
+        logger.error(f"Не удалось получить топ рефереров: {e}")
         return []
 
 
@@ -2840,7 +2840,7 @@ def get_user(telegram_id: int):
             user_data = cursor.fetchone()
             return dict(user_data) if user_data else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить пользователя {telegram_id}: {e}")
+        logger.error(f"Не удалось получить пользователя {telegram_id}: {e}")
         return None
 
 
@@ -2854,9 +2854,9 @@ def set_terms_agreed(telegram_id: int):
                 (telegram_id,),
             )
             conn.commit()
-            logging.info(f"Пользователь {telegram_id} согласился с условиями.")
+            logger.info(f"Пользователь {telegram_id} согласился с условиями")
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             f"Не удалось отметить согласие с условиями для пользователя {telegram_id}: {e}"
         )
 
@@ -2872,7 +2872,7 @@ def update_user_stats(telegram_id: int, amount_spent: float, months_purchased: i
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить статистику пользователя {telegram_id}: {e}")
+        logger.error(f"Не удалось обновить статистику пользователя {telegram_id}: {e}")
 
 
 def get_user_count() -> int:
@@ -2883,7 +2883,7 @@ def get_user_count() -> int:
             cursor.execute("SELECT COUNT(*) FROM users")
             return cursor.fetchone()[0] or 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить количество пользователей: {e}")
+        logger.error(f"Не удалось получить количество пользователей: {e}")
         return 0
 
 
@@ -2895,7 +2895,7 @@ def get_total_keys_count() -> int:
             cursor.execute("SELECT COUNT(*) FROM vpn_keys")
             return cursor.fetchone()[0] or 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить общее количество ключей: {e}")
+        logger.error(f"Не удалось получить общее количество ключей: {e}")
         return 0
 
 
@@ -2914,7 +2914,7 @@ def get_total_spent_sum() -> float:
             val = cursor.fetchone()
             return (val[0] if val else 0.0) or 0.0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить сумму общих трат: {e}")
+        logger.error(f"Не удалось получить сумму общих трат: {e}")
         return 0.0
 
 
@@ -2933,7 +2933,7 @@ def create_pending_transaction(
             conn.commit()
             return cursor.lastrowid
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать ожидающую транзакцию: {e}")
+        logger.error(f"Не удалось создать ожидающую транзакцию: {e}")
         return 0
 
 
@@ -2970,7 +2970,7 @@ def find_and_complete_ton_transaction(payment_id: str, amount_ton: float) -> dic
                     if amount_ton < expected_amount_ton * 0.995:
                         logger.warning(
                             f"TON Webhook: недоплата по {payment_id} — пришло {amount_ton} TON, "
-                            f"ожидалось {expected_amount_ton} TON. Транзакция не завершена."
+                            f"ожидалось {expected_amount_ton} TON. Транзакция не завершена"
                         )
                         return None
                 except (TypeError, ValueError):
@@ -2982,13 +2982,13 @@ def find_and_complete_ton_transaction(payment_id: str, amount_ton: float) -> dic
             )
             if cursor.rowcount != 1:
                 conn.rollback()
-                logger.warning(f"TON Webhook: транзакция {payment_id} уже завершена параллельным запросом.")
+                logger.warning(f"TON Webhook: транзакция {payment_id} уже завершена параллельным запросом")
                 return None
             conn.commit()
 
             return metadata
     except sqlite3.Error as e:
-        logging.error(f"Не удалось завершить TON-транзакцию {payment_id}: {e}")
+        logger.error(f"Не удалось завершить TON-транзакцию {payment_id}: {e}")
         return None
 
 
@@ -3028,7 +3028,7 @@ def log_transaction(
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось залогировать транзакцию пользователя {user_id}: {e}")
+        logger.error(f"Не удалось залогировать транзакцию пользователя {user_id}: {e}")
 
 
 def get_paginated_transactions(page: int = 1, per_page: int = 15) -> tuple[list[dict], int]:
@@ -3066,7 +3066,7 @@ def get_paginated_transactions(page: int = 1, per_page: int = 15) -> tuple[list[
                 transactions.append(transaction_dict)
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить постраничный список транзакций: {e}")
+        logger.error(f"Не удалось получить постраничный список транзакций: {e}")
 
     return transactions, total
 
@@ -3123,7 +3123,7 @@ def get_user_transactions(user_id: int, page: int = 1, per_page: int = 5) -> tup
                 transactions.append(transaction_dict)
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить транзакции пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить транзакции пользователя {user_id}: {e}")
 
     return transactions, total
 
@@ -3135,11 +3135,11 @@ def set_trial_used(telegram_id: int):
             cursor = conn.cursor()
             cursor.execute("UPDATE users SET trial_used = 1 WHERE telegram_id = ?", (telegram_id,))
             conn.commit()
-            logging.info(
-                f"Пробный период отмечен как использованный для пользователя {telegram_id}."
+            logger.info(
+                f"Пробный период отмечен как использованный для пользователя {telegram_id}"
             )
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             f"Не удалось отметить пробный период как использованный для пользователя {telegram_id}: {e}"
         )
 
@@ -3171,7 +3171,7 @@ def add_new_key(
             conn.commit()
             return new_key_id
     except sqlite3.Error as e:
-        logging.error(f"Не удалось добавить новый ключ для пользователя {user_id}: {e}")
+        logger.error(f"Не удалось добавить новый ключ для пользователя {user_id}: {e}")
         return None
 
 
@@ -3186,7 +3186,7 @@ def delete_key_by_email(email: str) -> bool:
             logger.debug(f"delete_key_by_email('{email}') затронуто строк={affected}")
             return affected > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить ключ '{email}': {e}")
+        logger.error(f"Не удалось удалить ключ '{email}': {e}")
         return False
 
 
@@ -3200,7 +3200,7 @@ def get_user_keys(user_id: int):
             keys = cursor.fetchall()
             return [dict(key) for key in keys]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключи пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить ключи пользователя {user_id}: {e}")
         return []
 
 
@@ -3214,7 +3214,7 @@ def get_key_by_email(key_email: str):
             key_data = cursor.fetchone()
             return dict(key_data) if key_data else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключ по email {key_email}: {e}")
+        logger.error(f"Не удалось получить ключ по email {key_email}: {e}")
         return None
 
 
@@ -3250,7 +3250,7 @@ def get_keys_by_base_prefix(base_prefix: str) -> list[dict]:
             )
             rows = [dict(r) for r in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключи по базовому префиксу '{base_prefix}': {e}")
+        logger.error(f"Не удалось получить ключи по базовому префиксу '{base_prefix}': {e}")
         return []
 
     pattern = re.compile(rf"^{re.escape(base_prefix)}(_\d+)?@", re.IGNORECASE)
@@ -3271,7 +3271,7 @@ def update_key_info(key_id: int, new_xui_uuid: str, new_expiry_ms: int):
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить ключ {key_id}: {e}")
+        logger.error(f"Не удалось обновить ключ {key_id}: {e}")
 
 
 def set_key_sub_token_by_email(key_email: str, sub_token: str) -> bool:
@@ -3294,7 +3294,7 @@ def set_key_sub_token_by_email(key_email: str, sub_token: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось сохранить sub_token для {key_email}: {e}")
+        logger.error(f"Не удалось сохранить sub_token для {key_email}: {e}")
         return False
 
 
@@ -3308,7 +3308,7 @@ def set_key_sub_tokens_bulk(pairs: list[tuple[str, int]]) -> int:
             conn.commit()
         return len(pairs)
     except sqlite3.Error as e:
-        logging.error(f"Не удалось пакетно обновить sub_token: {e}")
+        logger.error(f"Не удалось пакетно обновить sub_token: {e}")
         return 0
 
 
@@ -3325,7 +3325,7 @@ def set_key_auto_renew(key_id: int, enabled: bool) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось изменить auto_renew_enabled для ключа {key_id}: {e}")
+        logger.error(f"Не удалось изменить auto_renew_enabled для ключа {key_id}: {e}")
         return False
 
 
@@ -3346,7 +3346,7 @@ def set_key_last_plan(key_id: int, plan_id: int | None) -> None:
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось сохранить last_plan_id для ключа {key_id}: {e}")
+        logger.error(f"Не удалось сохранить last_plan_id для ключа {key_id}: {e}")
 
 
 def get_keys_due_for_auto_renewal(window_hours: int = 24) -> list[dict]:
@@ -3378,7 +3378,7 @@ def get_keys_due_for_auto_renewal(window_hours: int = 24) -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключи для автопродления: {e}")
+        logger.error(f"Не удалось получить ключи для автопродления: {e}")
         return []
 
 
@@ -3400,7 +3400,7 @@ def update_key_host_and_info(
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить хост и данные ключа {key_id}: {e}")
+        logger.error(f"Не удалось обновить хост и данные ключа {key_id}: {e}")
 
 
 def get_next_key_number(user_id: int) -> int:
@@ -3428,7 +3428,7 @@ def get_keys_for_host(host_name: str) -> list[dict]:
             keys = cursor.fetchall()
             return [dict(key) for key in keys]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить ключи для хоста '{host_name}': {e}")
+        logger.error(f"Не удалось получить ключи для хоста '{host_name}': {e}")
         return []
 
 
@@ -3442,7 +3442,7 @@ def get_all_vpn_users():
             users = cursor.fetchall()
             return [dict(user) for user in users]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить всех VPN-пользователей: {e}")
+        logger.error(f"Не удалось получить всех VPN-пользователей: {e}")
         return []
 
 
@@ -3463,7 +3463,7 @@ def update_key_status_from_server(key_email: str, xui_client_data):
                 cursor.execute("DELETE FROM vpn_keys WHERE key_email = ?", (key_email,))
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить статус ключа {key_email}: {e}")
+        logger.error(f"Не удалось обновить статус ключа {key_email}: {e}")
 
 
 def get_daily_stats_for_charts(days: int = 30) -> dict:
@@ -3494,7 +3494,7 @@ def get_daily_stats_for_charts(days: int = 30) -> dict:
             for row in cursor.fetchall():
                 stats["keys"][row[0]] = row[1]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить дневную статистику для графиков: {e}")
+        logger.error(f"Не удалось получить дневную статистику для графиков: {e}")
     return stats
 
 
@@ -3519,7 +3519,7 @@ def get_recent_transactions(limit: int = 15) -> list[dict]:
             """
             cursor.execute(query, (limit,))
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить последние транзакции: {e}")
+        logger.error(f"Не удалось получить последние транзакции: {e}")
     return transactions
 
 
@@ -3532,7 +3532,7 @@ def get_all_users() -> list[dict]:
             cursor.execute("SELECT * FROM users ORDER BY registration_date DESC")
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить всех пользователей: {e}")
+        logger.error(f"Не удалось получить всех пользователей: {e}")
         return []
 
 
@@ -3581,7 +3581,7 @@ def get_users_by_segment(segment: str) -> list[dict]:
                 cursor.execute("SELECT * FROM users ORDER BY registration_date DESC")
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить пользователей по сегменту '{segment}': {e}")
+        logger.error(f"Не удалось получить пользователей по сегменту '{segment}': {e}")
         return []
 
 
@@ -3624,7 +3624,7 @@ def create_scheduled_broadcast(
             conn.commit()
             return cursor.lastrowid
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать отложенную рассылку: {e}")
+        logger.error(f"Не удалось создать отложенную рассылку: {e}")
         return None
 
 
@@ -3642,7 +3642,7 @@ def get_due_scheduled_broadcasts() -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить отложенные рассылки к отправке: {e}")
+        logger.error(f"Не удалось получить отложенные рассылки к отправке: {e}")
         return []
 
 
@@ -3658,7 +3658,7 @@ def get_pending_scheduled_broadcasts() -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить список отложенных рассылок: {e}")
+        logger.error(f"Не удалось получить список отложенных рассылок: {e}")
         return []
 
 
@@ -3671,7 +3671,7 @@ def get_scheduled_broadcast_by_id(broadcast_id: int) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить отложенную рассылку {broadcast_id}: {e}")
+        logger.error(f"Не удалось получить отложенную рассылку {broadcast_id}: {e}")
         return None
 
 
@@ -3686,7 +3686,7 @@ def mark_scheduled_broadcast_done(broadcast_id: int, status: str, result_summary
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить статус отложенной рассылки {broadcast_id}: {e}")
+        logger.error(f"Не удалось обновить статус отложенной рассылки {broadcast_id}: {e}")
 
 
 def cancel_scheduled_broadcast(broadcast_id: int) -> bool:
@@ -3702,7 +3702,7 @@ def cancel_scheduled_broadcast(broadcast_id: int) -> bool:
             conn.commit()
             return cursor.rowcount == 1
     except sqlite3.Error as e:
-        logging.error(f"Не удалось отменить отложенную рассылку {broadcast_id}: {e}")
+        logger.error(f"Не удалось отменить отложенную рассылку {broadcast_id}: {e}")
         return False
 
 
@@ -3746,7 +3746,7 @@ def save_pending_purchase(
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось сохранить незавершённую покупку для {user_id}: {e}")
+        logger.error(f"Не удалось сохранить незавершённую покупку для {user_id}: {e}")
         return False
 
 
@@ -3766,7 +3766,7 @@ def get_pending_purchase(user_id: int, max_age_minutes: int = 60) -> dict | None
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить незавершённую покупку для {user_id}: {e}")
+        logger.error(f"Не удалось получить незавершённую покупку для {user_id}: {e}")
         return None
 
 
@@ -3777,7 +3777,7 @@ def clear_pending_purchase(user_id: int):
             cursor.execute("DELETE FROM pending_purchases WHERE user_id = ?", (user_id,))
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить незавершённую покупку для {user_id}: {e}")
+        logger.error(f"Не удалось удалить незавершённую покупку для {user_id}: {e}")
 
 
 def create_gift_subscription(
@@ -3802,7 +3802,7 @@ def create_gift_subscription(
             conn.commit()
             return gift_code
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать подарочную подписку для {created_by}: {e}")
+        logger.error(f"Не удалось создать подарочную подписку для {created_by}: {e}")
         return None
 
 
@@ -3815,7 +3815,7 @@ def get_gift_subscription(gift_code: str) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить подарочную подписку {gift_code}: {e}")
+        logger.error(f"Не удалось получить подарочную подписку {gift_code}: {e}")
         return None
 
 
@@ -3838,7 +3838,7 @@ def claim_gift_subscription(gift_code: str, claimed_by: int) -> bool:
             conn.commit()
             return cursor.rowcount == 1
     except sqlite3.Error as e:
-        logging.error(f"Не удалось активировать подарок {gift_code}: {e}")
+        logger.error(f"Не удалось активировать подарок {gift_code}: {e}")
         return False
 
 
@@ -3854,7 +3854,7 @@ def get_gifts_created_by(user_id: int) -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить список подарков пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить список подарков пользователя {user_id}: {e}")
         return []
 
 
@@ -3915,7 +3915,7 @@ def get_users_paginated(
                 )
             users = [dict(r) for r in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить постраничный список пользователей: {e}")
+        logger.error(f"Не удалось получить постраничный список пользователей: {e}")
         return [], 0
     return users, total
 
@@ -3928,7 +3928,7 @@ def ban_user(telegram_id: int):
             cursor.execute("UPDATE users SET is_banned = 1 WHERE telegram_id = ?", (telegram_id,))
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось заблокировать пользователя {telegram_id}: {e}")
+        logger.error(f"Не удалось заблокировать пользователя {telegram_id}: {e}")
 
 
 def is_in_external_blacklist(telegram_id: int) -> bool:
@@ -3940,7 +3940,7 @@ def is_in_external_blacklist(telegram_id: int) -> bool:
             cur.execute("SELECT 1 FROM external_blacklist WHERE telegram_id = ?", (telegram_id,))
             return cur.fetchone() is not None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось проверить внешний чёрный список для {telegram_id}: {e}")
+        logger.error(f"Не удалось проверить внешний чёрный список для {telegram_id}: {e}")
         return False
 
 
@@ -3952,7 +3952,7 @@ def count_external_blacklist() -> int:
             cur.execute("SELECT COUNT(*) FROM external_blacklist")
             return int(cur.fetchone()[0] or 0)
     except sqlite3.Error as e:
-        logging.error(f"Не удалось посчитать внешний чёрный список: {e}")
+        logger.error(f"Не удалось посчитать внешний чёрный список: {e}")
         return 0
 
 
@@ -4103,7 +4103,7 @@ def unban_user(telegram_id: int):
             cursor.execute("UPDATE users SET is_banned = 0 WHERE telegram_id = ?", (telegram_id,))
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось разблокировать пользователя {telegram_id}: {e}")
+        logger.error(f"Не удалось разблокировать пользователя {telegram_id}: {e}")
 
 
 def delete_user_keys(user_id: int):
@@ -4114,7 +4114,7 @@ def delete_user_keys(user_id: int):
             cursor.execute("DELETE FROM vpn_keys WHERE user_id = ?", (user_id,))
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить ключи пользователя {user_id}: {e}")
+        logger.error(f"Не удалось удалить ключи пользователя {user_id}: {e}")
 
 
 def create_support_ticket(user_id: int, subject: str | None = None) -> int | None:
@@ -4129,7 +4129,7 @@ def create_support_ticket(user_id: int, subject: str | None = None) -> int | Non
             conn.commit()
             return cursor.lastrowid
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать тикет поддержки для пользователя {user_id}: {e}")
+        logger.error(f"Не удалось создать тикет поддержки для пользователя {user_id}: {e}")
         return None
 
 
@@ -4149,7 +4149,7 @@ def add_support_message(ticket_id: int, sender: str, content: str) -> int | None
             conn.commit()
             return cursor.lastrowid
     except sqlite3.Error as e:
-        logging.error(f"Не удалось добавить сообщение поддержки в тикет {ticket_id}: {e}")
+        logger.error(f"Не удалось добавить сообщение поддержки в тикет {ticket_id}: {e}")
         return None
 
 
@@ -4167,7 +4167,7 @@ def update_ticket_thread_info(
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить данные треда для тикета {ticket_id}: {e}")
+        logger.error(f"Не удалось обновить данные треда для тикета {ticket_id}: {e}")
         return False
 
 
@@ -4181,7 +4181,7 @@ def get_ticket(ticket_id: int) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить тикет {ticket_id}: {e}")
+        logger.error(f"Не удалось получить тикет {ticket_id}: {e}")
         return None
 
 
@@ -4198,7 +4198,7 @@ def get_ticket_by_thread(forum_chat_id: str, message_thread_id: int) -> dict | N
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             f"Не удалось получить тикет по треду {forum_chat_id}/{message_thread_id}: {e}"
         )
         return None
@@ -4222,7 +4222,7 @@ def get_user_tickets(user_id: int, status: str | None = None) -> list[dict]:
                 )
             return [dict(r) for r in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить тикеты пользователя {user_id}: {e}")
+        logger.error(f"Не удалось получить тикеты пользователя {user_id}: {e}")
         return []
 
 
@@ -4238,7 +4238,7 @@ def get_ticket_messages(ticket_id: int) -> list[dict]:
             )
             return [dict(r) for r in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить сообщения тикета {ticket_id}: {e}")
+        logger.error(f"Не удалось получить сообщения тикета {ticket_id}: {e}")
         return []
 
 
@@ -4254,7 +4254,7 @@ def set_ticket_status(ticket_id: int, status: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось установить статус '{status}' для тикета {ticket_id}: {e}")
+        logger.error(f"Не удалось установить статус '{status}' для тикета {ticket_id}: {e}")
         return False
 
 
@@ -4270,7 +4270,7 @@ def update_ticket_subject(ticket_id: int, subject: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить тему тикета {ticket_id}: {e}")
+        logger.error(f"Не удалось обновить тему тикета {ticket_id}: {e}")
         return False
 
 
@@ -4284,7 +4284,7 @@ def delete_ticket(ticket_id: int) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить тикет {ticket_id}: {e}")
+        logger.error(f"Не удалось удалить тикет {ticket_id}: {e}")
         return False
 
 
@@ -4313,7 +4313,7 @@ def get_tickets_paginated(
                 )
             return [dict(r) for r in cursor.fetchall()], total
     except sqlite3.Error as e:
-        logging.error("Не удалось получить постраничный список тикетов поддержки: %s", e)
+        logger.error("Не удалось получить постраничный список тикетов поддержки: %s", e)
         return [], 0
 
 
@@ -4325,7 +4325,7 @@ def get_open_tickets_count() -> int:
             cursor.execute("SELECT COUNT(*) FROM support_tickets WHERE status = 'open'")
             return cursor.fetchone()[0] or 0
     except sqlite3.Error as e:
-        logging.error("Не удалось получить количество открытых тикетов: %s", e)
+        logger.error("Не удалось получить количество открытых тикетов: %s", e)
         return 0
 
 
@@ -4337,7 +4337,7 @@ def get_closed_tickets_count() -> int:
             cursor.execute("SELECT COUNT(*) FROM support_tickets WHERE status = 'closed'")
             return cursor.fetchone()[0] or 0
     except sqlite3.Error as e:
-        logging.error("Не удалось получить количество закрытых тикетов: %s", e)
+        logger.error("Не удалось получить количество закрытых тикетов: %s", e)
         return 0
 
 
@@ -4349,7 +4349,7 @@ def get_all_tickets_count() -> int:
             cursor.execute("SELECT COUNT(*) FROM support_tickets")
             return cursor.fetchone()[0] or 0
     except sqlite3.Error as e:
-        logging.error("Не удалось получить общее количество тикетов: %s", e)
+        logger.error("Не удалось получить общее количество тикетов: %s", e)
         return 0
 
 
@@ -4395,7 +4395,7 @@ def insert_host_metrics(host_name: str, metrics: dict) -> bool:
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при записи метрик хоста '{host_name}': {e}")
+        logger.error(f"Ошибка при записи метрик хоста '{host_name}': {e}")
         return False
 
 
@@ -4421,7 +4421,7 @@ def get_host_metrics_recent(host_name: str, limit: int = 60) -> list[dict]:
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при получении последних метрик хоста '{host_name}': {e}")
+        logger.error(f"Ошибка при получении последних метрик хоста '{host_name}': {e}")
         return []
 
 
@@ -4444,7 +4444,7 @@ def get_latest_host_metrics(host_name: str) -> dict | None:
             r = cursor.fetchone()
             return dict(r) if r else None
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при получении новейшей метрики хоста '{host_name}': {e}")
+        logger.error(f"Ошибка при получении новейшей метрики хоста '{host_name}': {e}")
         return None
 
 
@@ -4486,7 +4486,7 @@ def get_latest_host_metrics_bulk(host_names: list[str]) -> dict[str, dict]:
                     d.pop("_rn", None)
                     result[key] = d
     except sqlite3.Error as e:
-        logging.error(f"Ошибка при получении новейших метрик хостов: {e}")
+        logger.error(f"Ошибка при получении новейших метрик хостов: {e}")
     return result
 
 
@@ -4508,7 +4508,7 @@ def get_button_configs(menu_type: str = None) -> list[dict]:
 
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить конфигурации кнопок: {e}")
+        logger.error(f"Не удалось получить конфигурации кнопок: {e}")
         return []
 
 
@@ -4522,7 +4522,7 @@ def get_button_config(button_id: int) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить конфигурацию кнопки {button_id}: {e}")
+        logger.error(f"Не удалось получить конфигурацию кнопки {button_id}: {e}")
         return None
 
 
@@ -4556,7 +4556,7 @@ def create_button_config(config: dict) -> int | None:
             )
             return cursor.lastrowid
     except sqlite3.Error as e:
-        logging.error(f"Не удалось создать конфигурацию кнопки: {e}")
+        logger.error(f"Не удалось создать конфигурацию кнопки: {e}")
         return None
 
 
@@ -4587,7 +4587,7 @@ def update_button_config(button_id: int, config: dict) -> bool:
             )
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить конфигурацию кнопки {button_id}: {e}")
+        logger.error(f"Не удалось обновить конфигурацию кнопки {button_id}: {e}")
         return False
 
 
@@ -4599,7 +4599,7 @@ def delete_button_config(button_id: int) -> bool:
             cursor.execute("DELETE FROM button_configs WHERE id = ?", (button_id,))
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось удалить конфигурацию кнопки {button_id}: {e}")
+        logger.error(f"Не удалось удалить конфигурацию кнопки {button_id}: {e}")
         return False
 
 
@@ -4644,7 +4644,7 @@ def reorder_button_configs(menu_type: str, button_orders: list[dict]) -> bool:
             conn.commit()
             return True
     except sqlite3.Error as e:
-        logging.error(f"Не удалось изменить порядок конфигураций кнопок для {menu_type}: {e}")
+        logger.error(f"Не удалось изменить порядок конфигураций кнопок для {menu_type}: {e}")
         return False
 
 
@@ -4898,7 +4898,7 @@ def migrate_existing_buttons() -> bool:
 
             # Reset all button configs
             cursor.execute("DELETE FROM button_configs")
-            logging.info("Сброшены все существующие конфигурации кнопок для повторной миграции")
+            logger.info("Сброшены все существующие конфигурации кнопок для повторной миграции")
 
             # Migrate buttons for each menu type
             for menu_type, button_settings in menu_configs.items():
@@ -4930,7 +4930,7 @@ def migrate_existing_buttons() -> bool:
                     )
                     sort_order += 1
 
-                logging.info(f"Успешно мигрировано {len(button_settings)} кнопок для {menu_type}")
+                logger.info(f"Успешно мигрировано {len(button_settings)} кнопок для {menu_type}")
 
             # Clean up any duplicates that might have been created
             cursor.execute("""
@@ -4945,7 +4945,7 @@ def migrate_existing_buttons() -> bool:
             return True
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось мигрировать существующие кнопки: {e}")
+        logger.error(f"Не удалось мигрировать существующие кнопки: {e}")
         return False
 
 
@@ -4968,12 +4968,12 @@ def cleanup_duplicate_buttons() -> bool:
 
             deleted_count = cursor.rowcount
             if deleted_count > 0:
-                logging.info(f"Удалено {deleted_count} дублирующихся конфигураций кнопок")
+                logger.info(f"Удалено {deleted_count} дублирующихся конфигураций кнопок")
 
             return True
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось очистить дублирующиеся кнопки: {e}")
+        logger.error(f"Не удалось очистить дублирующиеся кнопки: {e}")
         return False
 
 
@@ -4986,27 +4986,27 @@ def reset_button_migration() -> bool:
             # Delete all existing button configs for all menu types
             cursor.execute("DELETE FROM button_configs")
             deleted_count = cursor.rowcount
-            logging.info(
+            logger.info(
                 f"Удалено {deleted_count} существующих конфигураций кнопок для всех типов меню"
             )
 
             return True
 
     except sqlite3.Error as e:
-        logging.error(f"Не удалось сбросить миграцию кнопок: {e}")
+        logger.error(f"Не удалось сбросить миграцию кнопок: {e}")
         return False
 
 
 def force_button_migration() -> bool:
     """Force button migration by resetting and re-migrating."""
     try:
-        logging.info("Запуск принудительной миграции кнопок...")
+        logger.info("Запуск принудительной миграции кнопок...")
         reset_button_migration()
         migrate_existing_buttons()
-        logging.info("Принудительная миграция кнопок успешно завершена")
+        logger.info("Принудительная миграция кнопок успешно завершена")
         return True
     except Exception as e:
-        logging.error(f"Ошибка при принудительной миграции кнопок: {e}")
+        logger.error(f"Ошибка при принудительной миграции кнопок: {e}")
         return False
 
 
@@ -5050,7 +5050,7 @@ def insert_resource_metric(
             conn.commit()
             return cursor.lastrowid
     except sqlite3.Error as e:
-        logging.error("Не удалось записать метрику ресурса для %s/%s: %s", scope, object_name, e)
+        logger.error("Не удалось записать метрику ресурса для %s/%s: %s", scope, object_name, e)
         return None
 
 
@@ -5072,7 +5072,7 @@ def get_latest_resource_metric(scope: str, object_name: str) -> dict | None:
             row = cursor.fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(
+        logger.error(
             "Не удалось получить последнюю метрику ресурса для %s/%s: %s",
             scope,
             object_name,
@@ -5115,13 +5115,13 @@ def get_metrics_series(
             rows = cursor.fetchall() or []
 
             # Debug logging
-            logging.debug(
+            logger.debug(
                 f"get_metrics_series: {scope}/{object_name}, since_hours={since_hours}, найдено записей: {len(rows)}"
             )
 
             return [dict(r) for r in rows]
     except sqlite3.Error as e:
-        logging.error("Не удалось получить серию метрик для %s/%s: %s", scope, object_name, e)
+        logger.error("Не удалось получить серию метрик для %s/%s: %s", scope, object_name, e)
         return []
 
 
@@ -5183,14 +5183,14 @@ def get_key_by_uuid(uuid: str):
         # -------------------------------------------------------------------------
         # 4. Обработка ошибок базы данных
         # -------------------------------------------------------------------------
-        logging.error(f"Ошибка базы данных при поиске ключа по UUID {uuid}: {e}", exc_info=True)
+        logger.error(f"Ошибка базы данных при поиске ключа по UUID {uuid}: {e}", exc_info=True)
         return None
 
     except Exception as e:
         # -------------------------------------------------------------------------
         # 5. Ловушка на непредвиденные ошибки (редко, но полезно)
         # -------------------------------------------------------------------------
-        logging.error(f"Неизвестная ошибка в get_key_by_uuid({uuid}): {e}", exc_info=True)
+        logger.error(f"Неизвестная ошибка в get_key_by_uuid({uuid}): {e}", exc_info=True)
         return None
 
 
@@ -5302,7 +5302,7 @@ def get_latest_transactions(limit: int = 10) -> list[dict]:
             )
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить последние транзакции: {e}")
+        logger.error(f"Не удалось получить последние транзакции: {e}")
         return []
 
 
@@ -5321,7 +5321,7 @@ def mark_bot_blocked(user_id: int) -> bool:
             conn.commit()
             return cur.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось пометить блокировку бота пользователем {user_id}: {e}")
+        logger.error(f"Не удалось пометить блокировку бота пользователем {user_id}: {e}")
         return False
 
 
@@ -5337,7 +5337,7 @@ def clear_bot_blocked(user_id: int) -> bool:
             conn.commit()
             return cur.rowcount > 0
     except sqlite3.Error as e:
-        logging.error(f"Не удалось снять пометку блокировки бота для {user_id}: {e}")
+        logger.error(f"Не удалось снять пометку блокировки бота для {user_id}: {e}")
         return False
 
 
@@ -5384,7 +5384,7 @@ def create_payment_attempt(
             conn.commit()
             return cur.lastrowid if cur.rowcount else None
     except (sqlite3.Error, TypeError, ValueError) as e:
-        logging.error(f"Не удалось записать попытку оплаты {provider}:{external_id}: {e}")
+        logger.error(f"Не удалось записать попытку оплаты {provider}:{external_id}: {e}")
         return None
 
 
@@ -5398,7 +5398,7 @@ def mark_payment_attempt(provider: str, external_id: str, status: str) -> None:
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось обновить попытку оплаты {provider}:{external_id}: {e}")
+        logger.error(f"Не удалось обновить попытку оплаты {provider}:{external_id}: {e}")
 
 
 def get_payment_attempt(attempt_id: int) -> dict | None:
@@ -5410,7 +5410,7 @@ def get_payment_attempt(attempt_id: int) -> dict | None:
             ).fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить попытку оплаты {attempt_id}: {e}")
+        logger.error(f"Не удалось получить попытку оплаты {attempt_id}: {e}")
         return None
 
 
@@ -5452,7 +5452,7 @@ def get_payment_attempts_due(min_age_minutes: int, max_age_hours: int = 24) -> l
             ).fetchall()
             return [dict(r) for r in rows]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить попытки оплаты для напоминаний: {e}")
+        logger.error(f"Не удалось получить попытки оплаты для напоминаний: {e}")
         return []
 
 
@@ -5474,7 +5474,7 @@ def set_payment_attempt_reminded(attempt_id: int, status: str | None = None) -> 
                 )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось отметить напоминание по попытке {attempt_id}: {e}")
+        logger.error(f"Не удалось отметить напоминание по попытке {attempt_id}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -5518,7 +5518,7 @@ def record_failed_payment(
             conn.commit()
             return cur.lastrowid, True
     except (sqlite3.Error, TypeError, ValueError) as e:
-        logging.error(f"Не удалось записать проблемный платёж пользователя {user_id}: {e}")
+        logger.error(f"Не удалось записать проблемный платёж пользователя {user_id}: {e}")
         return None, False
 
 
@@ -5531,7 +5531,7 @@ def get_failed_payment(failed_id: int) -> dict | None:
             ).fetchone()
             return dict(row) if row else None
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить проблемный платёж {failed_id}: {e}")
+        logger.error(f"Не удалось получить проблемный платёж {failed_id}: {e}")
         return None
 
 
@@ -5545,7 +5545,7 @@ def list_failed_payments(status: str = "open", limit: int = 20) -> list[dict]:
             ).fetchall()
             return [dict(r) for r in rows]
     except sqlite3.Error as e:
-        logging.error(f"Не удалось получить список проблемных платежей: {e}")
+        logger.error(f"Не удалось получить список проблемных платежей: {e}")
         return []
 
 
@@ -5557,7 +5557,7 @@ def count_failed_payments(status: str = "open") -> int:
             ).fetchone()
             return int(row[0] or 0)
     except sqlite3.Error as e:
-        logging.error(f"Не удалось посчитать проблемные платежи: {e}")
+        logger.error(f"Не удалось посчитать проблемные платежи: {e}")
         return 0
 
 
@@ -5574,7 +5574,7 @@ def resolve_failed_payment(failed_id: int, new_status: str, admin_id: int | None
             conn.commit()
             return cur.rowcount == 1
     except sqlite3.Error as e:
-        logging.error(f"Не удалось закрыть проблемный платёж {failed_id}: {e}")
+        logger.error(f"Не удалось закрыть проблемный платёж {failed_id}: {e}")
         return False
 
 
@@ -5589,4 +5589,4 @@ def reopen_failed_payment(failed_id: int) -> None:
             )
             conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"Не удалось вернуть проблемный платёж {failed_id} в открытые: {e}")
+        logger.error(f"Не удалось вернуть проблемный платёж {failed_id} в открытые: {e}")
