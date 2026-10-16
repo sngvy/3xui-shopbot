@@ -207,7 +207,7 @@ class ThrottlingMiddleware(BaseMiddleware):
         if now - bucket.notice_ts < self._notice_interval:
             return
         bucket.notice_ts = now
-        logger.info(f"Антифлуд: пользователь {user_id} ограничен ({reason}).")
+        logger.info(f"Антифлуд: пользователь {user_id} ограничен ({reason})")
         try:
             if isinstance(event, CallbackQuery):
                 await event.answer("⏳ Слишком часто, подождите пару секунд", show_alert=False)

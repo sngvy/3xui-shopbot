@@ -180,5 +180,5 @@ class UiAnchorMiddleware(BaseMiddleware):
                 if msg is not None and not isinstance(msg, types.InaccessibleMessage):
                     await ui_remember(state, msg)
         except Exception as e:
-            logger.debug(f"UiAnchorMiddleware: {e}")
+            logger.debug(f"Ошибка в UiAnchorMiddleware: {e}")
         return result

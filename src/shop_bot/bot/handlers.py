@@ -3652,7 +3652,7 @@ def get_user_router() -> Router:
                         logger.warning(
                             f"Ключ {key_id}: перенос на {new_host_name} выполнен, но "
                             f"connection_string не получен — старый хост {old_host} "
-                            "оставлен без изменений до следующей попытки."
+                            "оставлен без изменений до следующей попытки"
                         )
                         await loading_message.edit_text(
                             f"✅ <b>Готово! Подписка перенесена на сервер {new_host_name}</b>\n\n"
@@ -3666,7 +3666,7 @@ def get_user_router() -> Router:
                     logger.warning(
                         f"Ключ {key_id}: не удалось доставить сообщение с новой "
                         f"ссылкой после переноса на {new_host_name} — старый хост "
-                        f"{old_host} оставлен без изменений.",
+                        f"{old_host} оставлен без изменений",
                         exc_info=True,
                     )
                     await loading_message.edit_text(
@@ -5380,7 +5380,7 @@ async def get_usdt_rub_rate() -> Optional[Decimal]:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=30) as resp:
                 if resp.status != 200:
-                    logger.warning(f"USDT/RUB: HTTP {resp.status}")
+                    logger.warning(f"Курс USDT/RUB: ответ HTTP {resp.status}")
                     return None
                 data = await resp.json()
                 val = data.get("tether", {}).get("rub")
@@ -5399,7 +5399,7 @@ async def get_ton_usdt_rate() -> Optional[Decimal]:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=30) as resp:
                 if resp.status != 200:
-                    logger.warning(f"TON/USD: HTTP {resp.status}")
+                    logger.warning(f"Курс TON/USD: ответ HTTP {resp.status}")
                     return None
                 data = await resp.json()
                 usd = data.get("toncoin", {}).get("usd")
@@ -5483,7 +5483,7 @@ async def _yoomoney_find_payment(label: str) -> Optional[dict]:
             async with session.post(url, data=data, headers=headers, timeout=30) as resp:
                 text = await resp.text()
                 if resp.status != 200:
-                    logger.warning(f"YooMoney: operation-history HTTP {resp.status}: {text}")
+                    logger.warning(f"YooMoney: история операций, ответ HTTP {resp.status}: {text}")
                     return None
                 try:
                     payload = await resp.json()
@@ -5909,7 +5909,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                     # этого, просто продлеваем под старым email как раньше
                     logger.warning(
                         f"Не удалось снять префикс trial_ с ключа {key_id} "
-                        f"({candidate_email}) — продлеваю под старым email."
+                        f"({candidate_email}) — продлеваю под старым email"
                     )
 
         result = await xui_api.create_or_update_key_on_host(

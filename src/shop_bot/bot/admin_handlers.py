@@ -423,7 +423,7 @@ def get_admin_router() -> Router:
             try:
                 metrics_data = await get_live_metrics_without_db()
             except Exception as e:
-                print(f"Ошибка при общем сборе метрик: {e}")
+                logger.error(f"Ошибка при общем сборе метрик: {e}")
         text, worst = await _format_monitor_metrics(metrics_data)
         suffix = ""
         warn_parts = []
@@ -3054,8 +3054,8 @@ def get_admin_router() -> Router:
             )
         except Exception as e:
             host_resp = None
-            logging.error(
-                f"Gift flow: failed to create client on host '{host_name}' for user {user_id}: {e}"
+            logger.error(
+                f"Выдача подписки админом: не удалось создать клиента на сервере '{host_name}' для пользователя {user_id}: {e}"
             )
 
         if (
