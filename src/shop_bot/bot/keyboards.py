@@ -519,7 +519,7 @@ def create_admin_key_actions_keyboard(
     except Exception:
         disabled = False
     builder.button(
-        text="✅ Включить подписку" if disabled else "🚫 Отключить подписку",
+        text="✅ Включить" if disabled else "🚫 Отключить",
         callback_data=f"admin_key_toggle_{key_id}",
     )
     builder.button(text="🗑 Удалить подписку", callback_data=f"admin_key_delete_{key_id}")

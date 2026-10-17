@@ -4261,7 +4261,7 @@ def get_admin_router() -> Router:
             await callback.answer("❌ Не удалось отключить подписку", show_alert=True)
             return
         await callback.answer(
-            f"🚫 Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут",
+            f"🚫 Подписка № {key['key_id']} отключена",
             show_alert=False,
         )
         try:
@@ -4285,9 +4285,9 @@ def get_admin_router() -> Router:
             return
         await callback.answer(
             (
-                f"🚫 Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут"
+                f"🚫 Подписка № {key['key_id']} отключена"
                 if disable
-                else f"✅ Подписка № {key['key_id']} включена, на сервере — в течение 5 минут"
+                else f"✅ Подписка № {key['key_id']} включена"
             ),
             show_alert=False,
         )

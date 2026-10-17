@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 HIDE_CALLBACK = "admin_hide"
 HIDE_TEXT = "❌ Скрыть"
 MUTE_TEXT = "🔕 Заглушить на 1 час"
-DISABLE_TEXT = "🚫 Отключить подписку"
+DISABLE_TEXT = "🚫 Отключить"
 
 
 def _is_uuid(value) -> bool:
