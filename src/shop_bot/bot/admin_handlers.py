@@ -4147,6 +4147,25 @@ def get_admin_router() -> Router:
         except Exception:
             pass
 
+    @admin_router.callback_query(F.data.regexp(r"^admin_tr_mute_[0-9a-f]{12}$"))
+    async def mute_traffic_alert_handler(callback: types.CallbackQuery):
+        """Кнопка «🔕 Заглушить на 1 час» в алерте об аномальном трафике."""
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        from shop_bot.data_manager.scheduler import TRAFFIC_ALERT_MUTE_MINUTES, mute_traffic_alert
+
+        until = mute_traffic_alert(callback.data.rsplit("_", 1)[1])
+        await callback.answer("🔕 Заглушено")
+        note = f"🔕 <b>Заглушено до:</b> {until.strftime('%H:%M')} ({TRAFFIC_ALERT_MUTE_MINUTES} мин.)"
+        base = (callback.message.html_text or "") if callback.message else ""
+        await safe_edit_text(
+            callback,
+            f"{base}\n\n{note}" if base else note,
+            reply_markup=None,
+            parse_mode="HTML",
+        )
+
     @admin_router.callback_query(F.data == "start_broadcast")
     async def start_broadcast_handler(callback: types.CallbackQuery, state: FSMContext):
         if not is_admin(callback.from_user.id):
