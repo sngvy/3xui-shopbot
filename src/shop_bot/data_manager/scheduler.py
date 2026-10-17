@@ -115,6 +115,34 @@ USER_ALERT_COOLDOWN_HOURS = env_int("TRAFFIC_USER_ALERT_COOLDOWN_HOURS", 6, 1, 1
 # 1 — предупреждать и без аномалии трафика, если активных email'ов >= TRAFFIC_USER_ALERT_MIN_ACTIVE (шеринг).
 USER_ALERT_SHARING = env_int("TRAFFIC_USER_ALERT_SHARING", 1, 0, 1)
 user_alert_last_sent: dict[int, float] = {}  # user_id -> time.monotonic() последней отправки
+# Кнопка «🔕 Заглушить на 1 час» в алерте об аномальном трафике: пока подписка заглушена, алерт админу
+# (и связанное с ним предупреждение пользователю) по ней не отправляются. Хранится в памяти:
+# после перезапуска бота заглушки сбрасываются.
+TRAFFIC_ALERT_MUTE_MINUTES = env_int("TRAFFIC_ALERT_MUTE_MINUTES", 60, 1, 1440)
+traffic_alert_muted_until: dict[str, float] = {}  # traffic_mute_key(uuid) -> time.time() окончания заглушки
+
+
+def traffic_mute_key(c_uuid) -> str:
+    """Короткий стабильный ключ подписки для callback_data (UUID целиком + префикс не всегда влезает в 64 байта)."""
+    return hashlib.sha1(str(c_uuid).encode("utf-8")).hexdigest()[:12]
+
+
+def mute_traffic_alert(key: str, minutes: int | None = None) -> datetime:
+    """Заглушает алерты об аномальном трафике по подписке. Возвращает время окончания заглушки."""
+    minutes = TRAFFIC_ALERT_MUTE_MINUTES if minutes is None else minutes
+    until = time.time() + minutes * 60
+    traffic_alert_muted_until[key] = until
+    return datetime.fromtimestamp(until)
+
+
+def is_traffic_alert_muted(key: str) -> bool:
+    until = traffic_alert_muted_until.get(key)
+    if until is None:
+        return False
+    if time.time() >= until:
+        traffic_alert_muted_until.pop(key, None)
+        return False
+    return True
 sharing_admin_last_sent: dict[tuple[str, str], float] = {}  # (host, uuid) -> последний алерт админу о шеринге
 # Защита от ложных срабатываний шеринга (например, пинг подписки в клиенте дёргает все конфиги и даёт
 # килобайты трафика на каждом email): email считается активным для шеринга, только если за интервал
@@ -2697,7 +2725,11 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                         else:
                             traffic_strikes[snapshot_key] = 0
 
-                        if is_anomaly:
+                        if is_anomaly and is_traffic_alert_muted(traffic_mute_key(c_uuid)):
+                            logger.info(
+                                f"Аномалия трафика заглушена: {display_emails} [{c_uuid}] на {host_name}, {delta_mb:.2f} MB"
+                            )
+                        elif is_anomaly:
                             anomalies_found = True
                             logger.warning(
                                 f"Аномалия трафика: {display_emails} [{c_uuid}] на {host_name} скачал {delta_mb:.2f} MB"
@@ -2722,9 +2754,17 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                                     warn_status, _USER_WARN_STATUS_TEXT["error"]
                                 )
 
+                            mute_kb = InlineKeyboardBuilder()
+                            mute_kb.button(
+                                text="🔕 Заглушить на 1 час",
+                                callback_data=f"admin_tr_mute_{traffic_mute_key(c_uuid)}",
+                            )
                             try:
                                 await bot.send_message(
-                                    chat_id=admin_id, text=alert_text, parse_mode="HTML"
+                                    chat_id=admin_id,
+                                    text=alert_text,
+                                    parse_mode="HTML",
+                                    reply_markup=mute_kb.as_markup(),
                                 )
                             except Exception as e:
                                 logger.error(f"Ошибка отправки алерта админу: {e}")
