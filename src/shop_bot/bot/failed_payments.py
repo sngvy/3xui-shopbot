@@ -15,6 +15,7 @@ from aiogram import Bot, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from shop_bot.bot.admin_notify import with_hide_button
 from shop_bot.data_manager.database import (
     add_to_balance,
     count_failed_payments,
@@ -95,7 +96,10 @@ async def _notify_admins(bot: Bot, text: str, markup=None) -> None:
     for admin_id in admin_ids:
         try:
             await bot.send_message(
-                chat_id=admin_id, text=text, parse_mode="HTML", reply_markup=markup
+                chat_id=admin_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=with_hide_button(markup),
             )
         except Exception as e:
             logger.error(f"Проблемный платёж: не удалось уведомить админа {admin_id}: {e}")

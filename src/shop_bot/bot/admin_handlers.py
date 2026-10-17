@@ -4163,6 +4163,143 @@ def get_admin_router() -> Router:
         except Exception:
             pass
 
+    # --- Универсальная кнопка «✖️ Скрыть» на служебных уведомлениях ---
+    @admin_router.callback_query(F.data == "admin_hide")
+    async def admin_hide_handler(callback: types.CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        await callback.answer()
+        try:
+            await callback.message.delete()
+        except Exception:
+            # Сообщение старше 48 часов или недоступно: хотя бы убираем кнопки
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+
+    async def _apply_key_disabled(bot: Bot, key: dict, disabled: bool) -> bool:
+        """Отключает/включает подписку администратором и уведомляет владельца.
+        На панели изменение применяет шедулер при ближайшей сверке (до 5 минут)."""
+        from shop_bot.data_manager.database import set_key_admin_disabled
+
+        ok = await asyncio.to_thread(set_key_admin_disabled, key["key_id"], disabled)
+        if not ok:
+            return False
+        if key.get("user_id"):
+            try:
+                if disabled:
+                    support_kb = await asyncio.to_thread(keyboards.create_support_keyboard)
+                    await bot.send_message(
+                        int(key["user_id"]),
+                        f"⛔ <b>Администратор отключил вашу подписку № {key['key_id']}</b>\n\n"
+                        "Если это ошибка — напишите в поддержку",
+                        reply_markup=InlineKeyboardMarkup(
+                            inline_keyboard=support_kb.inline_keyboard[:1]
+                        ),
+                    )
+                else:
+                    await bot.send_message(
+                        int(key["user_id"]),
+                        f"✅ <b>Доступ по подписке № {key['key_id']} восстановлен</b>",
+                    )
+            except Exception:
+                pass
+        return True
+
+    # --- «⛔ Отключить подписку» в алертах об аномальном трафике и шеринге ---
+    @admin_router.callback_query(F.data.regexp(r"^admin_tr_off_[0-9a-fA-F-]{36}$"))
+    async def traffic_alert_disable_ask(callback: types.CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        from shop_bot.bot.admin_notify import disable_confirm_markup
+
+        await callback.answer("Отключить подписку?", show_alert=False)
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=disable_confirm_markup(callback.data.rsplit("_", 1)[1])
+            )
+        except Exception:
+            pass
+
+    @admin_router.callback_query(F.data.regexp(r"^admin_tr_off_no_[0-9a-fA-F-]{36}$"))
+    async def traffic_alert_disable_cancel(callback: types.CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        from shop_bot.bot.admin_notify import traffic_alert_markup
+        from shop_bot.data_manager.scheduler import traffic_mute_key
+
+        c_uuid = callback.data.rsplit("_", 1)[1]
+        await callback.answer()
+        is_traffic = "Аномальный трафик" in ((callback.message.text or "") if callback.message else "")
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=traffic_alert_markup(
+                    traffic_mute_key(c_uuid) if is_traffic else None, c_uuid, can_disable=True
+                )
+            )
+        except Exception:
+            pass
+
+    @admin_router.callback_query(F.data.regexp(r"^admin_tr_off_ok_[0-9a-fA-F-]{36}$"))
+    async def traffic_alert_disable_do(callback: types.CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        from shop_bot.bot.admin_notify import with_hide_button
+        from shop_bot.data_manager.database import get_key_by_uuid
+
+        c_uuid = callback.data.rsplit("_", 1)[1]
+        key = await asyncio.to_thread(get_key_by_uuid, c_uuid)
+        if not key:
+            await callback.answer("❌ Подписка не найдена", show_alert=True)
+            return
+        if not await _apply_key_disabled(callback.bot, key, True):
+            await callback.answer("❌ Не удалось отключить подписку", show_alert=True)
+            return
+        await callback.answer(
+            f"⛔ Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут",
+            show_alert=False,
+        )
+        try:
+            await callback.message.edit_reply_markup(reply_markup=with_hide_button())
+        except Exception:
+            pass
+
+    # --- «⛔ Отключить / ✅ Включить подписку» в карточке подписки ---
+    @admin_router.callback_query(F.data.regexp(r"^admin_key_toggle_\d+$"))
+    async def admin_key_toggle_handler(callback: types.CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            await callback.answer("🚫 У вас нет прав", show_alert=True)
+            return
+        key = await asyncio.to_thread(get_key_by_id, int(callback.data.rsplit("_", 1)[1]))
+        if not key:
+            await callback.answer("❌ Подписка не найдена", show_alert=True)
+            return
+        disable = not bool(key.get("admin_disabled"))
+        if not await _apply_key_disabled(callback.bot, key, disable):
+            await callback.answer("❌ Не удалось изменить подписку", show_alert=True)
+            return
+        await callback.answer(
+            (
+                f"⛔ Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут"
+                if disable
+                else f"✅ Подписка № {key['key_id']} включена, на сервере — в течение 5 минут"
+            ),
+            show_alert=False,
+        )
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=keyboards.create_admin_key_actions_keyboard(
+                    key["key_id"], int(key["user_id"]) if key.get("user_id") else None
+                )
+            )
+        except Exception:
+            pass
+
     @admin_router.callback_query(F.data == "start_broadcast")
     async def start_broadcast_handler(callback: types.CallbackQuery, state: FSMContext):
         if not is_admin(callback.from_user.id):

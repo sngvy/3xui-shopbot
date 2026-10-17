@@ -514,13 +514,21 @@ def create_admin_key_actions_keyboard(
     builder.button(text="🌍 Изменить сервер", callback_data=f"admin_key_edit_host_{key_id}")
     builder.button(text="➕ Добавить дни", callback_data=f"admin_key_extend_{key_id}")
     builder.button(text="➖ Убавить дни", callback_data=f"admin_key_reduce_{key_id}")
+    try:
+        disabled = bool((get_key_by_id(key_id) or {}).get("admin_disabled"))
+    except Exception:
+        disabled = False
+    builder.button(
+        text="✅ Включить подписку" if disabled else "⛔ Отключить подписку",
+        callback_data=f"admin_key_toggle_{key_id}",
+    )
     builder.button(text="🗑 Удалить подписку", callback_data=f"admin_key_delete_{key_id}")
     builder.button(text="⬅️ Назад к подпискам", callback_data=f"admin_key_back_{key_id}")
     if user_id is not None:
         builder.button(text="👤 Перейти к пользователю", callback_data=f"admin_view_user_{user_id}")
-        builder.adjust(2, 2, 1, 1)
+        builder.adjust(2, 2, 1, 1, 1)
     else:
-        builder.adjust(2, 2, 1)
+        builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
 
 

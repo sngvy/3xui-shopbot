@@ -38,6 +38,7 @@ from aiosend import CryptoPay
 from yookassa import Payment
 
 from shop_bot.bot import keyboards
+from shop_bot.bot.admin_notify import with_hide_button
 from shop_bot.bot.failed_payments import report_failed_payment
 from shop_bot.bot.ui_utils import UiAnchorMiddleware, answer_error
 from shop_bot.config import (
@@ -5548,7 +5549,7 @@ async def notify_admin_of_purchase(bot: Bot, metadata: dict):
             f"💰 <b>Сумма:</b> {float(price):.2f} ₽\n"
             f"⚙️ <b>Действие:</b> {'Новая подписка' if action == 'new' else 'Продление'}"
         )
-        await bot.send_message(admin_id, text)
+        await bot.send_message(admin_id, text, reply_markup=with_hide_button())
     except Exception as e:
         logger.warning(f"Ошибка в notify_admin_of_purchase: {e}")
 
@@ -5748,6 +5749,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                             "📥 <b>Пополнение</b>\n\n"
                             f"👤 <b>Пользователь:</b> <code>{user_id}</code>\n"
                             f"💰 <b>Сумма:</b> {float(price):.2f} ₽",
+                        reply_markup=with_hide_button(),
                     )
         except Exception:
             pass
@@ -5817,6 +5819,7 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                         admin_id,
                         f"🎁 Подарок: пользователь <code>{user_id}</code>, сервер {host_name}, "
                         f"{months} мес., сумма {float(price):.2f} ₽, код {gift_code}",
+                        reply_markup=with_hide_button(),
                     )
         except Exception:
             pass
@@ -6167,7 +6170,9 @@ async def process_successful_payment(bot: Bot, metadata: dict):
                             )
                             for aid in admins:
                                 try:
-                                    await bot.send_message(int(aid), text)
+                                    await bot.send_message(
+                                        int(aid), text, reply_markup=with_hide_button()
+                                    )
                                 except Exception:
                                     pass
                         except Exception:
