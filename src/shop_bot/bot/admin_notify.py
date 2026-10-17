@@ -46,6 +46,6 @@ def disable_confirm_markup(c_uuid) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="✅ Да, отключить", callback_data=f"admin_tr_off_ok_{c_uuid}")],
-            [InlineKeyboardButton(text="↩️ Отмена", callback_data=f"admin_tr_off_no_{c_uuid}")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data=f"admin_tr_off_no_{c_uuid}")],
         ]
     )
