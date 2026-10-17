@@ -1,0 +1,1678 @@
+"""Построители inline-клавиатур для Telegram-бота."""
+
+import base64
+import hashlib
+import logging
+import os
+import re
+from datetime import datetime
+from typing import Callable
+from urllib.parse import quote
+
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    WebAppInfo,
+)
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from shop_bot.data_manager.database import (
+    count_failed_payments,
+    format_stored_username,
+    get_key_by_id,
+    get_setting,
+    normalize_host_name,
+)
+
+logger = logging.getLogger(__name__)
+
+REDIR_URL = os.getenv("REDIR_URL")
+
+main_reply_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="🏠 Главное меню")]], resize_keyboard=True
+)
+
+
+def encode_host_callback_token(host_name: str) -> str:
+    """Сформировать короткий ASCII-токен для host_name для использования в callback_data."""
+    normalized = normalize_host_name(host_name)
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+    slug = slug[:8]
+    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:8]
+    if slug:
+        return f"{slug}-{digest}"
+    return digest
+
+
+def parse_host_callback_data(data: str) -> tuple[str, str, str] | None:
+    """Разбирает callback_data вида 'select_host:action:extra:token' на составляющие."""
+    if not data or not data.startswith("select_host:"):
+        return None
+    parts = data.split(":", 3)
+    if len(parts) != 4:
+        return None
+    _, action, extra, token = parts
+    return action, extra or "-", token
+
+
+def find_host_by_callback_token(hosts: list[dict], token: str) -> dict | None:
+    """Находит хост в списке по токену из callback_data (см. encode_host_callback_token)."""
+    if not token:
+        return None
+    for host in hosts or []:
+        if encode_host_callback_token(host.get("host_name", "")) == token:
+            return host
+    return None
+
+
+# --- Generic builder from DB configs ---
+def _build_keyboard_from_db(
+    menu_type: str,
+    text_replacements: dict[str, str] | None = None,
+    filter_func: Callable[[dict], bool] | None = None,
+) -> InlineKeyboardMarkup | None:
+    """Build InlineKeyboardMarkup from button configs for a given menu_type.
+
+    Returns None if configs are missing or on error.
+    """
+    try:
+        from shop_bot.data_manager.database import get_button_configs
+
+        configs = get_button_configs(menu_type)
+    except Exception as e:
+        logger.warning(f"Конфигурации БД для {menu_type} недоступны: {e}")
+        return None
+
+    if not configs:
+        return None
+
+    builder = InlineKeyboardBuilder()
+
+    # Group by row, keep positions and widths
+    rows: dict[int, list[dict]] = {}
+    added: set[str] = set()
+
+    for cfg in configs:
+        if not cfg.get("is_active", True):
+            continue
+        if filter_func and not filter_func(cfg):
+            continue
+
+        text = cfg.get("text", "") or ""
+        callback_data = cfg.get("callback_data")
+        url = cfg.get("url")
+        button_id = (cfg.get("button_id") or "").strip()
+
+        if not callback_data and not url:
+            continue
+
+        # Deduplicate by button_id if provided
+        if button_id:
+            if button_id in added:
+                continue
+            added.add(button_id)
+
+        # Apply text replacements (e.g., counts)
+        if text_replacements:
+            try:
+                for k, v in text_replacements.items():
+                    text = text.replace(k, str(v))
+            except Exception:
+                pass
+
+        row_pos = int(cfg.get("row_position", 0) or 0)
+        col_pos = int(cfg.get("column_position", 0) or 0)
+        sort_order = int(cfg.get("sort_order", 0) or 0)
+        width = int(cfg.get("button_width", 1) or 1)
+
+        rows.setdefault(row_pos, []).append(
+            {
+                "text": text,
+                "callback_data": callback_data,
+                "url": url,
+                "width": max(1, min(width, 3)),
+                "col": col_pos,
+                "sort": sort_order,
+            }
+        )
+
+    if not rows:
+        return None
+
+    # Build keyboard respecting row positions and button widths
+    # In Telegram: width 1 = half row, width 2+ = full row
+    for row_idx in sorted(rows.keys()):
+        row_buttons = sorted(rows[row_idx], key=lambda b: (b["col"], b["sort"]))
+
+        # Process buttons for this row position
+        i = 0
+        while i < len(row_buttons):
+            btn = row_buttons[i]
+            button_width = btn["width"]
+
+            # Width 2+ means full row
+            if button_width >= 2:
+                # Add as single button in row
+                if btn["callback_data"]:
+                    builder.row(
+                        InlineKeyboardButton(text=btn["text"], callback_data=btn["callback_data"])
+                    )
+                elif btn["url"]:
+                    builder.row(InlineKeyboardButton(text=btn["text"], url=btn["url"]))
+                i += 1
+            else:
+                # Width 1 - try to pair with next button if it also has width 1
+                if i + 1 < len(row_buttons) and row_buttons[i + 1]["width"] == 1:
+                    # Add two buttons in one row
+                    btn2 = row_buttons[i + 1]
+                    buttons = []
+
+                    if btn["callback_data"]:
+                        buttons.append(
+                            InlineKeyboardButton(
+                                text=btn["text"], callback_data=btn["callback_data"]
+                            )
+                        )
+                    elif btn["url"]:
+                        buttons.append(InlineKeyboardButton(text=btn["text"], url=btn["url"]))
+
+                    if btn2["callback_data"]:
+                        buttons.append(
+                            InlineKeyboardButton(
+                                text=btn2["text"], callback_data=btn2["callback_data"]
+                            )
+                        )
+                    elif btn2["url"]:
+                        buttons.append(InlineKeyboardButton(text=btn2["text"], url=btn2["url"]))
+
+                    builder.row(*buttons)
+                    i += 2
+                else:
+                    # Single button with width 1 - add alone
+                    if btn["callback_data"]:
+                        builder.row(
+                            InlineKeyboardButton(
+                                text=btn["text"], callback_data=btn["callback_data"]
+                            )
+                        )
+                    elif btn["url"]:
+                        builder.row(InlineKeyboardButton(text=btn["text"], url=btn["url"]))
+                    i += 1
+
+    return builder.as_markup()
+
+
+def create_main_menu_keyboard(
+    user_keys: list, trial_available: bool, is_admin: bool
+) -> InlineKeyboardMarkup:
+    """Главное меню: только основное, всё остальное — в подменю «🧰 Больше»."""
+    builder = InlineKeyboardBuilder()
+    layout: list[int] = []
+
+    if trial_available and get_setting("trial_enabled") == "true":
+        builder.button(
+            text=(get_setting("btn_try") or "🎁 Попробовать бесплатно"),
+            callback_data="get_trial",
+            style="success",
+        )
+        layout.append(1)
+
+    keys_label_tpl = get_setting("btn_my_keys") or "🔑 Мои подписки ({count})"
+    builder.button(
+        text=(get_setting("btn_profile") or "👤 Мой профиль"),
+        callback_data="show_profile",
+        style="primary",
+    )
+    builder.button(
+        text=keys_label_tpl.replace("{count}", str(len(user_keys))),
+        callback_data="manage_keys",
+        style="success",
+    )
+    layout.append(2)
+
+    builder.button(
+        text=(get_setting("btn_buy_key") or "💳 Купить подписку"),
+        callback_data="buy_new_key",
+        style="danger",
+    )
+    builder.button(
+        text=(get_setting("btn_top_up") or "➕ Пополнить баланс"),
+        callback_data="top_up_start",
+        style="danger",
+    )
+    layout.append(2)
+
+    builder.button(text=(get_setting("btn_support") or "🛟 Поддержка"), callback_data="show_help")
+    builder.button(text="🧰 Больше", callback_data="show_more_menu")
+    layout.append(2)
+
+    if is_admin:
+        builder.button(text=(get_setting("btn_admin") or "⚙️ Админка"), callback_data="admin_menu")
+        layout.append(1)
+
+    builder.adjust(*layout)
+    return builder.as_markup()
+
+
+def create_more_menu_keyboard() -> InlineKeyboardMarkup:
+    """Подменю «🧰 Больше»: второстепенные разделы, вынесенные из главного меню."""
+    builder = InlineKeyboardBuilder()
+    layout: list[int] = []
+
+    builder.button(
+        text=(get_setting("btn_referral") or "🤝 Рефералка"),
+        callback_data="show_referral_program",
+    )
+    builder.button(
+        text=(get_setting("btn_gift_key") or "🎁 Подарить"),
+        callback_data="buy_gift_key",
+        style="danger",
+    )
+    layout.append(2)
+
+    builder.button(text=(get_setting("btn_about") or "ℹ️ О сервисе"), callback_data="show_about")
+    builder.button(
+        text=(get_setting("btn_howto") or "❓ Как использовать"),
+        callback_data="howto_vless",
+    )
+    layout.append(2)
+
+    worker_domain = os.getenv("WORKER_DOMAIN", "").strip()
+    speed_text = get_setting("btn_speed") or "⚡ Тест скорости"
+    if os.getenv("USE_WEBAPP_SPEEDTEST", "").strip() == "1" and worker_domain:
+        builder.button(text=speed_text, web_app=WebAppInfo(url=f"https://{worker_domain}/speed"))
+    else:
+        builder.button(text=speed_text, callback_data="user_speedtest")
+    n = 1
+    if worker_domain:
+        builder.button(
+            text=(get_setting("btn_status") or "🟢 Статус сервисов"),
+            web_app=WebAppInfo(url=f"https://{worker_domain}/mon"),
+        )
+        n = 2
+    layout.append(n)
+
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    layout.append(1)
+    builder.adjust(*layout)
+    return builder.as_markup()
+
+
+def create_admin_menu_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню админ-панели: 4 группы разделов."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👥 Пользователи", callback_data="admin_grp_users")
+    builder.button(text="📊 Мониторинг", callback_data="admin_grp_monitor")
+    builder.button(text="💰 Маркетинг", callback_data="admin_grp_finance")
+    builder.button(text="🛠 Система", callback_data="admin_grp_system")
+    builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+ADMIN_GROUPS: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    "users": (
+        "👥 <b>Пользователи и подписки</b>",
+        [
+            ("👥 Пользователи", "admin_users"),
+            ("🌍 Подписки", "admin_host_keys"),
+            ("🔎 Поиск", "admin_search_user"),
+            ("🪄 Выдать подписку", "admin_gift_key"),
+        ],
+    ),
+    "monitor": (
+        "📊 <b>Мониторинг</b>",
+        [
+            ("🟢 Текущий онлайн", "admin_realtime_online"),
+            ("🏳️ Потребление WL", "admin_wl_traffic_report"),
+            ("📋 Логи контейнера", "admin_get_docker_logs"),
+            ("⚡ Тест скорости", "admin_speedtest"),
+            ("📈 Метрики серверов", "admin_monitor"),
+        ],
+    ),
+    "finance": (
+        "💰 <b>Финансы и маркетинг</b>",
+        [
+            ("💸 История кассы", "admin_view_cashbox"),
+            ("🎟 Промокоды", "admin_promo_menu"),
+            ("🏆 Топ рефереров", "admin_top_referrers"),
+            ("📢 Рассылка", "start_broadcast"),
+            ("⚠️ Ошибки оплат", "admin_fp_list"),
+        ],
+    ),
+    "system": (
+        "🛠 <b>Система</b>",
+        [
+            ("🗄 Бэкап БД", "admin_backup_db"),
+            ("♻️ Восстановить БД", "admin_restore_db"),
+            ("🔄 Перезапуск", "admin_bot_restart"),
+            ("👮 Администраторы", "admin_admins_menu"),
+        ],
+    ),
+}
+
+
+def create_admin_group_keyboard(group: str) -> InlineKeyboardMarkup:
+    """Клавиатура подраздела админки (users / monitor / finance / system)."""
+    builder = InlineKeyboardBuilder()
+    items = ADMIN_GROUPS.get(group, ("", []))[1]
+    for text, cb in items:
+        if cb == "admin_fp_list":
+            try:
+                text = f"{text} ({count_failed_payments('open')})"
+            except Exception:
+                pass
+        builder.button(text=text, callback_data=cb)
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    builder.adjust(*([2] * (len(items) // 2) + ([1] if len(items) % 2 else []) + [1]))
+    return builder.as_markup()
+
+
+def create_admin_back_keyboard(target: str = "admin_menu") -> InlineKeyboardMarkup:
+    """Одна кнопка «⬅️ В админ-меню» — для результатов и ошибок админских действий."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ В админ-меню", callback_data=target)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_restart_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Подтверждение перезапуска контейнера."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, перезапустить", callback_data="admin_bot_restart_confirm", style="danger")
+    builder.button(text="❌ Отмена", callback_data="admin_grp_system")
+    builder.adjust(1, 1)
+    return builder.as_markup()
+
+
+def create_admin_top_referrers_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура экрана 'Топ рефереров' — только возврат в админ-меню."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admins_menu_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру меню управления списком администраторов."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Добавить админа", callback_data="admin_add_admin")
+    builder.button(text="➖ Снять админа", callback_data="admin_remove_admin")
+    builder.button(text="📋 Список админов", callback_data="admin_view_admins")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def create_admin_monitor_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру раздела мониторинга ресурсов для админа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Обновить", callback_data="admin_monitor_refresh")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    builder.adjust(1, 1)
+    return builder.as_markup()
+
+
+def create_admin_users_keyboard(
+    users: list[dict], page: int = 0, page_size: int = 10
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру постраничного списка пользователей для админа."""
+    builder = InlineKeyboardBuilder()
+    start = page * page_size
+    end = start + page_size
+    for u in users[start:end]:
+        user_id = u.get("telegram_id") or u.get("user_id") or u.get("id")
+        title = f"{user_id} ▪️ {format_stored_username(u.get('username'), linked=False, escape_html=False)}"
+        builder.button(text=title, callback_data=f"admin_view_user_{user_id}")
+    # Pagination
+    total = len(users)
+    have_prev = page > 0
+    have_next = end < total
+    if have_prev:
+        builder.button(text="⬅️ Назад", callback_data=f"admin_users_page_{page-1}")
+    if have_next:
+        builder.button(text="Вперёд ➡️", callback_data=f"admin_users_page_{page+1}")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    # Layout: list (1 per row), then pagination/buttons (2), then back (1)
+    rows = [1] * len(users[start:end])
+    tail = []
+    if have_prev or have_next:
+        tail.append(2 if (have_prev and have_next) else 1)
+    tail.append(1)
+    builder.adjust(*(rows + tail if rows else ([2] if (have_prev or have_next) else []) + [1]))
+    return builder.as_markup()
+
+
+def create_admin_user_actions_keyboard(
+    user_id: int, is_banned: bool | None = None
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий над конкретным пользователем (бан, баланс, ключи и т.д.)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Начислить баланс", callback_data=f"admin_add_balance_{user_id}")
+    builder.button(text="➖ Списать баланс", callback_data=f"admin_deduct_balance_{user_id}")
+    builder.button(text="🪄 Выдать подписку", callback_data=f"admin_gift_key_{user_id}")
+    builder.button(text="🤝 Рефералы", callback_data=f"admin_user_referrals_{user_id}")
+    if is_banned:
+        builder.button(text="✅ Разбанить", callback_data=f"admin_unban_user_{user_id}")
+    else:
+        builder.button(text="🚫 Забанить", callback_data=f"admin_ban_user_{user_id}")
+    builder.button(text="🔑 Подписки", callback_data=f"admin_user_keys_{user_id}")
+    builder.button(text="📜 История операций", callback_data=f"admin_tx_history_{user_id}_0")
+    builder.button(text="⬅️ К списку", callback_data="admin_users")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    # Сделаем шире: 2 колонки, затем назад и в админ-меню
+    builder.adjust(2, 2, 2, 1, 1, 1)
+    return builder.as_markup()
+
+
+def create_admin_transaction_history_keyboard(
+    user_id: int, page: int, has_prev: bool, has_next: bool
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру постраничной истории операций пользователя для админа."""
+    builder = InlineKeyboardBuilder()
+    if has_prev:
+        builder.button(text="⬅️ Назад", callback_data=f"admin_tx_history_{user_id}_{page-1}")
+    if has_next:
+        builder.button(text="Вперёд ➡️", callback_data=f"admin_tx_history_{user_id}_{page+1}")
+    builder.button(text="⬅️ К пользователю", callback_data=f"admin_view_user_{user_id}")
+    if has_prev and has_next:
+        builder.adjust(2, 1)
+    elif has_prev or has_next:
+        builder.adjust(1, 1)
+    else:
+        builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_user_keys_keyboard(user_id: int, keys: list[dict]) -> InlineKeyboardMarkup:
+    """Строит клавиатуру списка ключей конкретного пользователя для админа."""
+    builder = InlineKeyboardBuilder()
+    if keys:
+        for k in keys:
+            kid = k.get("key_id")
+            host = k.get("host_name") or "—"
+            email = k.get("key_email") or "—"
+            title = f"№ {kid} ▪️ {host} ▪️ {email[:20]}"
+            builder.button(text=title, callback_data=f"admin_edit_key_{kid}")
+    else:
+        builder.button(text="Подписок нет", callback_data="noop")
+    builder.button(text="⬅️ Назад", callback_data=f"admin_view_user_{user_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_key_actions_keyboard(
+    key_id: int, user_id: int | None = None
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий над конкретным ключом (продление, удаление, смена хоста и т.д.)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🌍 Изменить сервер", callback_data=f"admin_key_edit_host_{key_id}")
+    builder.button(text="➕ Добавить дни", callback_data=f"admin_key_extend_{key_id}")
+    builder.button(text="➖ Убавить дни", callback_data=f"admin_key_reduce_{key_id}")
+    try:
+        disabled = bool((get_key_by_id(key_id) or {}).get("admin_disabled"))
+    except Exception:
+        disabled = False
+    builder.button(
+        text="✅ Включить" if disabled else "🚫 Отключить",
+        callback_data=f"admin_key_toggle_{key_id}",
+    )
+    builder.button(text="🗑 Удалить подписку", callback_data=f"admin_key_delete_{key_id}")
+    builder.button(text="⬅️ Назад к подпискам", callback_data=f"admin_key_back_{key_id}")
+    if user_id is not None:
+        builder.button(text="👤 Перейти к пользователю", callback_data=f"admin_view_user_{user_id}")
+        builder.adjust(2, 2, 1, 1, 1)
+    else:
+        builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def create_admin_delete_key_confirm_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру подтверждения удаления ключа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Подтвердить удаление",
+        callback_data=f"admin_key_delete_confirm_{key_id}",
+    )
+    builder.button(text="❌ Отмена", callback_data=f"admin_key_delete_cancel_{key_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_ban_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру подтверждения бана/разбана пользователя."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить бан", callback_data=f"admin_confirm_ban_{user_id}")
+    builder.button(text="❌ Отмена", callback_data=f"admin_view_user_{user_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_regen_key_confirm_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру подтверждения перевыпуска ключа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data=f"regen_key_confirm_{key_id}")
+    builder.button(text="⬅️ Назад", callback_data=f"show_key_{key_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_balance_confirm_keyboard(action: str) -> InlineKeyboardMarkup:
+    """Строит клавиатуру подтверждения начисления/списания баланса (action: 'add' или 'deduct' — используется вместе с суммой/пользователем, сохранёнными в FSM-состоянии, поэтому колбэк без параметров в data)."""
+    builder = InlineKeyboardBuilder()
+    label = "✅ Подтвердить начисление" if action == "add" else "✅ Подтвердить списание"
+    builder.button(text=label, callback_data=f"admin_balance_confirm_{action}")
+    builder.button(text="⬅️ Назад", callback_data=f"admin_balance_back_amount_{action}")
+    builder.button(text="❌ Отмена", callback_data=f"admin_balance_cancel_{action}")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def create_admin_gift_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру подтверждения выдачи подарочного ключа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить выдачу", callback_data="admin_gift_confirm")
+    builder.button(text="⬅️ Назад", callback_data="admin_gift_back_to_days")
+    builder.button(text="❌ Отмена", callback_data="admin_gift_cancel")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def create_admin_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру с единственной кнопкой отмены текущего действия админа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    return builder.as_markup()
+
+
+def create_admin_step_keyboard(back_callback: str) -> InlineKeyboardMarkup:
+    """Клавиатура шага мастера: «Назад» (на предыдущий шаг) и «Отмена» (выход из мастера) в одной строке."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def create_admin_promo_code_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру меню управления промокодами."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎲 Сгенерировать код", callback_data="admin_promo_gen_code")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def create_broadcast_segment_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора сегмента пользователей для рассылки."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👥 Все пользователи", callback_data="broadcast_segment_all")
+    builder.button(text="💤 Платили раньше", callback_data="broadcast_segment_paid_no_active")
+    builder.button(text="🛒 Ни разу не покупали", callback_data="broadcast_segment_never_purchased")
+    builder.button(text="⏳ День до продления", callback_data="broadcast_segment_expiring_1_day")
+    builder.button(text="📅 Запланированные рассылки", callback_data="view_scheduled_broadcasts")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_broadcast_promo_option_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора: прикреплять ли промокод к рассылке."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎁 Приложить", callback_data="broadcast_add_promo")
+    builder.button(text="➡️ Без промокода", callback_data="broadcast_skip_promo")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def create_broadcast_options_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру дополнительных опций рассылки (кнопка и т.д.)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Добавить кнопку", callback_data="broadcast_add_button")
+    builder.button(text="➡️ Пропустить", callback_data="broadcast_skip_button")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def create_broadcast_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру финального подтверждения запуска рассылки."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Отправить сейчас", callback_data="confirm_broadcast")
+    builder.button(text="📅 Отложить", callback_data="schedule_broadcast")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def create_broadcast_schedule_presets_keyboard() -> InlineKeyboardMarkup:
+    """Быстрые пресеты времени отправки отложенной рассылки + свой вариант."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🕐 Через 1 час", callback_data="broadcast_sched_preset_1h")
+    builder.button(text="🕒 Через 3 часа", callback_data="broadcast_sched_preset_3h")
+    builder.button(text="🌅 Завтра в 10:00", callback_data="broadcast_sched_preset_tomorrow10")
+    builder.button(text="🌙 Завтра в 20:00", callback_data="broadcast_sched_preset_tomorrow20")
+    builder.button(text="✏️ Своё время", callback_data="broadcast_sched_preset_custom")
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2, 2, 1, 2)
+    return builder.as_markup()
+
+
+def create_scheduled_broadcast_list_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
+    """Список отложенных рассылок, ожидающих отправки, с кнопкой отмены на
+    каждую. items — записи из get_pending_scheduled_broadcasts()."""
+    builder = InlineKeyboardBuilder()
+    for item in items:
+        builder.button(
+            text=f"❌ Отменить №{item['id']} ({item['scheduled_at_display']})",
+            callback_data=f"cancel_sched_broadcast_{item['id']}",
+        )
+    builder.button(text="⬅️ Назад", callback_data="start_broadcast")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_broadcast_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру с кнопкой отмены рассылки."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data="broadcast_back")
+    builder.button(text="❌ Отмена", callback_data="cancel_broadcast")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def create_about_keyboard(
+    channel_url: str | None, terms_url: str | None, privacy_url: str | None
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру раздела 'О проекте' (канал, условия, политика)."""
+    builder = InlineKeyboardBuilder()
+    if channel_url:
+        builder.button(text=(get_setting("btn_channel") or "📰 Наш канал"), url=channel_url)
+    if terms_url:
+        builder.button(text=(get_setting("btn_terms") or "📄 Условия использования"), url=terms_url)
+    if privacy_url:
+        builder.button(
+            text=(get_setting("btn_privacy") or "🔒 Политика конфиденциальности"),
+            url=privacy_url,
+        )
+    builder.button(
+        text="⬅️ Назад",
+        callback_data="show_more_menu",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_support_keyboard(support_user: str | None = None) -> InlineKeyboardMarkup:
+    """Строит клавиатуру раздела поддержки."""
+    builder = InlineKeyboardBuilder()
+    # Определяем username для поддержки
+    username = (support_user or "").strip()
+    if not username:
+        username = (
+            get_setting("support_bot_username") or get_setting("support_user") or ""
+        ).strip()
+    # Преобразуем в tg:// ссылку, если есть username/ссылка
+    url: str | None = None
+    if username:
+        if username.startswith("@"):  # @username
+            url = f"tg://resolve?domain={username[1:]}"
+        elif username.startswith("tg://"):  # Уже tg-схема
+            url = username
+        elif username.startswith("http://") or username.startswith("https://"):
+            # http(s) ссылки на t.me/telegram.me -> в tg://
+            # Попробуем извлечь domain
+            try:
+                # Простое извлечение последнего сегмента
+                part = username.split("/")[-1].split("?")[0]
+                if part:
+                    url = f"tg://resolve?domain={part}"
+            except Exception:
+                url = username
+        else:
+            # Просто username без @
+            url = f"tg://resolve?domain={username}"
+
+    if url:
+        builder.button(text=(get_setting("btn_support") or "🛟 Поддержка"), url=url)
+        builder.button(
+            text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+            callback_data="back_to_main_menu",
+        )
+    else:
+        # Фолбэк: встроенное меню поддержки
+        builder.button(
+            text=(get_setting("btn_support") or "🛟 Поддержка"),
+            callback_data="show_help",
+        )
+        builder.button(
+            text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+            callback_data="back_to_main_menu",
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_support_bot_link_keyboard(support_bot_username: str) -> InlineKeyboardMarkup:
+    """Строит клавиатуру со ссылкой на бота поддержки."""
+    builder = InlineKeyboardBuilder()
+    username = support_bot_username.lstrip("@")
+    deep_link = f"tg://resolve?domain={username}&start=new"
+    builder.button(text=(get_setting("btn_support_open") or "🛟 Открыть поддержку"), url=deep_link)
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_support_menu_keyboard(has_external: bool = False) -> InlineKeyboardMarkup:
+    """Строит клавиатуру меню поддержки (создать обращение, мои обращения)."""
+
+    def _filter(cfg: dict) -> bool:
+        # Если внешняя поддержка недоступна, скрыть кнопку support_external
+        if not has_external:
+            cd = (cfg.get("callback_data") or "").strip()
+            bid = (cfg.get("button_id") or "").strip()
+            if cd == "support_external" or bid == "btn_support_external":
+                return False
+        return True
+
+    kb = _build_keyboard_from_db("support_menu", filter_func=_filter)
+    if kb:
+        return kb
+
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_support_new_ticket") or "✍️ Новое обращение"),
+        callback_data="support_new_ticket",
+    )
+    builder.button(
+        text=(get_setting("btn_support_my_tickets") or "📨 Мои обращения"),
+        callback_data="support_my_tickets",
+    )
+    if has_external:
+        builder.button(
+            text=(get_setting("btn_support_external") or "🛟 Внешняя поддержка"),
+            callback_data="support_external",
+        )
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_tickets_list_keyboard(tickets: list[dict]) -> InlineKeyboardMarkup:
+    """Строит клавиатуру списка тикетов поддержки пользователя."""
+    builder = InlineKeyboardBuilder()
+    if tickets:
+        for t in tickets:
+            title = f"№ {t['ticket_id']} ▪️ {t.get('status', 'open')}"
+            if t.get("subject"):
+                title += f"▪️{t['subject'][:20]}"
+            builder.button(text=title, callback_data=f"support_view_{t['ticket_id']}")
+    builder.button(text="⬅️ Назад", callback_data="support_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_ticket_actions_keyboard(ticket_id: int, is_open: bool = True) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий над конкретным тикетом поддержки."""
+    builder = InlineKeyboardBuilder()
+    if is_open:
+        builder.button(text="💬 Ответить", callback_data=f"support_reply_{ticket_id}")
+        builder.button(text="✅ Закрыть", callback_data=f"support_close_{ticket_id}")
+    builder.button(text="⬅️ К списку", callback_data="support_my_tickets")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_host_selection_keyboard(hosts: list, action: str) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора сервера (хоста) для покупки/продления ключа."""
+    builder = InlineKeyboardBuilder()
+    base_action = action
+    extra = "-"
+    if action.startswith("switch_"):
+        base_action = "switch"
+        extra = action[len("switch_") :] or "-"
+    elif action in {"trial", "new"}:
+        base_action = action
+    else:
+        base_action = action
+    prefix = f"select_host:{base_action}:{extra}:"
+    for host in hosts:
+        token = encode_host_callback_token(host["host_name"])
+        builder.button(text=host["host_name"], callback_data=f"{prefix}{token}")
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="manage_keys" if action == "new" else "back_to_main_menu",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_plans_keyboard(
+    plans: list[dict], action: str, host_name: str, key_id: int = 0
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора тарифного плана."""
+    builder = InlineKeyboardBuilder()
+    for plan in plans:
+        token = encode_host_callback_token(host_name)
+        callback_data = f"buy_{token}_{plan['plan_id']}_{action}_{key_id}"
+        builder.button(
+            text=f"{plan['plan_name']} ▪️ {plan['price']:.0f} ₽",
+            callback_data=callback_data,
+        )
+    if action == "extend":
+        back_callback = "manage_keys"
+    elif action == "gift":
+        back_callback = "buy_gift_key"
+    else:
+        back_callback = "buy_new_key"
+    builder.button(text=(get_setting("btn_back") or "⬅️ Назад"), callback_data=back_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_skip_email_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру с кнопкой пропуска ввода email при оплате."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_skip_email") or "➡️ Продолжить без почты"),
+        callback_data="skip_email",
+    )
+    builder.button(
+        text=(get_setting("btn_back_to_plans") or "⬅️ Назад к тарифам"),
+        callback_data="back_to_plans",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_payment_method_keyboard(
+    payment_methods: dict,
+    action: str,
+    key_id: int,
+    show_balance: bool | None = None,
+    main_balance: float | None = None,
+    price: float | None = None,
+    has_promo_applied: bool | None = None,
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора способа оплаты."""
+    builder = InlineKeyboardBuilder()
+
+    # Промокод: ввести/убрать
+    if has_promo_applied:
+        builder.button(text="❌ Убрать промокод", callback_data="remove_promo_code")
+    else:
+        builder.button(text="🎟️ Ввести промокод", callback_data="enter_promo_code")
+
+    # Кнопки оплаты с балансов (если разрешено/достаточно средств)
+    if show_balance:
+        label = get_setting("btn_pay_with_balance") or "💼 Оплатить с баланса"
+        if main_balance is not None:
+            try:
+                label += f" ({main_balance:.0f} ₽)"
+            except Exception:
+                pass
+        builder.button(text=label, callback_data="pay_balance")
+
+    # Внешние способы оплаты
+    if payment_methods and payment_methods.get("yookassa"):
+        if get_setting("sbp_enabled"):
+            builder.button(text="🏦 СБП / Банковская карта", callback_data="pay_yookassa")
+        else:
+            builder.button(text="🏦 Банковская карта", callback_data="pay_yookassa")
+    if payment_methods and payment_methods.get("heleket"):
+        builder.button(text="💎 Криптовалюта", callback_data="pay_heleket")
+    if payment_methods and payment_methods.get("cryptobot"):
+        builder.button(text="🤖 CryptoBot", callback_data="pay_cryptobot")
+    if payment_methods and payment_methods.get("yoomoney"):
+        builder.button(text="💜 ЮMoney (кошелёк)", callback_data="pay_yoomoney")
+    if payment_methods and payment_methods.get("stars"):
+        builder.button(text="⭐ Telegram Stars", callback_data="pay_stars")
+    if payment_methods and payment_methods.get("tonconnect"):
+        callback_data_ton = "pay_tonconnect"
+        logger.info(f"Создание кнопки TON с callback_data: '{callback_data_ton}'")
+        builder.button(text="🪙 TON Connect", callback_data=callback_data_ton)
+
+    builder.button(
+        text=(get_setting("btn_back") or "⬅️ Назад"),
+        callback_data="back_to_email_prompt",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_promos_menu_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру меню промокодов для админа (список, создание, удаление всех)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Создать промокод", callback_data="admin_promo_create")
+    builder.button(text="📋 Список промокодов", callback_data="admin_promo_list")
+    builder.button(text="🗑️ Удалить все промокоды", callback_data="admin_promo_delete_all")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_promo_delete_all_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения удаления всех промокодов."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить удаление", callback_data="admin_promo_delete_all_confirm")
+    builder.button(text="❌ Отмена", callback_data="admin_promo_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_admin_promo_discount_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора типа скидки промокода (процент/сумма)."""
+    builder = InlineKeyboardBuilder()
+    # Первый шаг: выбрать тип скидки
+    builder.button(text="Процент", callback_data="admin_promo_discount_type_percent")
+    builder.button(text="Фикс (₽)", callback_data="admin_promo_discount_type_amount")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def create_admin_promo_discount_percent_menu_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру быстрого выбора процента скидки промокода."""
+    builder = InlineKeyboardBuilder()
+    # Пресеты процентов
+    for p in (5, 10, 15, 20, 25, 30):
+        builder.button(text=f"{p}%", callback_data=f"admin_promo_discount_percent_{p}")
+    # Ручной ввод обоих типов и переключение меню
+    builder.button(text="✏️ Ввести процент", callback_data="admin_promo_discount_manual_percent")
+    builder.button(text="✏️ Ввести фикс ₽", callback_data="admin_promo_discount_manual_amount")
+    builder.button(text="↔️ Фикс-меню", callback_data="admin_promo_discount_show_amount_menu")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(3, 3, 1, 1, 1, 2)
+    return builder.as_markup()
+
+
+def create_admin_promo_discount_amount_menu_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру быстрого выбора фиксированной суммы скидки промокода."""
+    builder = InlineKeyboardBuilder()
+    # Пресеты сумм в рублях
+    for a in (50, 100, 150, 200, 300, 500):
+        builder.button(text=f"{a} ₽", callback_data=f"admin_promo_discount_amount_{a}")
+    builder.button(text="✏️ Ввести фикс ₽", callback_data="admin_promo_discount_manual_amount")
+    builder.button(text="✏️ Ввести процент", callback_data="admin_promo_discount_manual_percent")
+    builder.button(text="↔️ Процент-меню", callback_data="admin_promo_discount_show_percent_menu")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(3, 3, 1, 1, 1, 2)
+    return builder.as_markup()
+
+
+def create_admin_promo_limits_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру настройки лимитов использования промокода."""
+    builder = InlineKeyboardBuilder()
+    # СТАРАЯ клавиатура оставлена для совместимости, но не используется в новом мастере
+    builder.button(text="➡️ Пропустить", callback_data="admin_promo_limits_skip")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(1, 1)
+    return builder.as_markup()
+
+
+def create_admin_promo_limits_type_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора типа лимита промокода (общий/на пользователя)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Общий лимит", callback_data="admin_promo_limits_type_total")
+    builder.button(text="Лимит на пользователя", callback_data="admin_promo_limits_type_per")
+    builder.button(text="Оба лимита", callback_data="admin_promo_limits_type_both")
+    builder.button(text="➡️ Пропустить", callback_data="admin_promo_limits_skip")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(2, 1, 1, 2)
+    return builder.as_markup()
+
+
+def create_admin_promo_limits_total_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру быстрого выбора общего лимита использований промокода."""
+    builder = InlineKeyboardBuilder()
+    for n in (10, 50, 100, 200, 500, 1000):
+        builder.button(text=str(n), callback_data=f"admin_promo_limits_total_preset_{n}")
+    builder.button(text="✏️ Ввести значение", callback_data="admin_promo_limits_total_manual")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_limits_back_to_type")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(3, 3, 1, 1)
+    return builder.as_markup()
+
+
+def create_admin_promo_limits_per_user_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру быстрого выбора лимита использований промокода на одного пользователя."""
+    builder = InlineKeyboardBuilder()
+    for n in (1, 2, 3, 5, 10):
+        builder.button(text=str(n), callback_data=f"admin_promo_limits_per_preset_{n}")
+    builder.button(text="✏️ Ввести значение", callback_data="admin_promo_limits_per_manual")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_limits_back_to_type")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(3, 2, 1, 1)
+    return builder.as_markup()
+
+
+def create_admin_promo_dates_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру настройки срока действия промокода."""
+    builder = InlineKeyboardBuilder()
+    # Быстрые пресеты по дням
+    builder.button(text="3 дня", callback_data="admin_promo_dates_days_3")
+    builder.button(text="7 дней", callback_data="admin_promo_dates_days_7")
+    builder.button(text="14 дней", callback_data="admin_promo_dates_days_14")
+    builder.button(text="30 дней", callback_data="admin_promo_dates_days_30")
+    builder.button(text="90 дней", callback_data="admin_promo_dates_days_90")
+    # Альтернативы по периодам
+    builder.button(text="Неделя", callback_data="admin_promo_dates_week")
+    builder.button(text="Месяц", callback_data="admin_promo_dates_month")
+    # Ручной ввод количества дней и пропуск
+    builder.button(text="✏️ Ввести число дней", callback_data="admin_promo_dates_custom_days")
+    builder.button(text="➡️ Пропустить", callback_data="admin_promo_dates_skip")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(2, 2, 1, 2, 1, 1, 2)
+    return builder.as_markup()
+
+
+def create_admin_promo_description_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру шага ввода описания промокода."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➡️ Пропустить", callback_data="admin_promo_desc_skip")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def create_admin_promo_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру финального подтверждения создания промокода."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Создать", callback_data="admin_promo_confirm_create")
+    builder.button(text="⬅️ Назад", callback_data="admin_promo_back")
+    builder.button(text="❌ Отмена", callback_data="admin_cancel")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def _add_payment_back(builder: InlineKeyboardBuilder, back_callback: str | None) -> None:
+    """Кнопка возврата под ссылкой на оплату (иначе из экрана оплаты нет выхода)."""
+    if back_callback == "back_to_payment_options":
+        text = "⬅️ Другой способ оплаты"
+    elif back_callback == "top_up_start":
+        text = "⬅️ Другая сумма / способ"
+    else:
+        back_callback = "back_to_main_menu"
+        text = "⬅️ Назад в меню"
+    builder.button(text=text, callback_data=back_callback)
+
+
+def create_ton_connect_keyboard(
+    connect_url: str, back_callback: str | None = None
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру со ссылкой на подключение кошелька через TON Connect."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚀 Открыть кошелек", url=connect_url)
+    _add_payment_back(builder, back_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_payment_keyboard(
+    payment_url: str, back_callback: str | None = None
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру со ссылкой на оплату у внешнего платёжного провайдера."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=(get_setting("btn_go_to_payment") or "Перейти к оплате"), url=payment_url)
+    _add_payment_back(builder, back_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_payment_with_check_keyboard(
+    payment_url: str, check_callback: str, back_callback: str | None = None
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру со ссылкой на оплату и кнопкой проверки статуса платежа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=(get_setting("btn_go_to_payment") or "Перейти к оплате"), url=payment_url)
+    builder.button(
+        text=(get_setting("btn_check_payment") or "✅ Проверить оплату"),
+        callback_data=check_callback,
+    )
+    _add_payment_back(builder, back_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_topup_payment_method_keyboard(payment_methods: dict) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора способа оплаты для пополнения баланса."""
+    builder = InlineKeyboardBuilder()
+    # Только внешние способы оплаты, без оплаты с баланса
+    if payment_methods and payment_methods.get("yookassa"):
+        if get_setting("sbp_enabled"):
+            builder.button(text="🏦 СБП / Банковская карта", callback_data="topup_pay_yookassa")
+        else:
+            builder.button(text="🏦 Банковская карта", callback_data="topup_pay_yookassa")
+    if payment_methods and payment_methods.get("heleket"):
+        builder.button(text="💎 Криптовалюта", callback_data="topup_pay_heleket")
+    if payment_methods and payment_methods.get("cryptobot"):
+        builder.button(text="🤖 CryptoBot", callback_data="topup_pay_cryptobot")
+    if payment_methods and payment_methods.get("yoomoney"):
+        builder.button(text="💜 ЮMoney (кошелёк)", callback_data="topup_pay_yoomoney")
+    if payment_methods and payment_methods.get("stars"):
+        builder.button(text="⭐ Telegram Stars", callback_data="topup_pay_stars")
+    if payment_methods and payment_methods.get("tonconnect"):
+        builder.button(text="🪙 TON Connect", callback_data="topup_pay_tonconnect")
+
+    builder.button(
+        text="⬅️ Назад",
+        callback_data="top_up_start",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_keys_management_keyboard(keys: list) -> InlineKeyboardMarkup:
+    """Список подписок: короткие кнопки «🟢 Сервер ▪️ до 12.05»."""
+    builder = InlineKeyboardBuilder()
+    if keys:
+        for i, key in enumerate(keys):
+            expiry_date = datetime.fromisoformat(key["expiry_date"])
+            status_icon = "🟢" if expiry_date > datetime.now() else "🔴"
+            host_name = str(key.get("host_name") or "Сервер")
+            if len(host_name) > 17:
+                host_name = host_name[:16]
+            button_text = f"{status_icon} {host_name} ▪️ до {expiry_date.strftime('%d.%m')}"
+            builder.button(text=button_text, callback_data=f"show_key_{key['key_id']}")
+    builder.button(
+        text=(get_setting("btn_buy_key") or "➕ Купить новую подписку"),
+        callback_data="buy_new_key",
+    )
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def _client_links(connection_string: str) -> dict[str, str]:
+    """Диплинки на клиентов (через REDIR_URL) для строки подписки."""
+
+    def _b64(s: str) -> str:
+        return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
+
+    return {
+        "happ": f"{REDIR_URL}{_b64(f'happ://add/{connection_string}')}",
+        "flclashx": f"{REDIR_URL}"
+        + _b64(
+            "flclashx://install-config?url="
+            + quote(connection_string.replace("/sub/", "/clash/"), safe="")
+        ),
+        "incy": f"{REDIR_URL}{_b64(f'incy://add/{connection_string}')}",
+        "v2raytun": f"{REDIR_URL}{_b64(f'v2raytun://import/{connection_string}')}",
+        "v2rayng": f"{REDIR_URL}{_b64(f'v2rayng://install-config/?url={connection_string}')}",
+    }
+
+
+def create_key_info_keyboard(
+    key_id: int, connection_string: str | None = None
+) -> InlineKeyboardMarkup:
+    """Карточка подписки: главное — наверху, клиенты и сервис — в подменю."""
+    builder = InlineKeyboardBuilder()
+    layout: list[int] = []
+
+    if connection_string:
+        builder.button(
+            text="🌐 Web App",
+            web_app=WebAppInfo(url=connection_string),
+            style="success",
+        )
+    else:
+        builder.button(text="🌐 Web App", callback_data=f"open_web_app_{key_id}", style="success")
+    builder.button(
+        text=(get_setting("btn_extend_key") or "➕ Продлить"),
+        callback_data=f"extend_key_{key_id}",
+        style="danger",
+    )
+    layout.append(2)
+
+    builder.button(text="🔗 Подключить", callback_data=f"key_connect_{key_id}", style="primary")
+    builder.button(
+        text=(get_setting("btn_show_qr") or "📱 QR-код"),
+        callback_data=f"show_qr_{key_id}",
+    )
+    layout.append(2)
+
+    builder.button(
+        text=(get_setting("btn_instruction") or "📖 Инструкция"),
+        callback_data=f"howto_vless_{key_id}",
+    )
+    builder.button(text="🛠 Дополнительно", callback_data=f"key_more_{key_id}")
+    layout.append(2)
+
+    # Тумблер автопродления — только для ключей с привязанным тарифом
+    key_data = get_key_by_id(key_id)
+    if key_data and key_data.get("last_plan_id") is not None:
+        auto_renew_on = bool(key_data.get("auto_renew_enabled"))
+        builder.button(
+            text=("💳 Автопродление: ✅" if auto_renew_on else "💳 Автопродление: 🚫"),
+            callback_data=f"toggle_auto_renew_{key_id}",
+            style=("success" if auto_renew_on else "danger"),
+        )
+        layout.append(1)
+
+    builder.button(
+        text=(get_setting("btn_back_to_keys") or "⬅️ Назад к списку подписок"),
+        callback_data="manage_keys",
+    )
+    layout.append(1)
+
+    builder.adjust(*layout)
+    return builder.as_markup()
+
+
+def create_key_connect_keyboard(
+    key_id: int, connection_string: str | None = None
+) -> InlineKeyboardMarkup:
+    """Подменю «🔗 Подключить»: выбор клиентского приложения."""
+    builder = InlineKeyboardBuilder()
+    clients = [
+        ("happ", "⚡ Happ"),
+        ("flclashx", "🪽 FlClashX"),
+        ("incy", "🛡️ INCY"),
+        ("v2raytun", "🚀 v2RayTun"),
+        ("v2rayng", "👾 v2rayNG"),
+    ]
+    links = _client_links(connection_string) if connection_string else None
+    for code, title in clients:
+        if links:
+            builder.button(text=title, url=links[code], style="primary")
+        else:
+            builder.button(text=title, callback_data=f"add_to_{code}_{key_id}", style="primary")
+    builder.button(text="📖 Инструкция", callback_data=f"howto_vless_{key_id}")
+    builder.button(text="⬅️ Назад к подписке", callback_data=f"key_back_{key_id}")
+    builder.adjust(2, 2, 1, 1, 1)
+    return builder.as_markup()
+
+
+def create_key_more_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Подменю «🛠 Дополнительно»: сервисные действия с подпиской."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_switch_server") or "🌍 Сменить сервер"),
+        callback_data=f"switch_server_{key_id}",
+    )
+    builder.button(text="🔄 Пересоздать", callback_data=f"regen_key_prompt_{key_id}", style="danger")
+    builder.button(text="🛜 Файлы для XKeen", callback_data=f"download_xkeen_outbounds_{key_id}")
+    builder.button(text="🪏 Ключи для Podkop", callback_data=f"show_podkop_keys_{key_id}")
+    builder.button(text="🔐 Все ключи", callback_data=f"show_raw_keys_{key_id}")
+    builder.button(text="⬅️ Назад к подписке", callback_data=f"key_back_{key_id}")
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def create_country_picker_keyboard(
+    action: str, key_id: int, countries: list[str]
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора страны/города для XKeen-файлов, Podkop-ключей
+    или полного списка ключей — вместо выдачи всех серверов разом (что при
+    20-70 серверах на хосте превращалось в шквал сообщений), пользователь
+    сначала выбирает одну страну, и файлы/ключи присылаются только для неё.
+
+    action — префикс callback_data ("xkeen" | "podkop" | "rawkeys"), кнопка
+    страны с индексом idx получает callback_data f"{action}_pick_{key_id}_{idx}".
+    Порядковый индекс, а не сама строка страны — так как страна с эмодзи-флагом
+    может не влезть в лимит callback_data (64 байта) на некоторых хостах с
+    длинными названиями; повторное построение списка стран на стороне
+    обработчика детерминировано (тот же порядок first-seen), так что индекс
+    надёжно указывает на ту же страну и при повторном запросе.
+    """
+    builder = InlineKeyboardBuilder()
+    for idx, country in enumerate(countries):
+        builder.button(text=country, callback_data=f"{action}_pick_{key_id}_{idx}")
+    if action == "xkeen":
+        # Отдельная, самостоятельная опция — один файл сразу со всеми
+        # странами/транспортами (с тегами вида ru1/de2/fi3), не замена
+        # обычного выбора по одной стране, а альтернативный вариант рядом.
+        builder.button(text="📦 Все серверы", callback_data=f"xkeen_unified_{key_id}")
+    builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def create_xkeen_core_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора установленного на роутере ядра перед выдачей файлов
+    для XKeen — Xray идёт дальше по обычному флоу (выбор страны), Mihomo
+    получает один config.yaml сразу, без выбора страны (там один файл на
+    всю подписку, а не по серверу)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="☢️ Xray", callback_data=f"xkeen_core_xray_{key_id}")
+    builder.button(text="🐱 Mihomo", callback_data=f"xkeen_core_mihomo_{key_id}")
+    builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def create_qr_client_keyboard(key_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора клиента перед генерацией QR — разным приложениям нужен
+    QR с разным вариантом ссылки на подписку (/sub/, /clash/, /json/), а не
+    один и тот же формат на все случаи."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="☢️ Happ/INCY", callback_data=f"qr_client_sub_{key_id}")
+    builder.button(text="🐱 Clash (FlClashX/FlClash)", callback_data=f"qr_client_clash_{key_id}")
+    builder.button(text="🗿 Устаревшие (v2RayTun/v2rayNG)", callback_data=f"qr_client_json_{key_id}")
+    builder.button(text="❌ Отмена", callback_data=f"show_key_{key_id}")
+    builder.adjust(1, 1, 1, 1)
+    return builder.as_markup()
+
+
+HOWTO_ROUTERS_BTN_DEFAULT = "🛜 Роутеры"
+HOWTO_ROUTERS_URL_DEFAULT = "https://telegra.ph/Podklyuchenie-na-routerah-OpenWrt-i-Keenetic-10-13"
+
+
+def create_howto_vless_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора платформы для общей инструкции по подключению VLESS."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_howto_android") or "👾 Android"),
+        callback_data="howto_android",
+    )
+    builder.button(text=(get_setting("btn_howto_ios") or "🍏 iOS"), callback_data="howto_ios")
+    builder.button(
+        text=(get_setting("btn_howto_windows") or "💻 Windows"),
+        callback_data="howto_windows",
+    )
+    builder.button(text=(get_setting("btn_howto_linux") or "🐧 Linux"), callback_data="howto_linux")
+    builder.button(
+        text=(get_setting("btn_howto_routers") or HOWTO_ROUTERS_BTN_DEFAULT),
+        url=(get_setting("howto_routers_url") or HOWTO_ROUTERS_URL_DEFAULT),
+    )
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def create_howto_vless_keyboard_key(key_id: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора платформы для инструкции по подключению конкретного ключа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_howto_android") or "👾 Android"),
+        callback_data="howto_android",
+    )
+    builder.button(text=(get_setting("btn_howto_ios") or "🍏 iOS"), callback_data="howto_ios")
+    builder.button(
+        text=(get_setting("btn_howto_windows") or "💻 Windows"),
+        callback_data="howto_windows",
+    )
+    builder.button(text=(get_setting("btn_howto_linux") or "🐧 Linux"), callback_data="howto_linux")
+    builder.button(
+        text=(get_setting("btn_howto_routers") or HOWTO_ROUTERS_BTN_DEFAULT),
+        url=(get_setting("howto_routers_url") or HOWTO_ROUTERS_URL_DEFAULT),
+    )
+    builder.button(
+        text=(get_setting("btn_back_to_key") or "⬅️ Назад к подписке"),
+        callback_data=f"show_key_{key_id}",
+    )
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def create_back_to_menu_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру с кнопкой возврата в предыдущее меню."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    return builder.as_markup()
+
+
+def create_profile_keyboard() -> InlineKeyboardMarkup:
+    """Профиль: только история операций и возврат в меню."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=(get_setting("btn_tx_history") or "📜 История операций"),
+        callback_data="tx_history_0",
+    )
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"),
+        callback_data="back_to_main_menu",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_transaction_history_keyboard(
+    page: int, has_prev: bool, has_next: bool
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру постраничной истории операций пользователя."""
+    builder = InlineKeyboardBuilder()
+    if has_prev:
+        builder.button(text="⬅️ Назад", callback_data=f"tx_history_{page-1}")
+    if has_next:
+        builder.button(text="Вперёд ➡️", callback_data=f"tx_history_{page+1}")
+    builder.button(
+        text=(get_setting("btn_back_to_menu") or "⬅️ В профиль"),
+        callback_data="show_profile",
+    )
+    if has_prev and has_next:
+        builder.adjust(2, 1)
+    elif has_prev or has_next:
+        builder.adjust(1, 1)
+    else:
+        builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_welcome_keyboard(
+    channel_url: str | None, is_subscription_forced: bool = False
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру приветственного экрана (подписка на канал, согласие с условиями)."""
+    builder = InlineKeyboardBuilder()
+
+    if channel_url and is_subscription_forced:
+        builder.button(text="📢 Перейти в канал", url=channel_url)
+        builder.button(text="✅ Я подписался", callback_data="check_subscription_and_agree")
+    elif channel_url:
+        builder.button(text="📢 Наш канал (не обязательно)", url=channel_url)
+        builder.button(text="✅ Принимаю условия", callback_data="check_subscription_and_agree")
+    else:
+        builder.button(text="✅ Принимаю условия", callback_data="check_subscription_and_agree")
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_main_menu_button() -> InlineKeyboardButton:
+    """Возвращает готовую кнопку 'В главное меню' для переиспользования в разных клавиатурах."""
+    return InlineKeyboardButton(text="🏠 В главное меню", callback_data="show_main_menu")
+
+
+def get_buy_button() -> InlineKeyboardButton:
+    """Возвращает готовую кнопку 'Купить подписку' для переиспользования в разных клавиатурах."""
+    return InlineKeyboardButton(text="💳 Купить подписку", callback_data="buy_vpn")
+
+
+def create_admin_users_pick_keyboard(
+    users: list[dict], page: int = 0, page_size: int = 10, action: str = "gift"
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру постраничного выбора пользователя админом (для подарка и т.п.)."""
+    builder = InlineKeyboardBuilder()
+    start = page * page_size
+    end = start + page_size
+    for u in users[start:end]:
+        user_id = u.get("telegram_id") or u.get("user_id") or u.get("id")
+        title = f"{user_id} ▪️ {format_stored_username(u.get('username'), linked=False, escape_html=False)}"
+        builder.button(text=title, callback_data=f"admin_{action}_pick_user_{user_id}")
+    total = len(users)
+    have_prev = page > 0
+    have_next = end < total
+    if have_prev:
+        builder.button(text="⬅️ Назад", callback_data=f"admin_{action}_pick_user_page_{page-1}")
+    if have_next:
+        builder.button(text="Вперёд ➡️", callback_data=f"admin_{action}_pick_user_page_{page+1}")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+    rows = [1] * len(users[start:end])
+    tail = []
+    if have_prev or have_next:
+        tail.append(2 if (have_prev and have_next) else 1)
+    tail.append(1)
+    builder.adjust(*(rows + tail if rows else ([2] if (have_prev or have_next) else []) + [1]))
+    return builder.as_markup()
+
+
+def create_admin_hosts_pick_keyboard(
+    hosts: list[dict], action: str = "gift"
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру выбора хоста админом."""
+    builder = InlineKeyboardBuilder()
+    if hosts:
+        for h in hosts:
+            name = h.get("host_name")
+            token = encode_host_callback_token(name)
+            if action == "speedtest":
+                # Две кнопки в строке: запуск теста и автоустановка
+                builder.button(text=name, callback_data=f"admin_{action}_pick_host_{token}")
+                builder.button(
+                    text="🛠 Автоустановка",
+                    callback_data=f"admin_speedtest_autoinstall_{token}",
+                )
+            else:
+                builder.button(text=name, callback_data=f"admin_{action}_pick_host_{token}")
+    else:
+        builder.button(text="Хостов нет", callback_data="noop")
+    # Дополнительные опции для speedtest
+    if action == "speedtest":
+        builder.button(text="🚀 Запустить для всех", callback_data="admin_speedtest_run_all")
+    builder.button(text="⬅️ Назад", callback_data=f"admin_{action}_back_to_users")
+    # Сетка: по 2 в ряд для speedtest (сервер + автоустановка), иначе по 1
+    if action == "speedtest":
+        rows = [2] * (len(hosts) if hosts else 1)
+        tail = [1, 1]
+    else:
+        rows = [1] * (len(hosts) if hosts else 1)
+        tail = [1]
+    builder.adjust(*(rows + tail))
+    return builder.as_markup()
+
+
+def create_admin_keys_for_host_keyboard(
+    host_name: str,
+    keys: list[dict],
+    page: int = 0,
+    page_size: int = 20,
+) -> InlineKeyboardMarkup:
+    """Строит клавиатуру постраничного списка ключей на конкретном хосте для админа."""
+    builder = InlineKeyboardBuilder()
+    # Если ключей нет — показываем заглушку и кнопки назад
+    if not keys:
+        builder.button(text="Подписок на хосте нет", callback_data="noop")
+        builder.button(text="⬅️ К выбору хоста", callback_data="admin_hostkeys_back_to_hosts")
+        builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+        builder.adjust(1)
+        return builder.as_markup()
+
+    # Пагинация
+    start = page * page_size
+    end = start + page_size
+    for k in keys[start:end]:
+        kid = k.get("key_id")
+        email = k.get("key_email") or "—"
+        expiry_raw = k.get("expiry_date")
+        # expiry_date хранится через datetime.fromtimestamp(ms/1000), сырое
+        # TEXT-значение из SQLite почти всегда содержит микросекунды —
+        # обрезаем их, в тексте кнопки они не нужны.
+        if expiry_raw:
+            try:
+                expiry = datetime.fromisoformat(str(expiry_raw)).strftime("%d.%m.%Y %H:%M")
+            except ValueError:
+                expiry = str(expiry_raw)
+        else:
+            expiry = "—"
+        title = f"№ {kid} ▪️ {email[:24]} ▪️ до {expiry}"
+        builder.button(text=title, callback_data=f"admin_edit_key_{kid}")
+
+    total = len(keys)
+    have_prev = page > 0
+    have_next = end < total
+    if have_prev:
+        builder.button(text="⬅️ Назад", callback_data=f"admin_hostkeys_page_{page-1}")
+    if have_next:
+        builder.button(text="Вперёд ➡️", callback_data=f"admin_hostkeys_page_{page+1}")
+
+    # Кнопки навигации
+    builder.button(text="⬅️ К выбору хоста", callback_data="admin_hostkeys_back_to_hosts")
+    builder.button(text="⬅️ В админ-меню", callback_data="admin_menu")
+
+    # Сетка: список (по 1 в ряд) + пагинация (1 или 2 в ряд) + две кнопки назад
+    rows = [1] * len(keys[start:end])
+    tail = []
+    if have_prev or have_next:
+        tail.append(2 if (have_prev and have_next) else 1)
+    tail.extend([1, 1])
+    builder.adjust(*(rows + tail if rows else ([2] if (have_prev or have_next) else []) + [1, 1]))
+    return builder.as_markup()
+
+
+def create_admin_months_pick_keyboard(action: str = "gift") -> InlineKeyboardMarkup:
+    """Строит клавиатуру быстрого выбора количества месяцев (для выдачи/продления)."""
+    builder = InlineKeyboardBuilder()
+    for m in (1, 3, 6, 12):
+        builder.button(text=f"{m} мес.", callback_data=f"admin_{action}_pick_months_{m}")
+    builder.button(text="⬅️ Назад", callback_data=f"admin_{action}_back_to_hosts")
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+def create_topup_amount_keyboard() -> InlineKeyboardMarkup:
+    """Быстрый выбор типовой суммы пополнения + возможность ввести свою текстом."""
+    builder = InlineKeyboardBuilder()
+    amounts = [100, 300, 500, 1000, 2000, 5000]
+    for amount in amounts:
+        builder.button(text=f"{amount} ₽", callback_data=f"topup_quick_{amount}")
+    builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(3, 3, 1)
+    return builder.as_markup()
+
+
+def create_back_to_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Создать клавиатуру с кнопкой возврата в главное меню."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+
+def create_promo_input_keyboard() -> InlineKeyboardMarkup:
+    """Экран ввода промокода: возврат к выбору способа оплаты (а не в главное меню)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад к оплате", callback_data="back_to_payment_options")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def create_back_to_more_keyboard() -> InlineKeyboardMarkup:
+    """Возврат в подменю «🧰 Больше»."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data="show_more_menu")
+    builder.adjust(1)
+    return builder.as_markup()
