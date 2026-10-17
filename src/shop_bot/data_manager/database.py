@@ -663,6 +663,18 @@ def initialize_db():
             except Exception as e:
                 logger.warning(f"Ошибка при добавлении колонки created_date: {e}")
 
+            # Миграция: флаг «подписка отключена администратором» (кнопка в алертах о шеринге/трафике)
+            try:
+                cursor.execute("PRAGMA table_info(vpn_keys)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if "admin_disabled" not in columns:
+                    cursor.execute(
+                        "ALTER TABLE vpn_keys ADD COLUMN admin_disabled INTEGER NOT NULL DEFAULT 0"
+                    )
+                    logger.info("Добавлена колонка admin_disabled в таблицу vpn_keys")
+            except Exception as e:
+                logger.warning(f"Ошибка при добавлении колонки admin_disabled: {e}")
+
             # Создаем индекс для ускорения поиска ключей по имени хоста
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_vpn_keys_host_name ON vpn_keys(host_name);"
@@ -3370,6 +3382,7 @@ def get_keys_due_for_auto_renewal(window_hours: int = 24) -> list[dict]:
                 FROM vpn_keys vk
                 JOIN plans p ON p.plan_id = vk.last_plan_id
                 WHERE vk.auto_renew_enabled = 1
+                  AND COALESCE(vk.admin_disabled, 0) = 0
                   AND vk.last_plan_id IS NOT NULL
                   AND vk.expiry_date > datetime('now', 'localtime')
                   AND vk.expiry_date <= datetime('now', 'localtime', ?)
@@ -3407,6 +3420,21 @@ def get_next_key_number(user_id: int) -> int:
     """Возвращает следующий порядковый номер ключа для пользователя."""
     keys = get_user_keys(user_id)
     return len(keys) + 1
+
+
+def set_key_admin_disabled(key_id: int, disabled: bool) -> bool:
+    """Отключает/включает подписку администратором (шедулер применит это на панели при ближайшей сверке)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.execute(
+                "UPDATE vpn_keys SET admin_disabled = ? WHERE key_id = ?",
+                (1 if disabled else 0, int(key_id)),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logger.error(f"Не удалось изменить admin_disabled у ключа {key_id}: {e}")
+        return False
 
 
 def get_keys_for_host(host_name: str) -> list[dict]:

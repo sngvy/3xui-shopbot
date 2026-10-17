@@ -20,6 +20,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from icmplib import async_ping
 
+from shop_bot.bot.admin_notify import traffic_alert_markup, with_hide_button
 from shop_bot.bot_controller import BotController
 from shop_bot.data_manager import (
     backup_manager,
@@ -547,6 +548,7 @@ def _compute_host_state_hash(
             is_expired = 0
         parts.append(
             f"{k['key_id']}:{k['xui_client_uuid']}:{k['expiry_date']}:{int(is_banned)}:{is_expired}"
+            f":{int(bool(k.get('admin_disabled')))}"
         )
     raw = "|".join(parts)
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -1405,7 +1407,8 @@ async def _sync_clones_for_host(
 
         is_expired = datetime.fromisoformat(db_key["expiry_date"]) <= now
         master_enable_current = bool(getattr(server_client, "enable", True))
-        desired_master_enable = (not is_banned) and (not is_expired)
+        is_admin_disabled = bool(db_key.get("admin_disabled"))
+        desired_master_enable = (not is_banned) and (not is_expired) and (not is_admin_disabled)
 
         # subId: у истёкшего ключа — с суффиксом -expired (мастер и клоны пропадают из
         # подписки, остаётся grace-клиент), после продления — снова чистый.
@@ -1446,6 +1449,8 @@ async def _sync_clones_for_host(
                     action = "отключён (подписка истекла, subId -> -expired)"
                 elif is_banned:
                     action = "отключён (is_banned)"
+                elif is_admin_disabled:
+                    action = "отключён (подписка отключена администратором)"
                 else:
                     action = "включён (снятие бана/продление, subId восстановлен)"
                 logger.info(f"[{host_name}] Мастер {client_email} {action}")
@@ -2127,7 +2132,12 @@ async def _sync_grace_inbound_for_host(
         is_banned = bool(banned_map.get(db_key.get("user_id")))
         is_expired = expiry_dt <= now
         already_past_deletion_threshold = expiry_dt < now - EXPIRED_KEY_DELETION_GRACE
-        desired_grace_enable = is_expired and not already_past_deletion_threshold and not is_banned
+        desired_grace_enable = (
+            is_expired
+            and not already_past_deletion_threshold
+            and not is_banned
+            and not bool(db_key.get("admin_disabled"))
+        )
 
         grace_email = f"{prefix}{GRACE_EMAIL_SUFFIX}@{xui_api.EMAIL_DOMAIN}"
         grace_client = next(
@@ -2754,17 +2764,20 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                                     warn_status, _USER_WARN_STATUS_TEXT["error"]
                                 )
 
-                            mute_kb = InlineKeyboardBuilder()
-                            mute_kb.button(
-                                text="🔕 Заглушить на 1 час",
-                                callback_data=f"admin_tr_mute_{traffic_mute_key(c_uuid)}",
+                            alert_markup = traffic_alert_markup(
+                                traffic_mute_key(c_uuid),
+                                c_uuid,
+                                # отключить подписку предлагаем при множестве активных подключений
+                                can_disable=bool(
+                                    USER_ALERT_MIN_ACTIVE and heavy_active >= USER_ALERT_MIN_ACTIVE
+                                ),
                             )
                             try:
                                 await bot.send_message(
                                     chat_id=admin_id,
                                     text=alert_text,
                                     parse_mode="HTML",
-                                    reply_markup=mute_kb.as_markup(),
+                                    reply_markup=alert_markup,
                                 )
                             except Exception as e:
                                 logger.error(f"Ошибка отправки алерта админу: {e}")
@@ -2829,7 +2842,12 @@ async def check_traffic_anomalies(bot: Bot, host_sessions: dict[str, tuple] | No
                     )
                     sharing_admin_last_sent[admin_key] = time.monotonic()
                     try:
-                        await bot.send_message(chat_id=admin_id, text=share_text, parse_mode="HTML")
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=share_text,
+                            parse_mode="HTML",
+                            reply_markup=traffic_alert_markup(None, c_uuid, can_disable=True),
+                        )
                     except Exception as e:
                         logger.error(f"Ошибка отправки алерта админу о шеринге: {e}")
 
@@ -3129,7 +3147,10 @@ async def _notify_admins(bot: Bot, text: str, markup=None) -> None:
     for admin_id in admin_ids:
         try:
             await bot.send_message(
-                chat_id=admin_id, text=text, parse_mode="HTML", reply_markup=markup
+                chat_id=admin_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=with_hide_button(markup),
             )
         except Exception as e:
             logger.error(f"не удалось отправить сообщение админу {admin_id}: {e}")
@@ -4219,6 +4240,11 @@ async def _check_hosts_availability(bot: Bot):
         )
 
         try:
-            await bot.send_message(chat_id=admin_id, text=alert_text, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=admin_id,
+                text=alert_text,
+                parse_mode="HTML",
+                reply_markup=with_hide_button(),
+            )
         except Exception as e:
             logger.error(f"Ошибка отправки алерта админу: {e}")
