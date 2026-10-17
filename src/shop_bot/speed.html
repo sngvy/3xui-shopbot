@@ -753,6 +753,11 @@ function runDownloadTest(url){
         lastTotal = totalBytes;
         lastT = now;
       }
+      // Время вышло: не ждём закрытия сокетов, закрываем их в фоне
+      if(start !== null && now - start >= duration){
+        sockets.forEach(function(ws){ ws.onmessage = null; try{ ws.close(); }catch(e){} });
+        finish();
+      }
     }
 
     hardTimer = setTimeout(function(){
@@ -763,7 +768,7 @@ function runDownloadTest(url){
       (function(){
         var ws;
         try{ ws = new WebSocket(url, NDT7_PROTOCOL); }
-        catch(e){ settle(); return; }
+        catch(e){ settledCount++; if(settledCount >= streamCount) finish(); return; }
         ws.binaryType = 'arraybuffer';
         sockets.push(ws);
 
@@ -785,8 +790,10 @@ function runDownloadTest(url){
             if(elapsed >= duration){ try{ ws.close(); }catch(e){} }
           }
         };
-        ws.onclose = settle;
-        ws.onerror = settle;
+        var done = false;
+        function once(){ if(done) return; done = true; settle(); }
+        ws.onclose = once;
+        ws.onerror = once;
       })();
     }
   });
@@ -823,7 +830,7 @@ function runUploadTest(url){
       resolve(trimmedMean(trimRampUp(samples), 0.1) / 1e6);
     }
     function settle(s){
-      if(s) s.closed = true;
+      if(s){ if(s.settled) return; s.settled = true; s.closed = true; }
       settledCount++;
       if(settledCount >= streamCount) finish();
     }
@@ -844,9 +851,12 @@ function runUploadTest(url){
       var elapsed = now - start;
       setProgress(Math.min(1, elapsed / duration));
       if(elapsed >= duration){
+        // Не ждём, пока уйдёт буфер и придёт close-кадр: завершаем сразу
         streams.forEach(function(s){
-          if(!s.closed){ try{ s.ws.close(); }catch(e){} }
+          s.closed = true;
+          try{ s.ws.close(); }catch(e){}
         });
+        finish();
       }
     }
     function pump(s){
