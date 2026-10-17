@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 HIDE_CALLBACK = "admin_hide"
 HIDE_TEXT = "❌ Скрыть"
 MUTE_TEXT = "🔕 Заглушить на 1 час"
-DISABLE_TEXT = "⛔ Отключить подписку"
+DISABLE_TEXT = "🚫 Отключить подписку"
 
 
 def _is_uuid(value) -> bool:
@@ -28,7 +28,7 @@ def traffic_alert_markup(
     """Клавиатура алерта о трафике/шеринге.
 
     mute_key — ключ заглушки (только для «Аномального трафика», у шеринга None);
-    can_disable — показывать «⛔ Отключить подписку» (аномалия при множестве активных
+    can_disable — показывать «🚫 Отключить подписку» (аномалия при множестве активных
     подключений или подозрение на шеринг). Кнопка требует настоящий UUID клиента.
     """
     rows = []

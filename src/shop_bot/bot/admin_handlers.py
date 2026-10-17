@@ -4157,7 +4157,7 @@ def get_admin_router() -> Router:
 
         until = mute_traffic_alert(callback.data.rsplit("_", 1)[1])
         await callback.answer(f"🔕 Заглушено до {until.strftime('%H:%M')}", show_alert=False)
-        # Текст алерта не меняем, только убираем кнопку
+        # Текст алерта не меняем, убираем все кнопки
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -4193,7 +4193,7 @@ def get_admin_router() -> Router:
                     support_kb = await asyncio.to_thread(keyboards.create_support_keyboard)
                     await bot.send_message(
                         int(key["user_id"]),
-                        f"⛔ <b>Администратор отключил вашу подписку № {key['key_id']}</b>\n\n"
+                        f"🚫 <b>Администратор отключил вашу подписку № {key['key_id']}</b>\n\n"
                         "Если это ошибка — напишите в поддержку",
                         reply_markup=InlineKeyboardMarkup(
                             inline_keyboard=support_kb.inline_keyboard[:1]
@@ -4208,7 +4208,7 @@ def get_admin_router() -> Router:
                 pass
         return True
 
-    # --- «⛔ Отключить подписку» в алертах об аномальном трафике и шеринге ---
+    # --- «🚫 Отключить подписку» в алертах об аномальном трафике и шеринге ---
     @admin_router.callback_query(F.data.regexp(r"^admin_tr_off_[0-9a-fA-F-]{36}$"))
     async def traffic_alert_disable_ask(callback: types.CallbackQuery):
         if not is_admin(callback.from_user.id):
@@ -4261,7 +4261,7 @@ def get_admin_router() -> Router:
             await callback.answer("❌ Не удалось отключить подписку", show_alert=True)
             return
         await callback.answer(
-            f"⛔ Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут",
+            f"🚫 Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут",
             show_alert=False,
         )
         try:
@@ -4269,7 +4269,7 @@ def get_admin_router() -> Router:
         except Exception:
             pass
 
-    # --- «⛔ Отключить / ✅ Включить подписку» в карточке подписки ---
+    # --- «🚫 Отключить / ✅ Включить подписку» в карточке подписки ---
     @admin_router.callback_query(F.data.regexp(r"^admin_key_toggle_\d+$"))
     async def admin_key_toggle_handler(callback: types.CallbackQuery):
         if not is_admin(callback.from_user.id):
@@ -4285,7 +4285,7 @@ def get_admin_router() -> Router:
             return
         await callback.answer(
             (
-                f"⛔ Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут"
+                f"🚫 Подписка № {key['key_id']} отключена, на сервере — в течение 5 минут"
                 if disable
                 else f"✅ Подписка № {key['key_id']} включена, на сервере — в течение 5 минут"
             ),
